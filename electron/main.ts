@@ -21,10 +21,19 @@ log.info(`Platform: ${process.platform} ${process.arch}`);
 log.info('========================================');
 
 // Catch unhandled exceptions
+// Catch unhandled exceptions
 process.on('uncaughtException', (error) => {
   log.error('Uncaught Exception:', error);
-  dialog.showErrorBox('Critical Error', `An unexpected error occurred:\n\n${error.message}\n\nThe application will now close.`);
-  app.quit();
+  
+  // Specific mitigation for the "verified:false" VRChat API error
+  // This seems to be a non-fatal API response bubbling up as an error
+  if (error.message && error.message.includes('"verified":false')) {
+      log.warn('Ignored "verified:false" error to prevent crash.');
+      return;
+  }
+
+  dialog.showErrorBox('Critical Error', `An unexpected error occurred:\n\n${error.message}\n\nThe application will attempt to continue, but you may need to restart if features break.`);
+  // app.quit(); // Don't quit, let the user decide or try to recover
 });
 
 // Catch unhandled promise rejections

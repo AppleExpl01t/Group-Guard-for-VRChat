@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { useGroupStore } from '../../stores/groupStore';
 import { NeonButton } from '../../components/ui/NeonButton';
@@ -20,11 +20,11 @@ interface InstanceEvent {
     timestamp: string;
     actorDisplayName: string;
     actorUserId?: string;
-    details?: any;
+    details?: unknown;
 }
 
 export const DatabaseView: React.FC = () => {
-    const { selectedGroup, myGroups } = useGroupStore();
+    const { selectedGroup } = useGroupStore();
     const [sessions, setSessions] = useState<Session[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     
@@ -39,10 +39,26 @@ export const DatabaseView: React.FC = () => {
     // Modal state
     const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
 
+    const loadSessions = useCallback(async () => {
+        setIsLoading(true);
+        try {
+            const groupId = selectedGroup?.id;
+            const data = await window.electron.database.getSessions(groupId);
+            setSessions(data);
+            setSelectedSession(null);
+            setSessionEvents([]);
+            setSelectedActor(null);
+        } catch (error) {
+            console.error("Failed to load sessions", error);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [selectedGroup]);
+
     // Initial Load
     useEffect(() => {
         loadSessions();
-    }, [selectedGroup]);
+    }, [loadSessions]);
 
     // Fetch missing world names
     useEffect(() => {
@@ -56,10 +72,10 @@ export const DatabaseView: React.FC = () => {
                          try {
                              const details = await window.electron.getWorld(wId);
                              if (details.success && details.world?.name) {
-                                 return { sessionId: s.sessionId, name: details.world.name };
+                                  return { sessionId: s.sessionId, name: details.world.name };
                              }
                          } catch (e) {
-                             console.error("Failed to fetch world name for", wId);
+                             console.error("Failed to fetch world name for", wId, e);
                          }
                      }
                  }
@@ -78,23 +94,7 @@ export const DatabaseView: React.FC = () => {
         if (sessions.length > 0) {
             fetchMissingNames();
         }
-    }, [sessions.length]); // Run once when sessions list changes length (initial load)
-
-    const loadSessions = async () => {
-        setIsLoading(true);
-        try {
-            const groupId = selectedGroup?.id;
-            const data = await window.electron.database.getSessions(groupId);
-            setSessions(data);
-            setSelectedSession(null);
-            setSessionEvents([]);
-            setSelectedActor(null);
-        } catch (error) {
-            console.error("Failed to load sessions", error);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    }, [sessions]); // Run once when sessions list changes length (initial load)
 
     const handleSelectSession = async (session: Session) => {
         setSelectedSession(session);
