@@ -1,0 +1,36 @@
+/src/generated/prisma
+
+# Environment Variables (Permissions & Secrets)
+.env
+.env.production
+.env.development
+
+# Build Output
+dist-electron
+release
+
+# Dependencies
+node_modules
+
+# Local Data & Databases
+*.db
+*.sqlite
+*.sqlite-journal
+data/
+user_data/
+
+# Logs & Debugging
+debug_*
+*_debug.txt
+*_debug.log
+*.log
+
+# System & IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Agent & Reference
+.agent/
+reference repos/

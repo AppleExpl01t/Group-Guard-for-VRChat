@@ -1,0 +1,78 @@
+{
+  "name": "vrchat-group-guard",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A powerful VRChat group moderation and management tool",
+  "author": "VRChat Group Guard Team",
+  "license": "MIT",
+  "main": "dist-electron/main.cjs",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AppleExpl01t/VRChat-Group-Guard.git"
+  },
+  "scripts": {
+    "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on tcp:5173 && esbuild electron/main.ts --bundle --platform=node --outfile=dist-electron/main.cjs --sourcemap --external:electron --external:vrchat && esbuild electron/preload.ts --bundle --platform=node --outfile=dist-electron/preload.cjs --sourcemap --external:electron && cross-env NODE_ENV=development electron .",
+    "build": "tsc -b && vite build && npm run build:electron && electron-builder",
+    "build:electron": "esbuild electron/main.ts --bundle --platform=node --outfile=dist-electron/main.cjs --minify --external:electron --external:vrchat && esbuild electron/preload.ts --bundle --platform=node --outfile=dist-electron/preload.cjs --minify --external:electron",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "build": {
+    "appId": "com.vrchatgroupguard.app",
+    "productName": "VRChat Group Guard",
+    "copyright": "Copyright © 2024 VRChat Group Guard",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "publish": [
+      "github"
+    ]
+  },
+  "dependencies": {
+    "@prisma/client": "^7.2.0",
+    "clsx": "^2.1.1",
+    "electron-log": "^5.4.3",
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.6.2",
+    "framer-motion": "^12.23.26",
+    "keyv-file": "^5.3.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tailwind-merge": "^3.4.0",
+    "vrchat": "^2.20.7",
+    "zustand": "^5.0.9"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.4",
+    "@types/react": "^19.2.5",
+    "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^5.1.1",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^39.2.7",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.27.2",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "prisma": "^7.2.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vite": "^7.2.4",
+    "wait-on": "^9.0.3"
+  }
+}

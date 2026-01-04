@@ -1,0 +1,56 @@
+:root {
+  /* --- CORE PALETTE (HSL) --- */
+  /* User-customizable values */
+  --primary-hue: 330; /* Neon Pink */
+  --primary-sat: 100%;
+  --primary-light: 60%;
+
+  --accent-hue: 190; /* Neon Cyan */
+  --accent-sat: 100%;
+  --accent-light: 60%;
+
+  --bg-hue: 240; /* Dark Blue-Black */
+  --bg-sat: 20%;
+  --bg-light: 5%;
+
+  /* --- GENERATED COLORS --- */
+  --color-primary: hsl(
+    var(--primary-hue),
+    var(--primary-sat),
+    var(--primary-light)
+  );
+  --color-primary-glow: hsl(
+    var(--primary-hue),
+    var(--primary-sat),
+    var(--primary-light),
+    0.6
+  );
+  --color-accent: hsl(
+    var(--accent-hue),
+    var(--accent-sat),
+    var(--accent-light)
+  );
+
+  --color-bg-app: hsl(var(--bg-hue), var(--bg-sat), var(--bg-light));
+  --color-bg-panel: hsla(var(--bg-hue), var(--bg-sat), 10%, 0.45); /* Glass */
+  --color-text-main: #ffffff;
+  --color-text-dim: rgba(255, 255, 255, 0.6);
+
+  /* --- AESTHETICS --- */
+  --glass-blur: 20px;
+  --border-radius: 12px;
+  --border-width: 1px;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --border-color-active: var(--color-primary);
+
+  /* --- ANIMATION --- */
+  --transition-fast: 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  --transition-slow: 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Dark Mode Defaults (Hardcoded for now, can be swapped via class) */
+body {
+  background-color: var(--color-bg-app);
+  color: var(--color-text-main);
+  font-family: "Inter", system-ui, sans-serif;
+}

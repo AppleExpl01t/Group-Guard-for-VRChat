@@ -1,0 +1,36 @@
+.container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background: #030014; /* Deep dark blue matching login screen */
+  color: var(--color-text-main);
+  position: relative;
+}
+
+.main {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.contentWrapper {
+  flex: 1;
+  overflow-y: overlay; /* Chrome specific for overlay scroll */
+  padding: 2rem;
+  padding-top: 4rem; /* More space for Drag Region and potential top bar */
+  padding-bottom: 7rem; /* Space for the Neon Dock at the bottom */
+}
+
+/* Custom Drag Region at top */
+.dragRegion {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  -webkit-app-region: drag;
+  z-index: 100;
+}

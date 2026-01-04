@@ -1,0 +1,308 @@
+// User type from VRChat API
+export interface VRChatUser {
+  id: string;
+  username: string;
+  displayName: string;
+  userIcon: string;
+  bio?: string;
+  currentAvatarImageUrl?: string;
+  currentAvatarThumbnailImageUrl?: string;
+  status?: string;
+  statusDescription?: string;
+  state?: string;
+  tags?: string[];
+  developerType?: string;
+  last_login?: string;
+  last_platform?: string;
+  allowAvatarCopying?: boolean;
+  isFriend?: boolean;
+  friendKey?: string;
+  last_activity?: string;
+  bioLinks?: string[];
+  date_joined?: string;
+  location?: string;
+  profilePicOverride?: string;
+  friendKey?: string;
+  isFriend?: boolean;
+  statusHistory?: string[];
+  ageVerified?: boolean;
+  // Add additional fields as needed
+}
+
+// Group type from VRChat API  
+export interface VRChatGroup {
+  id: string;
+  name: string;
+  shortCode: string;
+  discriminator?: string;
+  description?: string;
+  iconUrl?: string;
+  iconId?: string;
+  bannerUrl?: string;
+  bannerId?: string;
+  privacy?: string;
+  ownerId: string;
+  rules?: string;
+  links?: string[];
+  languages?: string[];
+  memberCount: number;
+  memberCountSyncedAt?: string;
+  isVerified?: boolean;
+  joinState?: string;
+  tags?: string[];
+  galleries?: unknown[];
+  createdAt?: string;
+  onlineMemberCount?: number;
+  membershipStatus?: string;
+  myMember?: unknown;
+}
+
+export interface LoginCredentials {
+  username: string;
+  password: string;
+  rememberMe?: boolean;
+}
+
+export interface LoginResult {
+  success: boolean;
+  user?: VRChatUser;
+  requires2FA?: boolean;
+  twoFactorMethods?: string[];
+  error?: string;
+}
+
+export interface AutoLoginResult {
+  success: boolean;
+  user?: VRChatUser;
+  requires2FA?: boolean;
+  noCredentials?: boolean;
+  error?: string;
+}
+
+export interface SessionResult {
+  isLoggedIn: boolean;
+  user?: VRChatUser;
+}
+
+export interface LogoutOptions {
+  clearSaved?: boolean;
+}
+
+export interface GroupsResult {
+  success: boolean;
+  groups?: VRChatGroup[];
+  error?: string;
+}
+
+export interface AuditLogsResult {
+  success: boolean;
+  logs?: unknown[];
+  error?: string;
+}
+
+export interface GroupMember {
+  id: string; // "gmem_..."
+  groupId: string;
+  userId: string;
+  isRepresenting: boolean;
+  roleIds: string[];
+  mangerNotes?: string;
+  membershipStatus: string; // "member" | "admin" | "owner"
+  visibility: string;
+  joinedAt?: string;
+  bannedAt?: string;
+  user: VRChatUser;
+}
+
+export interface GroupRequest {
+  id: string;
+  user: VRChatUser;
+  groupId: string;
+  userId: string;
+  createdAt: string;
+}
+
+export interface GroupBan {
+  id: string;
+  user: VRChatUser;
+  groupId: string;
+  userId: string;
+  createdAt: string; // or bannedAt
+}
+
+export interface VRChatInstance {
+  id?: string; // Sometimes missing in group instances - use location or instanceId
+  instanceId?: string;
+  name?: string; // Instance number like "86267"
+  displayName?: string; // Group display name
+  location?: string; // Full location string: worldId:instanceId
+  worldId?: string;
+  
+  // User counts
+  n_users?: number;
+  userCount?: number;
+  memberCount?: number;
+  capacity?: number;
+  
+  // Instance properties
+  ownerId?: string;
+  type?: string; // "group", "public", etc.
+  groupAccessType?: string; // "public", "plus", "members" for group instances
+  ageGate?: boolean; // 18+ age verification required
+  region?: string;
+  shortName?: string;
+  
+  // World data (nested from API)
+  world?: {
+      id?: string;
+      name?: string;
+      authorId?: string;
+      authorName?: string;
+      description?: string;
+      capacity?: number;
+      imageUrl?: string;
+      thumbnailImageUrl?: string;
+  };
+
+  // Group data (nested from API)
+  group?: {
+      id?: string;
+      name?: string;
+      shortCode?: string;
+      discriminator?: string;
+  };
+}
+
+// Pipeline WebSocket Event Types
+export type PipelineEventType =
+  // Notification Events
+  | 'notification'
+  | 'notification-v2'
+  | 'notification-v2-update'
+  | 'notification-v2-delete'
+  | 'see-notification'
+  | 'hide-notification'
+  | 'response-notification'
+  | 'clear-notification'
+  // Friend Events
+  | 'friend-add'
+  | 'friend-delete'
+  | 'friend-online'
+  | 'friend-active'
+  | 'friend-offline'
+  | 'friend-update'
+  | 'friend-location'
+  // User Events
+  | 'user-update'
+  | 'user-location'
+  | 'user-badge-assigned'
+  | 'user-badge-unassigned'
+  | 'content-refresh'
+  // Group Events
+  | 'group-joined'
+  | 'group-left'
+  | 'group-member-updated'
+  | 'group-role-updated';
+
+export interface PipelineEvent {
+  type: PipelineEventType;
+  content: Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface ElectronAPI {
+  log: (level: 'info' | 'warn' | 'error', message: string) => void;
+  getVersion: () => string;
+  
+  // Auth API
+  login: (credentials: LoginCredentials) => Promise<LoginResult>;
+  verify2fa: (data: { code: string }) => Promise<LoginResult>;
+  checkSession: () => Promise<SessionResult>;
+  autoLogin: () => Promise<AutoLoginResult>;
+  hasSavedCredentials: () => Promise<boolean>;
+  loadSavedCredentials: () => Promise<{ username: string; password: string; authCookie?: string } | null>;
+  logout: (options?: LogoutOptions) => Promise<{ success: boolean }>;
+  clearCredentials: () => Promise<{ success: boolean }>;
+  
+  // Groups API
+  getMyGroups: () => Promise<GroupsResult>;
+  getGroupDetails: (groupId: string) => Promise<{ success: boolean; group?: VRChatGroup; error?: string }>;
+  getGroupMembers: (groupId: string, offset?: number, n?: number) => Promise<{ success: boolean; members?: GroupMember[]; error?: string }>;
+  getGroupRequests: (groupId: string) => Promise<{ success: boolean; requests?: GroupRequest[]; error?: string }>;
+  getGroupBans: (groupId: string) => Promise<{ success: boolean; bans?: GroupBan[]; error?: string }>;
+  getGroupInstances: (groupId: string) => Promise<{ success: boolean; instances?: VRChatInstance[]; error?: string }>;
+
+
+  
+  // Audit API
+  getGroupAuditLogs: (groupId: string) => Promise<AuditLogsResult>;
+
+  // Worlds API
+  getWorld: (worldId: string) => Promise<{ success: boolean; world?: { id: string; name: string; capacity?: number; imageUrl?: string; authorName?: string }; error?: string }>;
+
+  // User API
+  getUser: (userId: string) => Promise<{ success: boolean; user?: VRChatUser; error?: string }>;
+  clearUserCache: (userId?: string) => Promise<{ success: boolean }>;
+
+  // Pipeline (WebSocket) API for real-time events
+  pipeline: {
+    connect: () => Promise<{ success: boolean; connected: boolean }>;
+    disconnect: () => Promise<{ success: boolean }>;
+    status: () => Promise<{ connected: boolean; connecting: boolean; reconnectAttempts: number }>;
+    reconnect: () => Promise<{ success: boolean }>;
+    
+    // Event listeners - return unsubscribe function
+    onEvent: (callback: (event: PipelineEvent) => void) => () => void;
+    onConnected: (callback: (data: { connected: boolean }) => void) => () => void;
+    onDisconnected: (callback: (data: { code: number; reason: string; willReconnect: boolean }) => void) => () => void;
+    onError: (callback: (data: { message: string }) => void) => () => void;
+  };
+
+  // Log Watcher API for live log events
+  logWatcher: {
+    start: () => Promise<{ success: boolean }>;
+    stop: () => Promise<{ success: boolean }>;
+    onPlayerJoined: (callback: (event: { displayName: string; userId?: string; timestamp: string }) => void) => () => void;
+    onPlayerLeft: (callback: (event: { displayName: string; userId?: string; timestamp: string }) => void) => () => void;
+    onLocation: (callback: (event: { worldId: string; timestamp: string }) => void) => () => void;
+    onWorldName: (callback: (event: { name: string; timestamp: string }) => void) => () => void;
+  };
+
+  // Database API for local logging
+  database: {
+      getSessions: (groupId?: string) => Promise<any[]>;
+      getSessionEvents: (filename: string) => Promise<any[]>;
+      clearSessions: () => Promise<boolean>;
+  };
+
+  // Storage API
+  storage: {
+      getStatus: () => Promise<{ configured: boolean; path: string; defaultPath: string }>;
+      selectFolder: () => Promise<string | null>;
+      setPath: (path: string) => Promise<boolean>;
+  };
+
+  // Instance Presence API
+  instance: {
+      getCurrentGroup: () => Promise<string | null>;
+      onGroupChanged: (callback: (groupId: string | null) => void) => () => void;
+  };
+
+  // Updater API
+  updater: {
+      onUpdateAvailable: (callback: () => void) => () => void;
+      onUpdateDownloaded: (callback: () => void) => () => void;
+      quitAndInstall: () => void;
+  };
+
+  // Window Controls
+  minimize: () => void;
+  maximize: () => void;
+  close: () => void;
+}
+
+declare global {
+  interface Window {
+    electron: ElectronAPI;
+  }
+}
