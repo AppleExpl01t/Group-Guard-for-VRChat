@@ -19,6 +19,8 @@ const DashboardView = lazy(() => import('./features/dashboard/DashboardView').th
 const GroupSelectionView = lazy(() => import('./features/groups/GroupSelectionView').then(m => ({ default: m.GroupSelectionView })));
 const SettingsView = lazy(() => import('./features/settings/SettingsView').then(m => ({ default: m.SettingsView })));
 const DatabaseView = lazy(() => import('./features/database/DatabaseView').then(m => ({ default: m.DatabaseView })));
+const AutoModView = lazy(() => import('./features/automod/AutoModView').then(m => ({ default: m.AutoModView })));
+const LiveView = lazy(() => import('./features/live/LiveView').then(m => ({ default: m.LiveView })));
 
 // Simple loading fallback
 const ViewLoader = () => (
@@ -80,6 +82,7 @@ function App() {
   const [currentView, setCurrentView] = useState<DockView>('main');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const [isLiveMode, setIsLiveMode] = useState(false); // Track if VRC is running basically
 
   // Initialize Pipeline WebSocket connection and event subscriptions
   usePipelineInit();
@@ -109,6 +112,40 @@ function App() {
       return unsubscribe;
     }
   }, []);
+
+  // Monitor Live Log state to toggle Live Mode UI
+  useEffect(() => {
+    // 1. Initial check
+    const checkStatus = async () => {
+        if (!selectedGroup) {
+            setIsLiveMode(false);
+            return;
+        }
+        
+        try {
+            const currentInstanceGroupId = await window.electron.instance.getCurrentGroup();
+            setIsLiveMode(currentInstanceGroupId === selectedGroup.id);
+        } catch (e) {
+            console.error("Failed to check live status:", e);
+        }
+    };
+    checkStatus();
+
+    // 2. Listen for changes
+    if (!window.electron?.instance?.onGroupChanged) return;
+
+    const unsubscribe = window.electron.instance.onGroupChanged((groupId) => {
+        if (!selectedGroup) {
+            setIsLiveMode(false);
+        } else {
+            setIsLiveMode(groupId === selectedGroup.id);
+        }
+    });
+
+    return () => {
+        unsubscribe();
+    };
+  }, [selectedGroup]);
 
   // Check storage configuration first
   useEffect(() => {
@@ -162,7 +199,7 @@ function App() {
 
   // Handle View Switching - memoized to prevent re-renders
   const handleViewChange = useCallback((view: DockView) => {
-    if ((view === 'moderation' || view === 'audit' || view === 'database') && !selectedGroup) {
+    if ((view === 'moderation' || view === 'audit' || view === 'database' || view === 'live') && !selectedGroup) {
       // If trying to access group features without a group, go to group selection
       selectGroup(null);
       setCurrentView('main');
@@ -177,12 +214,9 @@ function App() {
       case 'settings':
         return <SettingsView />;
       case 'moderation':
-        return (
-            <GlassPanel style={{ padding: '2rem', textAlign: 'center' }}>
-                <h2>Moderation Module</h2>
-                <p style={{ color: 'var(--color-text-dim)' }}>Coming Soon</p>
-            </GlassPanel>
-        );
+        return <AutoModView />;
+      case 'live':
+        return <LiveView />;
       case 'audit':
         return (
             <GlassPanel style={{ padding: '2rem', textAlign: 'center' }}>
@@ -470,6 +504,7 @@ function App() {
             selectGroup(null);
             setCurrentView('main');
         }}
+        isLiveMode={isLiveMode}
       />
       
       {/* Logout Confirmation Modal */}

@@ -1,12 +1,13 @@
 import React, { memo } from 'react';
 
-export type DockView = 'main' | 'moderation' | 'audit' | 'database' | 'settings';
+export type DockView = 'main' | 'moderation' | 'audit' | 'database' | 'settings' | 'live';
 
 interface NeonDockProps {
   currentView: DockView;
   onViewChange: (view: DockView) => void;
   selectedGroup?: { name: string } | null;
   onGroupClick?: () => void;
+  isLiveMode?: boolean;
 }
 
 // Memoized dock item to prevent re-renders
@@ -100,7 +101,8 @@ export const NeonDock: React.FC<NeonDockProps> = memo(({
   currentView, 
   onViewChange, 
   selectedGroup,
-  onGroupClick 
+  onGroupClick,
+  isLiveMode = false
 }) => {
   return (
     <div style={{
@@ -151,7 +153,7 @@ export const NeonDock: React.FC<NeonDockProps> = memo(({
             display: 'flex', 
             alignItems: 'center', 
             overflow: 'hidden',
-            maxWidth: selectedGroup ? '600px' : '0px',
+            maxWidth: selectedGroup ? '800px' : '0px',
             opacity: selectedGroup ? 1 : 0,
             transition: 'max-width 0.25s ease-out, opacity 0.2s ease',
           }}
@@ -173,6 +175,28 @@ export const NeonDock: React.FC<NeonDockProps> = memo(({
                 </svg>
               }
             />
+
+            {/* LIVE OPS TAB - Only visible when Active */}
+            <div style={{ 
+                maxWidth: isLiveMode ? '100px' : '0px', 
+                overflow: 'hidden', 
+                opacity: isLiveMode ? 1 : 0,
+                transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+            }}>
+                <DockItem 
+                  label="LIVE OPS"
+                  isActive={currentView === 'live'}
+                  onClick={() => onViewChange('live')}
+                  color="#ef4444" // Red for alert/action
+                  icon={
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="8" x2="12" y2="12"></line>
+                      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                  }
+                />
+            </div>
 
             <DockItem 
               label="Auto-Mod"

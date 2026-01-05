@@ -95,6 +95,12 @@ import { contextBridge, ipcRenderer } from 'electron';
          getSessions: (groupId?: string) => ipcRenderer.invoke('database:get-sessions', groupId),
          getSessionEvents: (filename: string) => ipcRenderer.invoke('database:get-session-events', filename),
          clearSessions: () => ipcRenderer.invoke('database:clear-sessions'),
+         rallyFromSession: (filename: string) => ipcRenderer.invoke('instance:rally-from-session', { filename }),
+         onRallyProgress: (callback: (data: { sent: number; failed: number; total: number; done?: boolean }) => void) => {
+             const handler = (_event: Electron.IpcRendererEvent, data: { sent: number; failed: number; total: number; done?: boolean }) => callback(data);
+             ipcRenderer.on('rally:progress', handler);
+             return () => ipcRenderer.removeListener('rally:progress', handler);
+         },
      },
      
      // Window Controls
@@ -116,6 +122,20 @@ import { contextBridge, ipcRenderer } from 'electron';
              const handler = (_event: Electron.IpcRendererEvent, groupId: string | null) => callback(groupId);
              ipcRenderer.on('instance:group-changed', handler);
              return () => ipcRenderer.removeListener('instance:group-changed', handler);
+         },
+         // NEW LIVE OPS API
+         scanSector: (groupId: string) => ipcRenderer.invoke('instance:scan-sector', { groupId }),
+         recruitUser: (groupId: string, userId: string) => ipcRenderer.invoke('instance:recruit-user', { groupId, userId }),
+         kickUser: (groupId: string, userId: string) => ipcRenderer.invoke('instance:kick-user', { groupId, userId }),
+         // rallyForces: (groupId: string) => ipcRenderer.invoke('instance:rally-forces', { groupId }), // Deprecated but keeping for safety if needed
+         getRallyTargets: (groupId: string) => ipcRenderer.invoke('instance:get-rally-targets', { groupId }),
+         inviteToCurrent: (userId: string) => ipcRenderer.invoke('instance:invite-to-current', { userId }),
+         closeInstance: () => ipcRenderer.invoke('instance:close-instance'),
+         getInstanceInfo: () => ipcRenderer.invoke('instance:get-instance-info'),
+         onEntityUpdate: (callback: (entity: any) => void) => {
+             const handler = (_event: Electron.IpcRendererEvent, entity: any) => callback(entity);
+             ipcRenderer.on('instance:entity-update', handler);
+             return () => ipcRenderer.removeListener('instance:entity-update', handler);
          }
      },
 
@@ -133,6 +153,14 @@ import { contextBridge, ipcRenderer } from 'electron';
          },
          quitAndInstall: () => ipcRenderer.invoke('updater:quit-and-install'),
          checkStatus: () => ipcRenderer.invoke('updater:check-status')
+     },
+     
+     // AutoMod API
+     automod: {
+         getRules: () => ipcRenderer.invoke('automod:get-rules'),
+         saveRule: (rule: unknown) => ipcRenderer.invoke('automod:save-rule', rule),
+         deleteRule: (ruleId: number) => ipcRenderer.invoke('automod:delete-rule', ruleId),
+         checkUser: (user: unknown) => ipcRenderer.invoke('automod:check-user', user),
      }
  });
 

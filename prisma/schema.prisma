@@ -5,7 +5,7 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = "file:dev.db"
 }
 
 // Represents a VRChat User (cached locally)
@@ -19,6 +19,7 @@ model User {
   
   moderationLogs   ModerationLog[] @relation("TargetUser")
   actionsPerformed ModerationLog[] @relation("Moderator")
+  infractions      Infraction[]    @relation("InfractionTarget")
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -96,4 +97,35 @@ model InstanceEvent {
   details         String?  // JSON or text details (e.g. avatar ID)
   
   session         InstanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+// ============================================
+// AUTO MODERATION & INFRACTIONS
+// ============================================
+
+model Infraction {
+  id          Int      @id @default(autoincrement())
+  targetId    String   // User receiving the infraction
+  issuerId    String   // User/System issuing it
+  type        String   // WARNING, NOTE, BAN_EVASION
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  target      User     @relation("InfractionTarget", fields: [targetId], references: [id])
+}
+
+model AutoModRule {
+  id          Int      @id @default(autoincrement())
+  name        String
+  enabled     Boolean  @default(true)
+  
+  // Rule Logic
+  type        String   // AGE_CHECK, TRUST_CHECK, KEYWORD_BLOCK, WHITELIST_CHECK, BAN_EVASION_CHECK
+  config      String   // JSON string storing specific config
+  
+  // Action to take if rule matches
+  actionType  String   // REJECT, AUTO_BLOCK, NOTIFY_ONLY
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

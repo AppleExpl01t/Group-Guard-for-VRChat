@@ -210,6 +210,16 @@ export interface PipelineEvent {
   timestamp: string;
 }
 
+export interface AutoModRule {
+    id: number;
+    name: string;
+    enabled: boolean;
+    type: 'AGE_CHECK' | 'TRUST_CHECK' | 'KEYWORD_BLOCK' | 'WHITELIST_CHECK' | 'BAN_EVASION_CHECK';
+    config: string;
+    actionType: 'REJECT' | 'AUTO_BLOCK' | 'NOTIFY_ONLY';
+    createdAt?: string;
+}
+
 export interface ElectronAPI {
   log: (level: 'info' | 'warn' | 'error', message: string) => void;
   getVersion: () => string;
@@ -273,6 +283,15 @@ export interface ElectronAPI {
       getSessions: (groupId?: string) => Promise<unknown[]>;
       getSessionEvents: (filename: string) => Promise<unknown[]>;
       clearSessions: () => Promise<boolean>;
+      rallyFromSession: (filename: string) => Promise<{
+          success: boolean;
+          invited?: number;
+          failed?: number;
+          total?: number;
+          error?: string;
+          errors?: string[];
+      }>;
+      onRallyProgress: (callback: (data: { sent: number; failed: number; total: number; done?: boolean }) => void) => () => void;
   };
 
   // Storage API
@@ -284,6 +303,17 @@ export interface ElectronAPI {
 
   // Instance Presence API
   instance: {
+      // NEW LIVE OPS API
+      scanSector: (groupId: string) => Promise<any[]>;
+      recruitUser: (groupId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
+      kickUser: (groupId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
+      // rallyForces: (groupId: string) => Promise<{ success: boolean; count?: number; error?: string }>;
+      getRallyTargets: (groupId: string) => Promise<{ success: boolean; targets?: any[]; error?: string }>;
+      inviteToCurrent: (userId: string) => Promise<{ success: boolean; error?: string }>;
+      closeInstance: () => Promise<{ success: boolean; error?: string }>;
+      getInstanceInfo: () => Promise<{ success: boolean; worldId?: string; instanceId?: string; name?: string; imageUrl?: string; error?: string }>;
+      onEntityUpdate: (callback: (entity: any) => void) => () => void;
+      
       getCurrentGroup: () => Promise<string | null>;
       onGroupChanged: (callback: (groupId: string | null) => void) => () => void;
   };
@@ -300,6 +330,14 @@ export interface ElectronAPI {
   minimize: () => void;
   maximize: () => void;
   close: () => void;
+
+  // AutoMod API
+  automod: {
+      getRules: () => Promise<AutoModRule[]>;
+      saveRule: (rule: AutoModRule) => Promise<AutoModRule>;
+      deleteRule: (ruleId: number) => Promise<boolean>;
+      checkUser: (user: any) => Promise<{ action: 'ALLOW' | 'REJECT' | 'AUTO_BLOCK' | 'NOTIFY_ONLY'; reason?: string; ruleName?: string }>;
+  };
 }
 
 declare global {

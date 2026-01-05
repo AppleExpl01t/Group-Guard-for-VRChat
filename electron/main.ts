@@ -128,6 +128,8 @@ import { setupUserHandlers } from './services/UserService';
 import { setupCredentialsHandlers } from './services/CredentialsService';
 import { setupPipelineHandlers } from './services/PipelineService';
 import { setupLogWatcherHandlers } from './services/LogWatcherService';
+import { setupAutoModHandlers } from './services/AutoModService';
+import { setupInstanceHandlers } from './services/InstanceService';
 
 import { storageService } from './services/StorageService';
 
@@ -158,6 +160,8 @@ setupUserHandlers();
 setupCredentialsHandlers();
 setupPipelineHandlers();
 setupLogWatcherHandlers();
+setupAutoModHandlers();
+setupInstanceHandlers();
 
 // Import to initialize (singleton)
 import './services/InstanceLoggerService';

@@ -47,6 +47,7 @@
     "electron-updater": "^6.6.2",
     "framer-motion": "^12.23.26",
     "keyv-file": "^5.3.3",
+    "lucide-react": "^0.562.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tailwind-merge": "^3.4.0",

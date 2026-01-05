@@ -23,6 +23,15 @@ interface InstanceEvent {
     details?: unknown;
 }
 
+// CSS for progress animation
+const progressStyles = `
+@keyframes progressPulse {
+    0% { width: 10%; margin-left: 0%; }
+    50% { width: 40%; margin-left: 30%; }
+    100% { width: 10%; margin-left: 90%; }
+}
+`;
+
 export const DatabaseView: React.FC = () => {
     const { selectedGroup } = useGroupStore();
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -38,6 +47,24 @@ export const DatabaseView: React.FC = () => {
 
     // Modal state
     const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
+
+    // Rally state
+    const [isRallyConfirmOpen, setIsRallyConfirmOpen] = useState(false);
+    const [isRallying, setIsRallying] = useState(false);
+    const [rallyResult, setRallyResult] = useState<{ invited?: number; failed?: number; total?: number; error?: string; errors?: string[] } | null>(null);
+    const [rallyProgress, setRallyProgress] = useState<{ sent: number; failed: number; total: number } | null>(null);
+
+    // Subscribe to rally progress updates
+    useEffect(() => {
+        const unsubscribe = window.electron.database.onRallyProgress((data) => {
+            if (data.done) {
+                setRallyProgress(null); // Clear progress on completion
+            } else {
+                setRallyProgress({ sent: data.sent, failed: data.failed, total: data.total });
+            }
+        });
+        return () => unsubscribe();
+    }, []);
 
     const loadSessions = useCallback(async () => {
         setIsLoading(true);
@@ -138,7 +165,34 @@ export const DatabaseView: React.FC = () => {
         setIsClearConfirmOpen(false);
     };
 
+    const handleRallySession = () => {
+        if (!selectedSession) return;
+        setRallyResult(null);
+        setIsRallyConfirmOpen(true);
+    };
+
+    const confirmRally = async () => {
+        if (!selectedSession) return;
+        
+        // Close modal immediately and start rally
+        setIsRallyConfirmOpen(false);
+        setIsRallying(true);
+        setRallyResult(null);
+        
+        try {
+            const result = await window.electron.database.rallyFromSession(selectedSession.filename);
+            setRallyResult(result);
+        } catch (error: unknown) {
+            const err = error as { message?: string };
+            setRallyResult({ error: err.message || 'Unknown error' });
+        } finally {
+            setIsRallying(false);
+        }
+    };
+
     return (
+        <>
+        <style>{progressStyles}</style>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) 2fr', gap: '1.5rem', height: '100%', paddingBottom: '100px' }}>
             
             {/* Left Column: Session List */}
@@ -234,6 +288,91 @@ export const DatabaseView: React.FC = () => {
                                          </NeonButton>
                                      )}
                                  </div>
+                             </div>
+                             
+                             {/* Rally Button */}
+                             <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                 <NeonButton 
+                                     size="sm" 
+                                     variant="primary"
+                                     onClick={handleRallySession}
+                                     disabled={isRallying}
+                                     glow
+                                 >
+                                     {isRallying ? '📡 Sending Invites...' : '📣 Rally Users Here'}
+                                 </NeonButton>
+                                 
+                                 {/* Progress/Result Display */}
+                                 {isRallying && rallyProgress ? (
+                                     <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                         <div style={{ 
+                                             flex: 1, 
+                                             height: '8px', 
+                                             background: 'rgba(255,255,255,0.1)', 
+                                             borderRadius: '4px',
+                                             overflow: 'hidden'
+                                         }}>
+                                             <div style={{ 
+                                                 width: `${Math.round((rallyProgress.sent / rallyProgress.total) * 100)}%`, 
+                                                 height: '100%', 
+                                                 background: rallyProgress.failed > 0 
+                                                     ? 'linear-gradient(90deg, var(--color-primary), #f59e0b)' 
+                                                     : 'var(--color-primary)',
+                                                 borderRadius: '4px',
+                                                 transition: 'width 0.3s ease'
+                                             }} />
+                                         </div>
+                                         <span style={{ 
+                                             fontSize: '0.85rem', 
+                                             color: 'white', 
+                                             fontWeight: 600,
+                                             fontFamily: 'monospace',
+                                             minWidth: '80px'
+                                         }}>
+                                             ✓ {rallyProgress.sent}/{rallyProgress.total}
+                                             {rallyProgress.failed > 0 && <span style={{ color: '#f59e0b' }}> ({rallyProgress.failed} ✗)</span>}
+                                         </span>
+                                     </div>
+                                 ) : isRallying ? (
+                                     <span style={{ fontSize: '0.8rem', color: 'var(--color-text-dim)' }}>
+                                         Preparing invites...
+                                     </span>
+                                 ) : rallyResult ? (
+                                     <div style={{ 
+                                         fontSize: '0.85rem',
+                                         padding: '4px 10px',
+                                         borderRadius: '6px',
+                                         background: rallyResult.error ? 'rgba(239, 68, 68, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+                                         color: rallyResult.error ? '#ef4444' : '#22c55e',
+                                         display: 'flex',
+                                         alignItems: 'center',
+                                         gap: '0.5rem'
+                                     }}>
+                                         {rallyResult.error ? (
+                                             <>❌ {rallyResult.error}</>
+                                         ) : (
+                                             <>✓ Sent {rallyResult.invited} invite{rallyResult.invited !== 1 ? 's' : ''}</>
+                                         )}
+                                         <button 
+                                             onClick={() => setRallyResult(null)}
+                                             style={{ 
+                                                 background: 'none', 
+                                                 border: 'none', 
+                                                 color: 'inherit', 
+                                                 cursor: 'pointer',
+                                                 fontSize: '1rem',
+                                                 lineHeight: 1,
+                                                 opacity: 0.6
+                                             }}
+                                         >
+                                             ×
+                                         </button>
+                                     </div>
+                                 ) : (
+                                     <span style={{ fontSize: '0.8rem', color: 'var(--color-text-dim)' }}>
+                                         Invite all users from this session
+                                     </span>
+                                 )}
                              </div>
                          </GlassPanel>
                          
@@ -354,7 +493,71 @@ export const DatabaseView: React.FC = () => {
                     </span>
                 </div>
             </Modal>
+
+            {/* Rally Confirmation Modal */}
+            <Modal
+                isOpen={isRallyConfirmOpen}
+                onClose={() => { setIsRallyConfirmOpen(false); setRallyResult(null); }}
+                title="📣 Rally Previous Session"
+                width="450px"
+                footer={
+                    <>
+                        <NeonButton 
+                            variant="ghost" 
+                            onClick={() => { setIsRallyConfirmOpen(false); setRallyResult(null); }}
+                        >
+                            {rallyResult ? 'Close' : 'Cancel'}
+                        </NeonButton>
+                        {!rallyResult && (
+                            <NeonButton 
+                                variant="primary" 
+                                onClick={confirmRally}
+                                disabled={isRallying}
+                                glow
+                            >
+                                {isRallying ? 'Sending Invites...' : 'Send Invites'}
+                            </NeonButton>
+                        )}
+                    </>
+                }
+            >
+                <div style={{ color: 'var(--color-text-secondary)', lineHeight: '1.6' }}>
+                    {!rallyResult ? (
+                        <>
+                            <p style={{ margin: 0 }}>
+                                This will invite all users from <strong>{selectedSession?.worldName || 'this session'}</strong> to your current instance.
+                            </p>
+                            <br />
+                            <span style={{ fontSize: '0.9rem', color: 'var(--color-text-dim)' }}>
+                                Users already in your instance will be skipped. Invites are rate-limited to avoid VRChat throttling.
+                            </span>
+                        </>
+                    ) : rallyResult.error ? (
+                        <div style={{ color: '#ef4444' }}>
+                            <strong>Error:</strong> {rallyResult.error}
+                        </div>
+                    ) : (
+                        <div>
+                            <div style={{ color: '#22c55e', fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.5rem' }}>
+                                ✓ Rally Complete!
+                            </div>
+                            <p style={{ margin: 0 }}>
+                                Sent <strong>{rallyResult.invited}</strong> invite{rallyResult.invited !== 1 ? 's' : ''} 
+                                {rallyResult.failed && rallyResult.failed > 0 && (
+                                    <span style={{ color: '#f59e0b' }}> ({rallyResult.failed} failed)</span>
+                                )}
+                            </p>
+                            {rallyResult.errors && rallyResult.errors.length > 0 && (
+                                <div style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#f59e0b' }}>
+                                    {rallyResult.errors.join(', ')}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </Modal>
         </div>
+        </>
     );
 };
 

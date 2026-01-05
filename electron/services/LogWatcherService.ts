@@ -34,6 +34,7 @@ export interface LocationEvent {
 interface WatcherState {
   currentWorldId: string | null;
   currentWorldName: string | null;
+  currentLocation: string | null; // Full location string for proper tracking
   players: Map<string, PlayerJoinedEvent>; // keyed by displayName
 }
 
@@ -51,6 +52,7 @@ class LogWatcherService extends EventEmitter {
   private state: WatcherState = {
     currentWorldId: null,
     currentWorldName: null,
+    currentLocation: null,
     players: new Map()
   };
 
@@ -140,7 +142,7 @@ class LogWatcherService extends EventEmitter {
           // Always read from 0 on new file detection to build state
           this.currentFileSize = 0; 
           // Reset state for new log (new session)
-          this.state = { currentWorldId: null, currentWorldName: null, players: new Map() };
+          this.state = { currentWorldId: null, currentWorldName: null, currentLocation: null, players: new Map() };
         }
       }
     } catch (error) {
@@ -193,14 +195,14 @@ class LogWatcherService extends EventEmitter {
     const reJoining = /Joining\s+(wrld_[a-zA-Z0-9-]+):([^\s]+)/;
 
     // 2. Player Joined: "OnPlayerJoined Name (usr_...)" - handles prefixes
-    const rePlayerJoined = /OnPlayerJoined\s+(?:\[[^\]]+\]\s*)?([^\r\n(]+?)\s*\((usr_[a-f0-9\-]{36})\)/;
+    const rePlayerJoined = /OnPlayerJoined\s+(?:\[[^\]]+\]\s*)?([^\r\n(]+?)\s*\((usr_[a-f0-9-]{36})\)/;
     // 3. Player Left: "OnPlayerLeft Name (usr_...)"
-    const rePlayerLeft = /OnPlayerLeft\s+([^\r\n(]+?)\s*\((usr_[a-f0-9\-]{36})\)/;
+    const rePlayerLeft = /OnPlayerLeft\s+([^\r\n(]+?)\s*\((usr_[a-f0-9-]{36})\)/;
     // 4. Entering Room (World Name) - usually has [Behaviour]
     const reEntering = /\[Behaviour\] Entering Room: (.+)/;
 
     // 5. Avatar Change
-    const reAvatar = /\[Avatar\] Loading Avatar:\s+(avtr_[a-f0-9\-]{36})/;
+    const reAvatar = /\[Avatar\] Loading Avatar:\s+(avtr_[a-f0-9-]{36})/;
 
     // ...
 
@@ -209,17 +211,27 @@ class LogWatcherService extends EventEmitter {
     if (joinMatch) {
          const worldId = joinMatch[1];
         const fullInstanceString = joinMatch[2]; // Includes tags like 12345~group(...)
-        // Clean instance ID (before ~)
-        const instanceId = fullInstanceString.split('~')[0];
+        // IMPORTANT: Use the FULL instance string for API calls (includes ~group, ~region, etc.)
+        // The API needs this to identify group instances for permissions
+        const instanceId = fullInstanceString; // Keep the full string!
         const location = `${worldId}:${fullInstanceString}`;
         
         log.info(`[LogWatcher] MATCH Joining: ${location}`);
         
-        // Always emit change if location is different OR if first load
-        if (this.state.currentWorldId !== worldId) { // Basic check remains
-            this.state.players.clear();
+        // CRITICAL: Check if FULL LOCATION changed (not just worldId!)
+        // This ensures we track instance changes even within the same world
+        if (this.state.currentLocation !== location) {
+            log.info(`[LogWatcher] Location CHANGED from ${this.state.currentLocation} to ${location}`);
+            
+            // Clear players only if world changed (same world, different instance = keep players briefly)
+            if (this.state.currentWorldId !== worldId) {
+                this.state.players.clear();
+            }
+            
             this.state.currentWorldId = worldId;
-            // Emit full location info
+            this.state.currentLocation = location;
+            
+            // Emit full location info - instanceId now includes all tags
             this.emitToRenderer('log:location', { worldId, instanceId, location, timestamp });
             this.emit('location', { worldId, instanceId, location, timestamp });
         }
@@ -279,6 +291,9 @@ class LogWatcherService extends EventEmitter {
         win.webContents.send(channel, data);
       }
     }
+  }
+  public getPlayers(): PlayerJoinedEvent[] {
+      return Array.from(this.state.players.values());
   }
 }
 
