@@ -256,71 +256,37 @@ async function performLogin(username: string, password: string, twoFactorCode?: 
     logger.info('Attempting VRChat login...');
     logger.debug(`performLogin called for user ${username}`);
 
-    // Create a fresh VRChat client instance
-    let client = vrchatClient;
+    // Create VRChat client with automatic authentication (SDK v2+ pattern)
+    // The SDK will authenticate automatically when credentials are provided in the constructor
+    const clientOptions = {
+      baseUrl: VRCHAT_API_BASE,
+      application: APP_INFO,
+      // Use Keyv for persistent session storage (cookies persist across restarts!)
+      keyv: getSessionStore(),
+      authentication: {
+        credentials: {
+          username,
+          password,
+          twoFactorCode: twoFactorCode || undefined
+        },
+        // Don't authenticate immediately, we'll call getCurrentUser to trigger it
+        optimistic: false
+      }
+    };
     
-    // Create new client if needed
-    if (!client || !twoFactorCode) {
-         const clientOptions = {
-            baseUrl: VRCHAT_API_BASE,
-            application: APP_INFO,
-            // Use Keyv for persistent session storage (cookies persist across restarts!)
-            keyv: getSessionStore()
-         };
-         
-         logger.info('Creating VRChat client with persistent session store for login...');
-         client = new VRChat(clientOptions);
-    }
+    logger.info('Creating VRChat client with automatic authentication...');
+    const client = new VRChat(clientOptions);
 
-    logger.info('VRChat client created (or reused), attempting login...');
+    logger.info('Fetching current user to trigger authentication...');
     
-    // Attempt login - the SDK's login method handles the authentication flow
+    // Attempt to get current user - this triggers authentication with the SDK
     try {
-      // If we have a cookie, we might strictly speaking purely verify credentials, 
-      // but calling login ensure we get the user object and refresh session.
-      // If the cookie is valid, login() should succeed without 2FA even if 2FA is enabled.
+      const response = await client.getCurrentUser({ throwOnError: true });
       
-      const user = await client.login({ username, password, twoFactorCode });
+      logger.debug('Authentication successful. Processing user data...');
       
-      // ... User validation logic ...
-      
-      logger.debug('Login successful. Inspecting client for cookies...');
-      
-      // Extract and save new auth cookie
-      const newAuthCookie = extractAuthCookie(client);
-      if (newAuthCookie) {
-         // Update the current credentials with the new cookie
-         if (pendingLoginCredentials) {
-            pendingLoginCredentials.authCookie = newAuthCookie;
-         } else {
-             // If manual login, we will save it in the auth:login handler
-             // If auto-login, we should update the store
-             // We can return it in the result or update global state? 
-             // Best to just update the storage directly if we know who we are?
-             // Actually, saveCredentials handles it.
-         }
-      }
-      
-      // ... (validation logic continues from previous file content)
-
-      
-      // Check if we got a valid user object
-      let validUser: Record<string, unknown> = user;
-      
-      // ... (rest of validation) - REMOVED
-      
-      // Handle case where user is wrapped in data property
-      // @ts-expect-error - Checking for data wrapper
-      if (!validUser.id && validUser.data && validUser.data.id) {
-         // @ts-expect-error - Unwrap data
-         validUser = validUser.data;
-      }
-      
-      // Check if it's an error response
-      if (validUser.error) {
-        // @ts-expect-error - Accessing error message
-        throw new Error(validUser.error.message || 'Login returned an error');
-      }
+      // Extract user from response
+      let validUser: Record<string, unknown> = response.data || response;
       
       // Validate we have an ID
       if (!validUser || !validUser.id) {
@@ -332,6 +298,10 @@ async function performLogin(username: string, password: string, twoFactorCode?: 
       if (validUser.id && typeof validUser.id === 'string') {
           validUser.id = validUser.id.trim();
       }
+      
+      // Extract and save auth cookie
+      const newAuthCookie = extractAuthCookie(client);
+      
       vrchatClient = client;
       currentUser = validUser;
       
@@ -339,77 +309,80 @@ async function performLogin(username: string, password: string, twoFactorCode?: 
       const displayName = validUser.displayName as string;
       
       logger.info(`User logged in successfully: ${displayName} (${userId})`);
-      logger.debug('Login successful', { id: userId, name: displayName });
-      
-      logger.info(`Global vrchatClient set: ${!!vrchatClient}`);
 
       // Connect to Pipeline WebSocket for real-time events
       onUserLoggedIn();
 
       return { success: true, user: currentUser, authCookie: newAuthCookie };
       
-    } catch (loginError: unknown) {
-      // Check if this is a 2FA requirement
-      const err = loginError as { message?: string; stack?: string; twoFactorMethods?: string[]; code?: string };
+    } catch (authError: unknown) {
+      // Handle authentication errors from getCurrentUser
+      const err = authError as { 
+        message?: string; 
+        stack?: string; 
+        statusCode?: number;
+        response?: { status?: number; data?: { error?: { message?: string } } };
+        error?: { message?: string; requiresTwoFactorAuth?: string[] };
+      };
       
-      const errorMsg = err?.message || 'Unknown login error';
-      // Ensure errorMsg is a string before using string methods
+      const errorMsg = err?.message || 'Unknown authentication error';
       const errorMsgSafe = typeof errorMsg === 'string' ? errorMsg : String(errorMsg);
       const errorMsgLower = errorMsgSafe.toLowerCase();
       
-      logger.info('Login error details:', {
+      logger.info('Authentication error details:', {
         message: errorMsgSafe,
-        twoFactorMethods: err?.twoFactorMethods,
-        code: err?.code
+        statusCode: err?.statusCode,
+        error: err?.error
       });
       
-      // The SDK throws with twoFactorMethods array when 2FA is required
-      if (err?.twoFactorMethods && Array.isArray(err.twoFactorMethods) && err.twoFactorMethods.length > 0) {
-        logger.info('2FA required, methods:', err.twoFactorMethods);
-        logger.debug('2FA required');
+      // Check if 2FA is required
+      const requires2FA = err?.error?.requiresTwoFactorAuth;
+      if (requires2FA && Array.isArray(requires2FA) && requires2FA.length > 0) {
+        logger.info('2FA required, methods:', requires2FA);
         
-        // Store credentials and client for 2FA verification
+        // Store client for 2FA verification
         vrchatClient = client;
         
         return { 
           success: false, 
           requires2FA: true,
-          twoFactorMethods: err.twoFactorMethods
+          twoFactorMethods: requires2FA
         };
       }
       
-      // WORKAROUND: If the library crashes with "Cannot read properties of undefined (reading 'includes')",
-      // it is often due to a bug in handling the 2FA response (missing headers/cookies handling).
-      // We assume this means 2FA is required if we haven't sent a code yet.
-      if (errorMsgSafe.includes("Cannot read properties of undefined (reading 'includes')")) {
-        logger.warn("Caught library crash compatible with 2FA response bug. Assuming 2FA required.");
-        logger.debug("Stack trace:", err?.stack);
-        
-        vrchatClient = client;
-        return { success: false, requires2FA: true };
+      // Check for 401 Unauthorized - invalid credentials
+      if (err?.statusCode === 401 || err?.response?.status === 401) {
+        logger.warn('Authentication failed: Invalid credentials (401)');
+        return { 
+          success: false, 
+          error: 'Invalid username or password. Please check your credentials and try again.' 
+        };
       }
-
-      // Check for common 2FA indicators in error message
+      
+      // Check for 2FA text indicators in error message
       if (
         errorMsgLower.includes('two-factor') ||
         errorMsgLower.includes('2fa') ||
-        errorMsgSafe.includes('TOTP') ||
-        errorMsgSafe.includes('emailotp') ||
         errorMsgLower.includes('totp') ||
+        errorMsgLower.includes('emailotp') ||
         errorMsgLower.includes('otp')
       ) {
         vrchatClient = client;
-        logger.debug('2FA required (text check)');
+        logger.info('2FA required (detected from error message)');
         return { success: false, requires2FA: true };
       }
       
-      
       // Re-throw for general error handling
-      throw loginError;
+      throw authError;
     }
 
   } catch (error: unknown) {
-    const err = error as { message?: string; stack?: string; response?: { data?: { error?: { message?: string } } } };
+    const err = error as { 
+      message?: string; 
+      stack?: string; 
+      statusCode?: number;
+      response?: { status?: number; data?: { error?: { message?: string } } };
+    };
     logger.error('Login Failed (Outer Catch):', error);
     if (err && err.stack) {
         logger.error('Stack Trace:', err.stack);
@@ -428,8 +401,30 @@ async function performLogin(username: string, password: string, twoFactorCode?: 
         errorMessage = String(errorMessage);
     }
     
-    // Append stack trace for debugging if available
-    if (err?.stack) {
+    // Check for common authentication/credential errors and provide user-friendly messages
+    const errorMsgLower = errorMessage.toLowerCase();
+    if (
+      errorMessage.includes("Cannot read properties of undefined (reading 'Symbol(authenticate)')") ||
+      errorMsgLower.includes('invalid credentials') ||
+      errorMsgLower.includes('incorrect password') ||
+      errorMsgLower.includes('authentication failed') ||
+      errorMsgLower.includes('unauthorized')
+    ) {
+      return { success: false, error: 'Invalid username or password. Please check your credentials and try again.' };
+    }
+    
+    // Check for network/connection errors
+    if (
+      errorMsgLower.includes('network') ||
+      errorMsgLower.includes('econnrefused') ||
+      errorMsgLower.includes('timeout') ||
+      errorMsgLower.includes('fetch failed')
+    ) {
+      return { success: false, error: 'Unable to connect to VRChat servers. Please check your internet connection and try again.' };
+    }
+    
+    // For development/debugging, include stack trace; for users, show clean error
+    if (process.env.NODE_ENV === 'development' && err?.stack) {
         errorMessage += `\n\nStack:\n${err.stack}`;
     }
     
