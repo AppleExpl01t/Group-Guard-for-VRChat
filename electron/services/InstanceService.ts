@@ -181,6 +181,11 @@ export function setupInstanceHandlers() {
     // SCAN SECTOR
     ipcMain.handle('instance:scan-sector', async (_event, { groupId }: { groupId?: string }) => {
         try {
+            // SECURITY: If scanning a specific group context, validate access
+            if (groupId) {
+                 groupAuthorizationService.validateAccess(groupId, 'instance:scan-sector');
+            }
+
             // 1. Get Log Players - Use public API now
             // logWatcherService is imported above
             
@@ -426,8 +431,21 @@ export function setupInstanceHandlers() {
              if (!worldId || !instanceId) {
                  return { success: false, error: "No active instance" };
              }
+
+             // SECURITY: Check if current instance is a group instance
+             if (instanceId.includes('group(')) {
+                 const match = instanceId.match(/group\((grp_[a-zA-Z0-9-]+)\)/);
+                 if (match && match[1]) {
+                     const groupId = match[1];
+                     const authCheck = groupAuthorizationService.validateAccessSafe(groupId, 'instance:invite-to-current');
+                     if (!authCheck.allowed) {
+                         logger.warn(`[SECURITY] Blocked invite to unauthorized group instance: ${groupId}`);
+                         return { success: false, error: authCheck.error };
+                     }
+                 }
+             }
              
-              const fullId = `${worldId}:${instanceId}`;
+             const fullId = `${worldId}:${instanceId}`;
 
              // eslint-disable-next-line @typescript-eslint/no-explicit-any
              await (client as any).inviteUser({ 
@@ -584,6 +602,19 @@ export function setupInstanceHandlers() {
              
              if (!worldId || !instanceId) {
                  return { success: false, error: "No active instance to close and none specified" };
+             }
+
+             // SECURITY: Check if instance is a group instance
+             if (instanceId.includes('group(')) {
+                 const match = instanceId.match(/group\((grp_[a-zA-Z0-9-]+)\)/);
+                 if (match && match[1]) {
+                     const groupId = match[1];
+                     const authCheck = groupAuthorizationService.validateAccessSafe(groupId, 'instance:close-instance');
+                     if (!authCheck.allowed) {
+                         logger.warn(`[SECURITY] Blocked attempt to close unauthorized group instance: ${groupId}`);
+                         return { success: false, error: authCheck.error };
+                     }
+                 }
              }
 
              logger.warn(`[InstanceService] Closing instance - worldId: ${worldId}, instanceId: ${instanceId}`);
