@@ -5,10 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldAlert, Users, Radio, Crosshair, UserPlus, ShieldCheck, Activity, Gavel } from 'lucide-react';
 import { useGroupStore } from '../../stores/groupStore';
 import { useInstanceMonitorStore, type LiveEntity } from '../../stores/instanceMonitorStore';
-import { UserProfileDialog } from './dialogs/UserProfileDialog';
 import { BanUserDialog } from './dialogs/BanUserDialog';
-
-// ... (existing imports)
 
 interface LogEntry {
     message: string;
@@ -22,8 +19,7 @@ const EntityCard: React.FC<{
     onKick: (id: string, name: string) => void;
     onBan: (id: string, name: string) => void;
     readOnly?: boolean;
-    onClick: (entity: LiveEntity) => void;
-}> = ({ entity, onInvite, onKick, onBan, readOnly, onClick }) => (
+}> = ({ entity, onInvite, onKick, onBan, readOnly }) => (
     <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -35,10 +31,7 @@ const EntityCard: React.FC<{
         marginBottom: '8px',
         transition: 'background 0.2s'
     }}>
-        <div 
-            onClick={() => onClick(entity)}
-            style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
-        >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{
                 width: '36px', height: '36px', borderRadius: '8px',
                 background: !readOnly && entity.isGroupMember ? 'rgba(var(--primary-hue), 100%, 50%, 0.2)' : 'rgba(255,255,255,0.1)',
@@ -53,7 +46,7 @@ const EntityCard: React.FC<{
                 )}
             </div>
             <div>
-                <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'white', textDecoration: 'underline', textDecorationColor: 'rgba(255,255,255,0.2)' }}>{entity.displayName}</div>
+                <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'white' }}>{entity.displayName}</div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--color-text-dim)', display: 'flex', gap: '6px', alignItems: 'center' }}>
                     {!readOnly ? (
                         <>
@@ -126,7 +119,6 @@ export const LiveView: React.FC = () => {
     
     // Dialog State
     const [banDialogUser, setBanUserDialog] = useState<{ id: string; displayName: string } | null>(null);
-    const [selectedProfileUser, setSelectedProfileUser] = useState<{ id: string; displayName: string } | null>(null);
 
     // Helpers to add logs
     const addLog = useCallback((message: string, type: 'info' | 'warn' | 'success' | 'error' = 'info') => {
@@ -136,10 +128,6 @@ export const LiveView: React.FC = () => {
 
     const handleBanClick = (userId: string, name: string) => {
         setBanUserDialog({ id: userId, displayName: name });
-    };
-
-    const handleProfileClick = (entity: LiveEntity) => {
-        setSelectedProfileUser({ id: entity.id, displayName: entity.displayName });
     };
 
 
@@ -326,8 +314,7 @@ export const LiveView: React.FC = () => {
              let count = 0;
              for (const t of targets) {
                  // 2. Invite Loop
-                 if (!t.id) continue;
-                 const invRes = await window.electron.instance.inviteToCurrent(t.id);
+                 const invRes = await window.electron.instance.inviteToCurrent(t.id ?? '');
                  
                  if (!invRes.success && invRes.error === 'RATE_LIMIT') {
                     addLog(`[WARN] RATE LIMIT DETECTED! Cooling down for 10s...`, 'warn');
@@ -525,7 +512,6 @@ export const LiveView: React.FC = () => {
                                             onKick={handleKick}
                                             onBan={handleBanClick}
                                             readOnly={isRoamingMode}
-                                            onClick={handleProfileClick}
                                         />
                                     </motion.div>
                                 ))}
@@ -572,7 +558,6 @@ export const LiveView: React.FC = () => {
                                                 onKick={() => {}}
                                                 onBan={handleBanClick}
                                                 readOnly={true}
-                                                onClick={handleProfileClick}
                                             />
                                         </motion.div>
                                     ))
@@ -654,26 +639,6 @@ export const LiveView: React.FC = () => {
                 onClose={() => setBanUserDialog(null)}
                 user={banDialogUser}
                 initialGroupId={selectedGroup?.id}
-            />
-             <UserProfileDialog
-                key={selectedProfileUser ? selectedProfileUser.id : 'profile-closed'}
-                isOpen={!!selectedProfileUser}
-                onClose={() => setSelectedProfileUser(null)}
-                userId={selectedProfileUser?.id}
-                onInvite={(id, name) => {
-                    handleRecruit(id, name);
-                    // Optional: Close dialog after action? Maybe keep open for multi-action.
-                    // setSelectedProfileUser(null); 
-                }}
-                onKick={(id, name) => {
-                    handleKick(id, name);
-                }}
-                onBan={(id, name) => {
-                    // Close profile dialog to show ban dialog (modals don't stack well usually unless z-index handled)
-                    // But typically one main modal at a time is safer.
-                    setSelectedProfileUser(null);
-                    handleBanClick(id, name);
-                }}
             />
         </div>
     );

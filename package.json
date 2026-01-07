@@ -1,7 +1,7 @@
 {
   "name": "vrchat-group-guard",
   "private": true,
-  "version": "1.0.4",
+  "version": "1.0.3",
   "description": "A powerful VRChat group moderation and management tool",
   "author": "VRChat Group Guard Team",
   "license": "MIT",
@@ -12,7 +12,7 @@
     "url": "https://github.com/AppleExpl01t/VRChat-Group-Guard.git"
   },
   "scripts": {
-    "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
+    "dev": "concurrently --kill-others \"npm run dev:vite\" \"npm run dev:electron\"",
     "dev:vite": "vite --logLevel warn",
     "dev:electron": "wait-on tcp:5173 && esbuild electron/main.ts --bundle --platform=node --outfile=dist-electron/main.cjs --sourcemap --external:electron --external:vrchat && esbuild electron/preload.ts --bundle --platform=node --outfile=dist-electron/preload.cjs --sourcemap --external:electron && cross-env NODE_ENV=development electron .",
     "build": "tsc -b && vite build && npm run build:electron && electron-builder",
@@ -22,7 +22,7 @@
   },
   "build": {
     "appId": "com.vrchatgroupguard.app",
-    "productName": "Group Guard for VRChat",
+    "productName": "VRChat Group Guard",
     "copyright": "Copyright © 2024 VRChat Group Guard",
     "directories": {
       "output": "release"

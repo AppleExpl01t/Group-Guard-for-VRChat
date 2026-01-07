@@ -6,8 +6,11 @@
 .env.development
 
 # Build Output
+dist
 dist-electron
 release
+out
+build
 
 # Dependencies
 node_modules

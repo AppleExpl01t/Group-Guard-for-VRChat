@@ -125,12 +125,12 @@ export const LoginView: React.FC = () => {
             transition={{ delay: 0.3, duration: 0.6 }}
             style={{ marginBottom: '1rem' }}
           >
-            <h1 className={`${styles.logoMain} text-gradient`}>
-              Group Guard
-            </h1>
-            <h2 className={styles.logoTitle} style={{ marginTop: '0.2rem', marginBottom: 0 }}>
-              for VRChat
+            <h2 className={styles.logoTitle}>
+              VRChat
             </h2>
+            <h1 className={`${styles.logoMain} text-gradient`}>
+              GROUP GUARD
+            </h1>
           </motion.div>
           <motion.p 
             initial={{ opacity: 0 }}
@@ -341,7 +341,7 @@ export const LoginView: React.FC = () => {
               exit={{ opacity: 0 }}
               onClick={() => setShowSecurityModal(false)}
               style={{
-                position: 'absolute',
+                position: 'fixed',
                 top: 0, left: 0, right: 0, bottom: 0,
                 background: 'rgba(0,0,0,0.8)',
                 backdropFilter: 'blur(8px)',
@@ -349,7 +349,6 @@ export const LoginView: React.FC = () => {
                 alignItems: 'center',
                 justifyContent: 'center',
                 zIndex: 100,
-                borderRadius: '24px',
                 padding: '1rem'
               }}
             >

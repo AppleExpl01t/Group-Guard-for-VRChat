@@ -1,5 +1,6 @@
 import { ipcMain, safeStorage } from 'electron';
 import log from 'electron-log';
+import { clearSessionStore } from './AuthService';
 
 // electron-store is ESM in v9+, we need to use dynamic import or require
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -121,13 +122,15 @@ export function updateAuthCookie(authCookie: string): boolean {
 }
 
 /**
- * Clear all saved credentials
+ * Clear all saved credentials and session store
  */
-export function clearCredentials(): void {
+export async function clearCredentials(): Promise<void> {
   try {
     store.delete('savedCredentials');
     store.set('rememberMe', false);
-    log.info('Credentials cleared');
+    // SECURITY FIX: Clear session store when clearing credentials to prevent session reuse
+    await clearSessionStore();
+    log.info('Credentials and session store cleared');
   } catch (error) {
     log.error('Failed to clear credentials:', error);
   }

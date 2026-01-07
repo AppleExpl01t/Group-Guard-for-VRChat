@@ -50,10 +50,10 @@ const AutoLoginLoadingScreen: React.FC = () => (
       padding: '3rem'
     }}>
       <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: '1rem', color: 'var(--color-primary)', letterSpacing: '0.2em', fontWeight: 600, marginBottom: '-0.3rem' }}>VRCHAT</div>
         <h1 className="text-gradient" style={{ fontSize: '2rem', fontWeight: 800, margin: 0 }}>
-          Group Guard
+          GROUP GUARD
         </h1>
-        <div style={{ fontSize: '1rem', color: 'var(--color-primary)', letterSpacing: '0.2em', fontWeight: 600, marginTop: '0.2rem' }}>for VRChat</div>
       </div>
       
       {/* Animated loading spinner */}
