@@ -5,21 +5,50 @@ import { NeonButton } from '../../../components/ui/NeonButton';
 import { GlassPanel } from '../../../components/ui/GlassPanel';
 import { useAutoModAlertStore } from '../../../stores/autoModAlertStore';
 import { useGroupStore } from '../../../stores/groupStore';
+import { useConfirm } from '../../../context/ConfirmationContext';
+import { useNotificationStore } from '../../../stores/notificationStore';
+import notificationSound from '../../../assets/sounds/notification.mp3';
 
 // Helper for sound
-const playNotificationSound = () => {
+// Helper for sound
+const playNotificationSound = async () => {
     try {
-        const audio = new Audio('/sounds/notification.mp3');
-        audio.volume = 0.6;
-        audio.play().catch(e => console.error("Sound play failed", e));
+
+        let soundSrc = notificationSound;
+        let volume = 0.6;
+
+        // Try to fetch settings
+        if (window.electron?.settings) {
+            try {
+                const settings = await window.electron.settings.get();
+                volume = settings.audio.volume;
+                
+                if (settings.audio.notificationSoundPath) {
+                    const customData = await window.electron.settings.getAudioData(settings.audio.notificationSoundPath);
+                    if (customData) {
+                        soundSrc = customData;
+
+                    }
+                }
+            } catch (err) {
+                console.warn('[AutoModAlert] Failed to load audio settings, using default', err);
+            }
+        }
+
+        const audio = new Audio(soundSrc);
+        audio.volume = volume;
+        await audio.play();
     } catch (e) {
-        console.error("Audio init failed", e);
+        console.error("Audio play failed", e);
     }
 };
 
 export const AutoModAlertOverlay: React.FC = () => {
     const { alerts, removeAlert, addAlert, isEnabled } = useAutoModAlertStore();
     const { selectedGroup } = useGroupStore();
+    
+    const { confirm } = useConfirm();
+    const { addNotification } = useNotificationStore();
     
     // Listen for events
     useEffect(() => {
@@ -45,15 +74,32 @@ export const AutoModAlertOverlay: React.FC = () => {
 
     const handleBan = async (alertId: string, userId: string, displayName: string) => {
         if (!selectedGroup) return;
-        if (!confirm(`Are you sure you want to BAN ${displayName} from the group?`)) return;
+        
+        const confirmed = await confirm({
+            title: 'Confirm Ban',
+            message: `Are you sure you want to BAN ${displayName} from the group?`,
+            confirmLabel: 'Ban User',
+            variant: 'danger'
+        });
+        
+        if (!confirmed) return;
 
         try {
             await window.electron.banUser(selectedGroup.id, userId);
             // Assuming success, remove alert
             removeAlert(alertId);
+            addNotification({
+                type: 'success',
+                title: 'User Banned',
+                message: `${displayName} has been banned.`
+            });
         } catch (e) {
             console.error("Failed to ban user", e);
-            alert("Failed to ban user. Check console.");
+            addNotification({
+                type: 'error',
+                title: 'Ban Failed',
+                message: "Failed to ban user. Check console."
+            });
         }
     };
     

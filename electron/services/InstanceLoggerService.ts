@@ -4,6 +4,8 @@ import log from 'electron-log';
 import { windowService } from './WindowService';
 import { databaseService } from './DatabaseService';
 import { groupAuthorizationService } from './GroupAuthorizationService';
+import { serviceEventBus } from './ServiceEventBus';
+import { discordBroadcastService } from './DiscordBroadcastService'; // Needed for clearing status
 
 const logger = log.scope('InstanceLogger');
 
@@ -47,7 +49,34 @@ class InstanceLoggerService {
     
     // Also listen for player events to log them to session
     logWatcherService.on('player-joined', (event) => this.logEvent('PLAYER_JOIN', event));
+    logWatcherService.on('player-joined', (event) => this.logEvent('PLAYER_JOIN', event));
     logWatcherService.on('player-left', (event) => this.logEvent('PLAYER_LEFT', event));
+
+    // Handle Game Closed - Clear State
+    logWatcherService.on('game-closed', () => {
+        logger.info('[InstanceLogger] Game Closed. Clearing all instance state.');
+        
+        // Close current session if exists
+        if (this.currentSessionId) {
+             databaseService.updateSession(this.currentSessionId, { endTime: new Date() })
+                .catch(err => logger.error('Failed to close session on game exit', err));
+        }
+
+        this.currentSessionId = null;
+        this.currentWorldId = null;
+        this.currentInstanceId = null;
+        this.currentLocationString = null;
+        this.currentWorldName = null;
+        this.currentGroupId = null;
+        
+        // Notify Frontend (redundant with logWatcher but good for specific store updates)
+        windowService.broadcast('instance:group-changed', null);
+    });
+
+    serviceEventBus.on('groups-updated', (payload) => {
+        const groupIds = payload.groups.map(g => g.id);
+        this.setAllowedGroups(groupIds);
+    });
   }
 
   public getCurrentWorldId() { return this.currentWorldId; }
@@ -75,10 +104,9 @@ class InstanceLoggerService {
       // when an instance is explicitly closed. We don't clear on location change
       // because users may rejoin the same instance.
       
-      const groupMatch = event.location.match(/~group\((grp_[a-f0-9-]+)\)/);
+      const groupMatch = event.location.match(/~group\((grp_[a-zA-Z0-9-]+)\)/i);
       const groupId = groupMatch ? groupMatch[1] : null;
 
-      this.currentGroupId = groupId;
       this.currentGroupId = groupId;
       windowService.broadcast('instance:group-changed', groupId);
 
@@ -216,6 +244,15 @@ class InstanceLoggerService {
           return false;
       }
   }
+  public async updateSessionWorldName(sessionId: string, worldName: string) {
+      try {
+          await databaseService.updateSession(sessionId, { worldName });
+          return true;
+      } catch (error) {
+          logger.error('Failed to update session world name:', error);
+          return false;
+      }
+  }
 }
 
 export const instanceLoggerService = new InstanceLoggerService();
@@ -229,6 +266,9 @@ ipcMain.handle('database:get-session-events', async (_, sessionId) => {
 });
 ipcMain.handle('database:clear-sessions', async () => {
     return instanceLoggerService.clearSessions();
+});
+ipcMain.handle('database:update-session-world-name', async (_, sessionId: string, worldName: string) => {
+    return instanceLoggerService.updateSessionWorldName(sessionId, worldName);
 });
 ipcMain.handle('instance:get-current-group', async () => {
     return instanceLoggerService.getCurrentGroupId();

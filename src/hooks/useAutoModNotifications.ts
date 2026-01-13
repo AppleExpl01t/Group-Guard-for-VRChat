@@ -1,13 +1,16 @@
 import { useEffect, useRef } from 'react';
 import { useNotificationStore } from '../stores/notificationStore';
 
+import notificationSound from '../assets/sounds/notification.mp3';
+
 export const useAutoModNotifications = () => {
     const addNotification = useNotificationStore(state => state.addNotification);
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
     useEffect(() => {
         // Preload audio
-        audioRef.current = new Audio('/sounds/notification.mp3');
+
+        audioRef.current = new Audio(notificationSound);
         audioRef.current.volume = 0.5; // Reasonable default volume
 
         if (!window.electron?.automod?.onViolation) return;

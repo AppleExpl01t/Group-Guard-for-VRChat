@@ -186,7 +186,7 @@ export const DashboardView: React.FC = memo(() => {
         variants={containerVariants}
         initial="hidden"
         animate="show"
-        style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '1rem', padding: '1rem' }}
+        style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '1rem', padding: '1rem', paddingBottom: 'var(--dock-height)' }}
     >
         {/* Header Section */}
         <GlassPanel className={styles.headerPanel} style={{ flexShrink: 0 }}>

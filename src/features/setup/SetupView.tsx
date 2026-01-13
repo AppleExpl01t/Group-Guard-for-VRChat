@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { NeonButton } from '../../components/ui/NeonButton';
+import { useNotificationStore } from '../../stores/notificationStore';
 
 interface SetupViewProps {
     onComplete: () => void;
@@ -11,6 +12,7 @@ export const SetupView: React.FC<SetupViewProps> = ({ onComplete }) => {
     const [path, setPath] = useState('');
     const [defaultPath, setDefaultPath] = useState('');
     const [isLoading, setIsLoading] = useState(true);
+    const { addNotification } = useNotificationStore();
 
     useEffect(() => {
         const checkStatus = async () => {
@@ -40,7 +42,11 @@ export const SetupView: React.FC<SetupViewProps> = ({ onComplete }) => {
         if (success) {
             onComplete();
         } else {
-            alert('Failed to save storage settings.');
+            addNotification({
+                type: 'error',
+                title: 'Configuration Failed',
+                message: 'Failed to save storage settings.'
+            });
             setIsLoading(false);
         }
     };

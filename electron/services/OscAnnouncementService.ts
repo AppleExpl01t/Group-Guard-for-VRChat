@@ -11,6 +11,7 @@ export interface GroupAnnouncementConfig {
     greetingEnabled: boolean;
     greetingMessage: string;
     greetingMessageMembers?: string; // Optional custom message for members
+    greetingMessageRep?: string; // Optional custom message for users representing the group
     periodicEnabled: boolean;
     periodicMessage: string;
     periodicIntervalMinutes: number;
@@ -25,6 +26,7 @@ const DEFAULT_GROUP_CONFIG: GroupAnnouncementConfig = {
     greetingEnabled: false,
     greetingMessage: "Welcome [User] to the instance! check the description for rules.",
     greetingMessageMembers: "",
+    greetingMessageRep: "",
     periodicEnabled: false,
     periodicMessage: "🛡️ This instance is protected by Group Guard.",
     periodicIntervalMinutes: 15,
@@ -63,9 +65,14 @@ class OscAnnouncementService {
             this.handlePlayerJoined(event);
         });
         
-        // Maybe handle leaving to clean up set
-        logWatcherService.on('player-left', (event: { displayName: string }) => {
+        // Handle leaving to clean up sets and allow re-greeting on rejoin
+        logWatcherService.on('player-left', (event: { displayName: string; userId?: string }) => {
             this.currentPlayers.delete(event.displayName);
+            // Clear from greeted set so they can be greeted again if they rejoin
+            if (event.userId) {
+                this.greetedPlayers.delete(event.userId);
+            }
+            this.greetedPlayers.delete(event.displayName);
         });
     }
 
@@ -113,12 +120,22 @@ class OscAnnouncementService {
     }
 
     private handlePlayerJoined(event: PlayerJoinedEvent) {
+        logger.info(`[handlePlayerJoined] Player: ${event.displayName}, ActiveGroup: ${this.activeGroupId}, isBackfill: ${event.isBackfill}`);
+        
         this.currentPlayers.add(event.displayName);
         
-        if (!this.activeGroupId) return;
+        if (!this.activeGroupId) {
+            logger.debug(`[handlePlayerJoined] No active group, skipping greeting.`);
+            return;
+        }
 
         const config = this.getGroupConfig(this.activeGroupId);
-        if (!config || !config.greetingEnabled || !config.greetingMessage) return;
+        logger.debug(`[handlePlayerJoined] Config: greetingEnabled=${config?.greetingEnabled}, greetingMessage=${!!config?.greetingMessage}`);
+        
+        if (!config || !config.greetingEnabled || !config.greetingMessage) {
+            logger.debug(`[handlePlayerJoined] Greeting disabled or no message, skipping.`);
+            return;
+        }
 
         // Use userId for deduping if available, otherwise fallback to name
         const trackingId = event.userId || event.displayName;
@@ -139,24 +156,45 @@ class OscAnnouncementService {
             const currentConfig = this.getGroupConfig(this.activeGroupId);
             if (!currentConfig?.greetingEnabled) return;
 
-            // Determine which message to use
+            // Determine which message to use (Priority: Rep > Member > Default)
             let message = currentConfig.greetingMessage;
+            let messageType = 'default';
             
-            // Check membership if a specific member message is configured
-            if (currentConfig.greetingMessageMembers && currentConfig.greetingMessageMembers.trim() !== "") {
-                 try {
-                     const client = getVRChatClient();
-                     if (client && event.userId) {
-                          // Check if user is a member
-                          const memResponse = await client.getGroupMember({ path: { groupId: this.activeGroupId!, userId: event.userId } });
-                          if (!memResponse.error) {
-                              // User is a member
-                              message = currentConfig.greetingMessageMembers;
-                          }
-                     }
-                 } catch (e) {
-                     logger.warn('Failed to check membership for greeting', e);
-                 }
+            try {
+                const client = getVRChatClient();
+                if (client && event.userId && this.activeGroupId) {
+                    // 1. First check if user is REPRESENTING the group
+                    if (currentConfig.greetingMessageRep && currentConfig.greetingMessageRep.trim() !== '') {
+                        try {
+                            const repResponse = await client.get('/users/{userId}/groups/represented', {
+                                params: { path: { userId: event.userId } }
+                            });
+                            if (repResponse.data && (repResponse.data as { groupId?: string }).groupId === this.activeGroupId) {
+                                message = currentConfig.greetingMessageRep;
+                                messageType = 'rep';
+                                logger.info(`${event.displayName} is representing the group! Using rep message.`);
+                            }
+                        } catch (repErr) {
+                            // User may not be representing any group, that's fine
+                            logger.debug(`Rep check for ${event.displayName}:`, repErr);
+                        }
+                    }
+                    
+                    // 2. If not rep, check if they are a MEMBER
+                    if (messageType === 'default' && currentConfig.greetingMessageMembers && currentConfig.greetingMessageMembers.trim() !== '') {
+                        try {
+                            const memResponse = await client.getGroupMember({ path: { groupId: this.activeGroupId, userId: event.userId } });
+                            if (memResponse && !memResponse.error) {
+                                message = currentConfig.greetingMessageMembers;
+                                messageType = 'member';
+                            }
+                        } catch (memErr) {
+                            logger.debug(`Member check for ${event.displayName}:`, memErr);
+                        }
+                    }
+                }
+            } catch (e) {
+                logger.warn('Failed to check rep/membership for greeting', e);
             }
 
             // Replace Placeholders

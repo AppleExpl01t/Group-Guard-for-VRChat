@@ -29,6 +29,7 @@
  */
 
 import log from 'electron-log';
+import { serviceEventBus } from './ServiceEventBus';
 
 const logger = log.scope('GroupAuthorization');
 
@@ -46,6 +47,14 @@ class GroupAuthorizationService {
         action: string;
         reason: string;
     }> = [];
+
+    constructor() {
+        // Listen for group updates from GroupService
+        serviceEventBus.on('groups-updated', (payload) => {
+             const groupIds = payload.groups.map(g => g.id);
+             this.setAllowedGroups(groupIds);
+        });
+    }
 
     /**
      * Updates the list of allowed groups.

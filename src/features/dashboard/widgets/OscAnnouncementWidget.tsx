@@ -175,6 +175,33 @@ const ConfigModal: React.FC<{
                                                         }}
                                                     />
                                                 </div>
+
+                                                <div>
+                                                    <label style={{ fontSize: '0.75rem', color: 'var(--color-text-dim)', marginBottom: '4px', display: 'block' }}>
+                                                        <span style={{ color: '#a78bfa' }}>★</span> Representing Group (Highest Priority)
+                                                    </label>
+                                                    <textarea 
+                                                        value={localConfig.greetingMessageRep || ''}
+                                                        onChange={(e) => setLocalConfig({ ...localConfig, greetingMessageRep: e.target.value })}
+                                                        placeholder="Thank you for repping [Group], [User]! 💜"
+                                                        spellCheck={false}
+                                                        style={{ 
+                                                            width: '100%', 
+                                                            background: 'rgba(0,0,0,0.3)', 
+                                                            border: '1px solid rgba(167, 139, 250, 0.3)', 
+                                                            color: 'white', 
+                                                            fontSize: '0.85rem', 
+                                                            padding: '10px',
+                                                            minHeight: '60px',
+                                                            borderRadius: '6px',
+                                                            resize: 'vertical',
+                                                            fontFamily: 'inherit'
+                                                        }}
+                                                    />
+                                                    <div style={{ fontSize: '0.65rem', color: 'var(--color-text-dim)', marginTop: '4px', fontStyle: 'italic' }}>
+                                                        For users who have your group on their nameplate
+                                                    </div>
+                                                </div>
                                             </div>
                                         )}
                                     </div>

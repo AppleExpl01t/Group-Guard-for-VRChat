@@ -6,6 +6,8 @@ import { useGroupStore } from '../../../stores/groupStore';
 import { Check, X, Gavel } from 'lucide-react';
 import { AppShieldIcon } from '../../../components/ui/AppShieldIcon';
 import { motion } from 'framer-motion';
+import { useConfirm } from '../../../context/ConfirmationContext';
+import { useNotificationStore } from '../../../stores/notificationStore';
 
 interface BanUserDialogProps {
   isOpen: boolean;
@@ -26,6 +28,9 @@ export const BanUserDialog: React.FC<BanUserDialogProps> = ({ isOpen, onClose, u
   const [isBanning, setIsBanning] = useState(false);
   const [progress, setProgress] = useState<{ current: number; total: number; failed: number } | null>(null);
   const [results, setResults] = useState<Array<{ groupId: string; groupName: string; success: boolean; error?: string }>>([]);
+  
+  const { confirm } = useConfirm();
+  const { addNotification } = useNotificationStore();
 
   const toggleGroup = (groupId: string) => {
     const next = new Set(selectedGroupIds);
@@ -48,10 +53,22 @@ export const BanUserDialog: React.FC<BanUserDialogProps> = ({ isOpen, onClose, u
   const handleBan = async () => {
       if (!user) return;
       if (selectedGroupIds.size === 0) return;
-      if (!confirm(`Are you sure you want to BAN ${user.displayName} from ${selectedGroupIds.size} groups? This cannot be easily undone.`)) return;
+      
+      const confirmed = await confirm({
+          title: 'Confirm Ban',
+          message: `Are you sure you want to BAN ${user.displayName} from ${selectedGroupIds.size} groups? This cannot be easily undone.`,
+          confirmLabel: 'Ban User',
+          variant: 'danger'
+      });
+      
+      if (!confirmed) return;
       
       if (!window.electron.banUser) {
-          alert("CRITICAL ERROR: 'banUser' function is missing.\n\nPlease RESTART the application to apply the latest updates.");
+          addNotification({
+              type: 'error',
+              title: 'Critical Error',
+              message: "Function 'banUser' is missing. Please restart the application."
+          });
           return;
       }
 

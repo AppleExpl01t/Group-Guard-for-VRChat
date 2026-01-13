@@ -83,14 +83,22 @@ export function useInstanceMonitorInit(isAuthenticated: boolean) {
         setCurrentGroupId(groupId);
     });
 
+    const cleanupGameClosed = window.electron.logWatcher.onGameClosed(() => {
+
+        clearInstance();
+        clearLiveScan();
+        setCurrentGroupId(null);
+    });
+
     return () => {
       cleanupJoined();
       cleanupLeft();
       cleanupLocation();
       cleanupWorldName();
       cleanupGroup();
+      cleanupGameClosed();
       window.electron.logWatcher.stop();
     };
 
-  }, [isAuthenticated, addPlayer, removePlayer, setWorldId, setWorldName, clearInstance, setInstanceInfo, setInstanceImage, setCurrentGroupId]);
+  }, [isAuthenticated, addPlayer, removePlayer, setWorldId, setWorldName, clearInstance, setInstanceInfo, setInstanceImage, setCurrentGroupId, clearLiveScan]);
 }

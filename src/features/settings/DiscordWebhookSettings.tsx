@@ -1,8 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useGroupStore } from '../../stores/groupStore';
-import { GlassPanel } from '../../components/ui/GlassPanel';
 import { NeonButton } from '../../components/ui/NeonButton';
 import { ChevronDown, ChevronUp, Webhook } from 'lucide-react';
+
+// Inner card style for settings sections (used inside main GlassPanel)
+const innerCardStyle: React.CSSProperties = {
+    background: 'rgba(0,0,0,0.2)',
+    borderRadius: '12px',
+    padding: '1.25rem',
+    border: '1px solid rgba(255,255,255,0.05)',
+};
 
 export const DiscordWebhookSettings: React.FC = () => {
     const { selectedGroup } = useGroupStore();
@@ -23,7 +30,11 @@ export const DiscordWebhookSettings: React.FC = () => {
 
     useEffect(() => {
         if (selectedGroup) {
-            loadWebhook();
+            // Use setTimeout to avoid synchronous setState in effect
+            const timeoutId = setTimeout(() => {
+                loadWebhook();
+            }, 0);
+            return () => clearTimeout(timeoutId);
         }
     }, [selectedGroup, loadWebhook]);
 
@@ -63,7 +74,7 @@ export const DiscordWebhookSettings: React.FC = () => {
                 <Webhook size={20} />
                 Events Webhook
             </h2>
-            <GlassPanel>
+            <div style={innerCardStyle}>
                 {!selectedGroup ? (
                     <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--color-text-dim)', fontStyle: 'italic' }}>
                         Please select a group from the dashboard to configure its webhook settings.
@@ -131,7 +142,7 @@ export const DiscordWebhookSettings: React.FC = () => {
                 </div>
 
                 )}
-            </GlassPanel>
+            </div>
         </section>
     );
 };

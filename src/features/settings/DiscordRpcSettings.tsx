@@ -1,7 +1,14 @@
-import React, { useEffect, useState } from 'react';
-import { GlassPanel } from '../../components/ui/GlassPanel';
+import React, { useEffect, useState, useCallback } from 'react';
 import { NeonButton } from '../../components/ui/NeonButton';
 import type { DiscordRpcConfig } from '../../types/electron';
+
+// Inner card style for settings sections (used inside main GlassPanel)
+const innerCardStyle: React.CSSProperties = {
+    background: 'rgba(0,0,0,0.2)',
+    borderRadius: '12px',
+    padding: '1.25rem',
+    border: '1px solid rgba(255,255,255,0.05)',
+};
 
 export const DiscordRpcSettings: React.FC = () => {
     const [config, setConfig] = useState<DiscordRpcConfig>({
@@ -16,7 +23,7 @@ export const DiscordRpcSettings: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState<string>('');
 
-    const loadConfig = async () => {
+    const loadConfig = useCallback(async () => {
         try {
             if (!window.electron?.discordRpc) return;
             const current = await window.electron.discordRpc.getConfig();
@@ -24,9 +31,9 @@ export const DiscordRpcSettings: React.FC = () => {
         } catch (err) {
             console.error('Failed to load Discord RPC config:', err);
         }
-    };
+    }, []);
 
-    const loadStatus = async () => {
+    const loadStatus = useCallback(async () => {
         try {
             if (!window.electron?.discordRpc) return;
             const s = await window.electron.discordRpc.getStatus();
@@ -34,13 +41,12 @@ export const DiscordRpcSettings: React.FC = () => {
         } catch (err) {
             console.error('Failed to load Discord RPC status:', err);
         }
-    };
+    }, []);
 
     useEffect(() => {
         loadConfig();
         loadStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [loadConfig, loadStatus]);
 
     const handleSave = async () => {
         setLoading(true);
@@ -119,7 +125,7 @@ export const DiscordRpcSettings: React.FC = () => {
                 </svg>
                 Discord Rich Presence
             </h2>
-            <GlassPanel>
+            <div style={innerCardStyle}>
                 <div style={{ display: 'flex', gap: '1rem', flexDirection: 'column' }}>
                     
                     {/* Connection Status */}
@@ -271,7 +277,7 @@ export const DiscordRpcSettings: React.FC = () => {
                         </NeonButton>
                     </div>
                 </div>
-            </GlassPanel>
+            </div>
         </section>
     );
 };

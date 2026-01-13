@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useGroupStore, REFRESH_INTERVALS } from '../stores/groupStore';
+import { usePoller } from './usePoller';
 
 type DataType = keyof typeof REFRESH_INTERVALS;
 
@@ -42,10 +43,7 @@ export function useDataRefresh({ type, enabled = true }: UseDataRefreshOptions):
     const remaining = intervalMs - (Date.now() - lastFetched);
     return Math.max(1, Math.ceil(remaining / 1000));
   });
-  
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const hasFetchedRef = useRef(false);
+
 
   const isRefreshing = type === 'requests' ? isRequestsLoading :
                        type === 'bans' ? isBansLoading :
@@ -76,65 +74,26 @@ export function useDataRefresh({ type, enabled = true }: UseDataRefreshOptions):
     setSecondsUntilRefresh(Math.floor(intervalMs / 1000));
   }, [fetchData, intervalMs]);
 
-  // Initial fetch effect (runs once when group changes)
-  useEffect(() => {
-    if (!selectedGroup || !enabled) return;
-    
-    const lastFetched = getLastFetchedAt(type);
-    const timeSinceLastFetch = Date.now() - lastFetched;
-    
-    // Need initial fetch if never fetched or stale
-    if (lastFetched === 0 || timeSinceLastFetch >= intervalMs) {
-      if (!hasFetchedRef.current) {
-        hasFetchedRef.current = true;
-        fetchData();
-      }
-    }
-    
-    return () => {
-      hasFetchedRef.current = false;
-    };
-  }, [selectedGroup?.id, enabled, type, intervalMs, fetchData, getLastFetchedAt, selectedGroup]);
-
-  // Interval setup effect
-  useEffect(() => {
-    // Clear existing intervals
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    if (countdownRef.current) {
-      clearInterval(countdownRef.current);
-      countdownRef.current = null;
-    }
-
-    if (!selectedGroup || !enabled) return;
-
-    // Set up refresh interval
-    intervalRef.current = setInterval(() => {
+  // 1. Initial Fetch Logic (replaces the first useEffect)
+  // We use usePoller with immediate=true IF we are stale
+  // Actually, usePoller repeats. We just want a "check on mount" maybe?
+  // Let's keep a simplified useEffect for the "Initial check" to respect stale time,
+  // OR just let the poller handle it if we set immediate=true.
+  // But strictly, we only want to fetch immediately if STALE.
+  
+  // Let's use usePoller for the REPEATED fetching.
+  usePoller(() => {
       fetchData();
       setSecondsUntilRefresh(Math.floor(intervalMs / 1000));
-    }, intervalMs);
+  }, (enabled && selectedGroup) ? intervalMs : null);
 
-    // Set up countdown interval (updates every second)
-    countdownRef.current = setInterval(() => {
+  // 2. Countdown Logic
+  usePoller(() => {
       setSecondsUntilRefresh(prev => {
         if (prev <= 1) return Math.floor(intervalMs / 1000);
         return prev - 1;
       });
-    }, 1000);
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      if (countdownRef.current) {
-        clearInterval(countdownRef.current);
-        countdownRef.current = null;
-      }
-    };
-  }, [selectedGroup, enabled, intervalMs, fetchData]);
+  }, (enabled && selectedGroup) ? 1000 : null);
 
   return {
     secondsUntilRefresh,
@@ -143,6 +102,8 @@ export function useDataRefresh({ type, enabled = true }: UseDataRefreshOptions):
     lastFetchedAt: getLastFetchedAt(type),
   };
 }
+
+
 
 /**
  * Format seconds into a human-readable countdown

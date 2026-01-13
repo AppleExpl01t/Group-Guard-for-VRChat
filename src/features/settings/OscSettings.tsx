@@ -1,6 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { GlassPanel } from '../../components/ui/GlassPanel';
 import { NeonButton } from '../../components/ui/NeonButton';
+
+// Inner card style for settings sections (used inside main GlassPanel)
+const innerCardStyle: React.CSSProperties = {
+    background: 'rgba(0,0,0,0.2)',
+    borderRadius: '12px',
+    padding: '1.25rem',
+    border: '1px solid rgba(255,255,255,0.05)',
+};
 
 interface OscConfig {
     enabled: boolean;
@@ -75,14 +82,15 @@ export const OscSettings: React.FC = () => {
              if (!config.enabled) setConfig(testConfig);
          } catch (e) {
              console.error(e);
-             setStatus('Test failed: Check Logs');
+             const errMsg = e instanceof Error ? e.message : String(e);
+             setStatus('Test failed: ' + errMsg);
          }
     };
 
     return (
         <section>
             <h2 style={{ color: 'white', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>OSC Integration</h2>
-            <GlassPanel>
+            <div style={innerCardStyle}>
                 <div style={{ display: 'flex', gap: '1rem', flexDirection: 'column' }}>
                      {/* Enabled Toggle */}
                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -164,7 +172,7 @@ export const OscSettings: React.FC = () => {
                         </NeonButton>
                     </div>
                 </div>
-            </GlassPanel>
+            </div>
         </section>
     );
 };

@@ -12,9 +12,12 @@ interface MassInviteDialogProps {
 }
 
 export const MassInviteDialog: React.FC<MassInviteDialogProps> = ({ isOpen, onClose }) => {
-    const [step, setStep] = useState<'config' | 'running' | 'done'>('config');
+    const [step, setStep] = useState<'config' | 'running' | 'done' | 'rateLimitFallback'>('config');
     const [filterAutoMod, setFilterAutoMod] = useState(true);
     const [customMessage, setCustomMessage] = useState('');
+    
+    // Fallback state
+    const [slotState, setSlotState] = useState<{ index: number; message: string | null; lastUpdate: number; cooldownRemaining: number }[]>([]);
 
     const [progress, setProgress] = useState<{ sent: number; skipped: number; failed: number; total: number; current?: string; done?: boolean }>({
         sent: 0,
@@ -59,14 +62,38 @@ export const MassInviteDialog: React.FC<MassInviteDialogProps> = ({ isOpen, onCl
     }, [logs, progress]);
 
 
-    const handleStart = async () => {
+    const handleStart = async (overrideMessage?: string) => {
+        const messageToSend = overrideMessage !== undefined ? overrideMessage : customMessage;
+        
         setStep('running');
         setLogs(prev => [...prev, "Starting Mass Invite...", "Fetching online friends..."]);
         
         try {
-            const result = await window.electron.instance.massInviteFriends({ filterAutoMod, message: customMessage });
+            const result = await window.electron.instance.massInviteFriends({ filterAutoMod, message: messageToSend });
             
             if (result.success) {
+                if (result.errors && result.errors.length > 0) {
+                     // Check for specific cooldown error
+                     const cooldownErr = result.errors.find((e: string) => e.includes('Invite Message Cooldown'));
+                     
+                     if (cooldownErr && step !== 'rateLimitFallback') {
+                         setLogs(prev => [...prev, `⚠️ ${cooldownErr}`]);
+                         
+                         // Fetch slots and show fallback UI
+                         try {
+                             const slotsRes = await window.electron.instance.getInviteSlotsState();
+                             if (slotsRes.success && slotsRes.slots) {
+                                 setSlotState(slotsRes.slots);
+                                 setStep('rateLimitFallback');
+                                 return; // Stop here, don't show done yet
+                             }
+                         } catch (err) {
+                             console.error("Failed to fetch slots", err);
+                         }
+                     } else {
+                         setLogs(prev => [...prev, `Completed with warnings: ${(result.errors || []).join(', ')}`]);
+                     }
+                }
                 setLogs(prev => [...prev, `Done! Sent: ${result.invited}, Skipped: ${result.skipped}, Failed: ${result.failed}`]);
             } else {
                 setLogs(prev => [...prev, `Error: ${result.error}`]);
@@ -83,11 +110,90 @@ export const MassInviteDialog: React.FC<MassInviteDialogProps> = ({ isOpen, onCl
         setTimeout(() => setStep('config'), 500);
     };
 
+    // Helper for fallback selection
+    const selectFallback = (msg: string | undefined) => {
+        setCustomMessage(msg || ''); // specific fallback
+        handleStart(msg); // Restart with specific message (or undefined for generic)
+    };
+
     return (
         <Modal isOpen={isOpen} onClose={handleClose} title="Mass Invite Friends">
             <div style={{ padding: '1rem', minWidth: '400px', maxWidth: '500px' }}>
                 
                 <AnimatePresence mode="wait">
+                    {step === 'rateLimitFallback' && (
+                        <motion.div
+                            key="fallback"
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -20 }}
+                            style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+                        >
+                            <div style={{ padding: '1rem', background: 'rgba(234, 179, 8, 0.1)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: '8px', color: '#fef08a' }}>
+                                <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.5rem' }}>
+                                    <AlertTriangle size={18} />
+                                    Rate Limit Conflict
+                                </div>
+                                <div style={{ fontSize: '0.9rem' }}>
+                                    You cannot set a new custom message right now because VRChat limits how often invite messages can be changed (60 mins).
+                                </div>
+                            </div>
+
+                            <div style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>
+                                Choose an option to proceed:
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                {slotState.map(slot => (
+                                    <button 
+                                        key={slot.index}
+                                        onClick={() => selectFallback(slot.message || undefined)}
+                                        disabled={!slot.message}
+                                        style={{
+                                            padding: '12px',
+                                            background: 'rgba(255,255,255,0.05)',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            borderRadius: '6px',
+                                            color: 'white',
+                                            textAlign: 'left',
+                                            cursor: slot.message ? 'pointer' : 'not-allowed',
+                                            opacity: slot.message ? 1 : 0.5,
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '2px'
+                                        }}
+                                    >
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--color-text-dim)' }}>
+                                            Slot {slot.index} {slot.cooldownRemaining > 0 ? `(Locked for ${Math.ceil(slot.cooldownRemaining/60000)}m)` : '(Available)'}
+                                        </div>
+                                        <div style={{ fontWeight: 600 }}>{slot.message || '(Empty)'}</div>
+                                    </button>
+                                ))}
+
+                                <button 
+                                    onClick={() => selectFallback(undefined)}
+                                    style={{
+                                        padding: '12px',
+                                        background: 'rgba(255,255,255,0.05)',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        borderRadius: '6px',
+                                        color: 'white',
+                                        textAlign: 'left',
+                                        cursor: 'pointer',
+                                        marginTop: '0.5rem'
+                                    }}
+                                >
+                                    <div style={{ fontWeight: 600 }}>Send without message</div>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--color-text-dim)' }}>Standard generic invite</div>
+                                </button>
+                            </div>
+
+                             <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.5rem' }}>
+                                <NeonButton variant="secondary" onClick={handleClose}>Cancel</NeonButton>
+                            </div>
+                        </motion.div>
+                    )}
+
                     {step === 'config' && (
                         <motion.div
                             key="config"
@@ -167,7 +273,7 @@ export const MassInviteDialog: React.FC<MassInviteDialogProps> = ({ isOpen, onCl
 
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
                                 <NeonButton variant="secondary" onClick={onClose}>Cancel</NeonButton>
-                                <NeonButton variant="primary" onClick={handleStart}>
+                                <NeonButton variant="primary" onClick={() => handleStart()}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                         <Users size={16} />
                                         <span>Start Wave</span>

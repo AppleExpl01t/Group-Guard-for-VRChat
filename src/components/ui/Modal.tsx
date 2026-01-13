@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassPanel } from './GlassPanel';
 import { useUIStore } from '../../stores/uiStore';
-import styles from './Modal.module.css';
+
 
 interface ModalProps {
     isOpen: boolean;
@@ -73,7 +73,7 @@ export const Modal: React.FC<ModalProps> = ({
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onClick={() => closable && onClose()}
-                        className={styles.backdrop}
+                        
                         style={{
                             position: 'absolute',
                             top: 0,
@@ -92,7 +92,7 @@ export const Modal: React.FC<ModalProps> = ({
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
                         transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                        className={styles.modalParams}
+                        
                         style={{
                             position: 'relative', // Relative to flex container
                             zIndex: 10,

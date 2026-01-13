@@ -23,8 +23,7 @@ const itemVariants = {
 
 export const GroupSelectionView: React.FC = memo(() => {
   const { myGroups, fetchMyGroups, selectGroup, enterRoamingMode, isLoading, error } = useGroupStore();
-  const { currentWorldId, currentWorldName, instanceImageUrl } = useInstanceMonitorStore();
-  const [activeGroupId, setActiveGroupId] = React.useState<string | null>(null);
+  const { currentWorldId, currentWorldName, instanceImageUrl, currentGroupId } = useInstanceMonitorStore();
   const [isLarge, setIsLarge] = useState(window.innerWidth > 1100);
 
   // Responsive Check
@@ -37,21 +36,6 @@ export const GroupSelectionView: React.FC = memo(() => {
   useEffect(() => {
     fetchMyGroups();
   }, [fetchMyGroups]);
-
-  // Subscribe to live instance presence
-  useEffect(() => {
-      const fetchCurrent = async () => {
-          const current = await window.electron.instance.getCurrentGroup();
-          setActiveGroupId(current);
-      };
-      fetchCurrent();
-
-      // Listen for updates
-      const cleanup = window.electron.instance.onGroupChanged((groupId) => {
-          setActiveGroupId(groupId);
-      });
-      return cleanup;
-  }, []);
 
   if (isLoading) {
     return (
@@ -106,7 +90,7 @@ export const GroupSelectionView: React.FC = memo(() => {
         layout // Animate grid column changes
       >
         {/* Roaming/Live Card - Show if in world but not in a managed group instance */}
-        {currentWorldId && (!activeGroupId || !myGroups.some(g => g.id === activeGroupId)) && (
+        {currentWorldId && (!currentGroupId || !myGroups.some(g => g.id === currentGroupId)) && (
              <motion.div 
                 key="roaming-card" 
                 variants={itemVariants} 
@@ -203,7 +187,7 @@ export const GroupSelectionView: React.FC = memo(() => {
         )}
 
         {myGroups.map((group) => {
-          const isLive = group.id === activeGroupId;
+          const isLive = group.id === currentGroupId;
           
           return (
             <motion.div key={group.id} variants={itemVariants} layout>
@@ -242,7 +226,7 @@ export const GroupSelectionView: React.FC = memo(() => {
                   </AnimatePresence>
 
                   {/* Live Badge - Shared Layout Id for smooth position swap */}
-                  {isLive && (
+                  {isLive ? (
                       <motion.div
                           layoutId={`live-${group.id}`}
                           initial={{ scale: 0 }}
@@ -251,7 +235,21 @@ export const GroupSelectionView: React.FC = memo(() => {
                       >
                           LIVE
                       </motion.div>
-                  )}
+                  ) : group.activeInstanceCount && group.activeInstanceCount > 0 ? (
+                      <motion.div
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          className={styles.liveBadge}
+                          style={{
+                              background: 'var(--color-secondary)',
+                              color: 'white',
+                              width: 'auto',
+                              padding: '0 8px'
+                          }}
+                      >
+                          {group.activeInstanceCount} active instance{group.activeInstanceCount !== 1 ? 's' : ''}
+                      </motion.div>
+                  ) : null}
 
                   {/* Group Icon - Shared Element */}
                   {group.iconUrl ? (

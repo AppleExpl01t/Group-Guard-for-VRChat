@@ -42,6 +42,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.11.0",
+    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cross-fetch": "^4.1.0",
     "date-fns": "^4.1.0",
@@ -51,6 +52,7 @@
     "electron-updater": "^6.6.2",
     "framer-motion": "^12.23.26",
     "keyv-file": "^5.3.3",
+    "lru-cache": "^11.2.4",
     "lucide-react": "^0.562.0",
     "node-osc": "^11.2.2",
     "react": "^19.2.0",

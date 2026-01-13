@@ -9,6 +9,8 @@ import { groupAuthorizationService } from './GroupAuthorizationService';
 import { evaluateUser } from './AutoModLogic';
 import { networkService } from './NetworkService';
 import { discordWebhookService } from './DiscordWebhookService';
+import { databaseService } from './DatabaseService';
+import { LRUCache } from 'lru-cache';
 
 
 // ============================================
@@ -59,7 +61,15 @@ interface SessionEvent {
 // CACHE
 // ============================================
 
-const entityCache = new Map<string, LiveEntity>();
+// ============================================
+// CACHE (LRU to prevent memory leaks)
+// ============================================
+
+const entityCache = new LRUCache<string, LiveEntity>({
+    max: 5000,
+    ttl: 1000 * 60 * 60 * 2, // 2 hours TTL
+    updateAgeOnGet: true
+});
 // Track invited users per instance to prevent spam re-invites
 // Key: fullInstanceId, Value: Set<userId>
 const recruitmentCache = new Map<string, Set<string>>();
@@ -146,6 +156,15 @@ async function processFetchQueue(groupId?: string) {
 
                 entityCache.set(cacheKey, entity);
                 
+                // Persist to database for searchability
+                databaseService.upsertScannedUser({
+                    id: userId,
+                    displayName,
+                    rank,
+                    thumbnailUrl: entity.avatarUrl,
+                    groupId: groupId
+                }).catch(err => logger.warn(`Failed to persist scanned user ${userId}:`, err));
+                
                 // Emit update to UI
                 // We send the single entity update to let UI merge it
                 // Emit update to UI
@@ -199,6 +218,12 @@ export function setupInstanceHandlers() {
             // logWatcherService is imported above
             
             const players = logWatcherService.getPlayers();
+            if (players.length > 0) {
+                 logger.info(`[InstanceService] scan-sector found ${players.length} players from LogWatcher.`);
+            } else {
+                 // Debug empty
+                 // logger.info('[InstanceService] scan-sector found 0 players.');
+            }
             
             const results: LiveEntity[] = [];
 
@@ -250,38 +275,135 @@ export function setupInstanceHandlers() {
         }
     });
 
+    // INVITE SLOT MANAGER (Rate Limit Handling for Slots 10, 11, 12)
+    const inviteSlotManager = (() => {
+        const SLOTS = [10, 11, 12];
+        const COOLDOWN_MS = 60 * 60 * 1000; // 60 minutes
+        
+        // In-memory state: map slot index to last update info
+        const state = SLOTS.map(s => ({
+            index: s,
+            lastUpdate: 0,
+            message: null as string | null
+        }));
+
+        return {
+            /**
+             * Attempts to get a slot for the given message.
+             * @param message The invite message content
+             * @returns success object or error with cooldown
+             */
+            getSlotForMessage: (message: string): { slot?: number; reuse?: boolean; error?: string; cooldownMins?: number } => {
+                const now = Date.now();
+                const cleanMessage = message.trim();
+
+                // 1. Check for Reuse (Message Match)
+                const existing = state.find(s => s.message === cleanMessage);
+                if (existing) {
+                    logger.info(`[InstanceService] Reusing Slot ${existing.index} for message match.`);
+                    return { slot: existing.index, reuse: true };
+                }
+
+                // 2. Find Available Slot (Cooldown Expired or Never Used)
+                // Prefer slots never used (lastUpdate = 0) or oldest update
+                const available = state
+                    .filter(s => (now - s.lastUpdate) > COOLDOWN_MS)
+                    .sort((a, b) => a.lastUpdate - b.lastUpdate); // Ascending: smallest timestamp (oldest) first matches logic better
+
+                if (available.length > 0) {
+                    const selected = available[0];
+                    return { slot: selected.index, reuse: false };
+                }
+
+                // 3. All Busy - Calculate Wait
+                const freeTimes = state.map(s => s.lastUpdate + COOLDOWN_MS);
+                const nextFreeTime = Math.min(...freeTimes);
+                const waitMs = nextFreeTime - now;
+                const waitMins = Math.ceil(waitMs / 60000);
+
+                return { 
+                    error: 'SLOTS_FULL', 
+                    cooldownMins: waitMins > 0 ? waitMins : 1 
+                };
+            },
+
+            markSlotUpdated: (slotIndex: number, message: string) => {
+                const slot = state.find(s => s.index === slotIndex);
+                if (slot) {
+                    slot.lastUpdate = Date.now();
+                    slot.message = message.trim();
+                    logger.info(`[InstanceService] Slot ${slotIndex} updated. Next available: ${new Date(slot.lastUpdate + COOLDOWN_MS).toLocaleTimeString()}`);
+                }
+            },
+
+            markUpdateFailed: (slotIndex: number) => {
+                 logger.warn(`[InstanceService] Slot ${slotIndex} update failed. Reverting state assumption.`);
+            },
+
+            getState: () => {
+                return state.map(s => ({
+                    index: s.index,
+                    message: s.message,
+                    lastUpdate: s.lastUpdate,
+                    cooldownRemaining: Math.max(0, (s.lastUpdate + COOLDOWN_MS) - Date.now())
+                }));
+            }
+        };
+    })();
+
     // HELPER: Send Invite with Custom Message Support
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sendCustomInvite = async (client: any, userId: string, location: string, message?: string) => {
-        // Slot 11 = Slot 12 in UI (0-indexed)
-        const SLOT_INDEX = 11; 
-
-        // 2. Send Invite
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const body: any = { instanceId: location };
-        
-        // Only use the slot if we successfully updated it (or if it's safe to assume)
-        // In the try/catch above, we should track success.
-        
-        // Refactored logic:
-        let slotUpdated = false;
+        let usedSlot: number | undefined;
+
         if (message) {
-             try {
-                // 1. Overwrite Slot
-                logger.info(`[InstanceService] Overwriting Invite Slot ${SLOT_INDEX} with: "${message}"`);
-                await client.updateInviteMessage({
-                    path: { slot: SLOT_INDEX },
-                    body: { message: message.substring(0, 64) }
-                });
-                await sleep(200);
-                slotUpdated = true;
-            } catch (e: any) {
-                logger.warn(`[InstanceService] Failed to update invite message slot: ${e.message}. Sending standard invite to avoid stale message.`);
-                slotUpdated = false;
+            const cleanMessage = message.substring(0, 64);
+            
+            // Ask Manager for Slot
+            const slotDecision = inviteSlotManager.getSlotForMessage(cleanMessage);
+
+            if (slotDecision.error) {
+                // ALL SLOTS BUSY -> Throw cooldown error for UI handling
+                throw { 
+                    message: `Invite Message Cooldown: Please wait ${slotDecision.cooldownMins} minutes.`,
+                    code: 'SLOT_COOLDOWN',
+                    cooldownMins: slotDecision.cooldownMins 
+                };
+            }
+
+            if (slotDecision.slot) {
+                usedSlot = slotDecision.slot;
+
+                // Only call API if it's NOT a reuse
+                if (!slotDecision.reuse) {
+                     try {
+                        logger.info(`[InstanceService] Overwriting Invite Slot ${usedSlot} with: "${cleanMessage}"`);
+                        await client.updateInviteMessage({
+                            path: { slot: usedSlot },
+                            body: { message: cleanMessage }
+                        });
+                        
+                        // Update Internal State
+                        inviteSlotManager.markSlotUpdated(usedSlot, cleanMessage);
+                        await sleep(200); 
+                    } catch (error: unknown) {
+                        const e = error as Error;
+                        logger.warn(`[InstanceService] Failed to update slot ${usedSlot}: ${e.message}`);
+                        
+                        // Mark failed
+                        inviteSlotManager.markUpdateFailed(usedSlot);
+                        
+                        // Fallback: Don't use slot
+                        usedSlot = undefined;
+                    }
+                }
             }
         }
 
-        if (slotUpdated) {
-            body.messageSlot = SLOT_INDEX;
+        if (usedSlot) {
+            body.messageSlot = usedSlot;
         }
 
         return await client.inviteUser({ 
@@ -290,8 +412,9 @@ export function setupInstanceHandlers() {
         });
     };
 
+
     // RECRUIT (Invite User to Group)
-    ipcMain.handle('instance:recruit-user', async (_event, { groupId, userId, message }: { groupId: string, userId: string, message?: string }) => {
+    ipcMain.handle('instance:recruit-user', async (_event, { groupId, userId }: { groupId: string, userId: string }) => {
         // SECURITY: Validate group access
         const authCheck = groupAuthorizationService.validateAccessSafe(groupId, 'instance:recruit-user');
         if (!authCheck.allowed) return { success: false, error: authCheck.error };
@@ -359,9 +482,14 @@ export function setupInstanceHandlers() {
 
            return { success: true };
         }, `instance:unban-user:${userId}`).then(res => {
-            if (res.success) return { success: true };
             return { success: false, error: res.error };
         });
+    });
+
+    // NEW: Get Invite Slots State (for Rate Limit Fallback UI)
+    ipcMain.handle('instance:get-invite-slots-state', async () => {
+        const slots = inviteSlotManager.getState();
+        return { success: true, slots };
     });
 
     // KICK (Ban from Group)
@@ -376,25 +504,68 @@ export function setupInstanceHandlers() {
         return networkService.execute(async () => {
            logger.info(`[InstanceService] Kicking ${userId} from group ${groupId} (Ban + Unban sequence)`);
            
-           // 1. BAN (Remove from group)
-           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-           const banResult = await (client as any).banGroupMember({ 
-               path: { groupId },
-               body: { userId }
-           });
-           
-           if (banResult.error) throw new Error(`Kick failed (Ban stage): ${(banResult.error as any).message}`);
-
-           // 2. WAIT (Short delay to ensure consistency)
-           await new Promise(r => setTimeout(r, 500));
-
-           // 3. UNBAN (Clear the ban so they can rejoin if they want, effective 'Kick')
            try {
+               // Strategy 1: Native Kick API
                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-               await (client as any).unbanGroupMember({ path: { groupId, userId } });
-               logger.info(`[InstanceService] Unban complete for ${userId} (Kick sequence finished)`);
-           } catch (e) {
-               logger.warn(`[InstanceService] Failed to cleanup ban for ${userId} during kick. User remains banned.`, e);
+               if (typeof (client as any).kickGroupMember === 'function') {
+                   logger.info(`[InstanceService] Attempting native kick for ${userId}...`);
+                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                   const result = await (client as any).kickGroupMember({ 
+                       path: { groupId, userId } 
+                   });
+                   
+                   if (result.error) throw result.error;
+                   logger.info(`[InstanceService] Successfully kicked ${userId} using native API`);
+                   
+                   // Webhook for native kick
+                   discordWebhookService.sendEvent(
+                       groupId,
+                       '🥾 User Kicked',
+                       `**User**: ${userId}\n**Action**: Kicked (Native API)\n**Instance**: ${instanceLoggerService.getCurrentInstanceId() || 'Unknown'}`,
+                       0xFEE75C
+                   ).catch(e => logger.error('Webhook failed', e));
+
+                   return { success: true };
+               }
+               
+               throw new Error('Native kick method missing, falling back to legacy sequence');
+
+           } catch (nativeError) {
+               logger.warn(`[InstanceService] Native kick failed (${(nativeError as Error).message}), falling back to Ban+Unban sequence`);
+
+               // Strategy 2: Legacy Ban + Unban Sequence
+               
+               // 1. BAN (Remove from group)
+               // eslint-disable-next-line @typescript-eslint/no-explicit-any
+               const banResult = await (client as any).banGroupMember({ 
+                   path: { groupId },
+                   body: { userId }
+               });
+               
+               if (banResult.error) throw new Error(`Kick failed (Ban stage): ${(banResult.error as { message?: string }).message}`);
+
+               // 2. WAIT (Short delay to ensure consistency)
+               await new Promise(r => setTimeout(r, 500));
+
+               // 3. UNBAN (Clear the ban so they can rejoin if they want, effective 'Kick')
+               try {
+                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                   await (client as any).unbanGroupMember({ path: { groupId, userId } });
+                   logger.info(`[InstanceService] Unban complete for ${userId} (Kick sequence finished)`);
+               } catch (e) {
+                   logger.warn(`[InstanceService] Failed to cleanup ban for ${userId} during kick. User remains banned.`, e);
+                   // We don't throw here to avoid failing the whole "kick" operation if the person is effectively removed
+               }
+               
+               // Webhook for legacy kick
+               discordWebhookService.sendEvent(
+                   groupId,
+                   '🥾 User Kicked',
+                   `**User**: ${userId}\n**Action**: Soft Kick (Ban+Unban)\n**Instance**: ${instanceLoggerService.getCurrentInstanceId() || 'Unknown'}`,
+                   0xFEE75C
+               ).catch(e => logger.error('Webhook failed', e));
+
+               return { success: true };
            }
            
            
@@ -491,7 +662,7 @@ export function setupInstanceHandlers() {
              if (res.error === 'Rate Limited') return { success: false, error: 'RATE_LIMIT' };
              if (res.success) {
                  // Check if it returned a cached result
-                 if (res.data && (res.data as any).cached) return { success: true, cached: true };
+                  if (res.data && (res.data as { cached?: boolean }).cached) return { success: true, cached: true };
                  return { success: true };
              }
              return { success: false, error: res.error };

@@ -22,7 +22,6 @@ export const AnalyticsView: React.FC = () => {
              // Parse activity
              // eslint-disable-next-line @typescript-eslint/no-explicit-any
              const traffic = (activityRes.traffic as any[]) || [];
-             // eslint-disable-next-line @typescript-eslint/no-explicit-any
              setActivityData(traffic);
              
              // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -47,7 +46,7 @@ export const AnalyticsView: React.FC = () => {
             const dateStr = format(date, 'yyyy-MM-dd'); // Matches SQLite strftime output used in backend
             
             const joinCount = activityData.find(d => d.date === dateStr)?.count || 0;
-            const kickCount = automodData.filter(d => d.date === dateStr && (d.action === 'REJECT' || d.action === 'AUTO_BLOCK')).reduce((a, b) => a + b.count, 0);
+            const kickCount = automodData.filter(d => d.date === dateStr && (d.action === 'REJECT' || d.action === 'AUTO_BLOCK')).reduce((a, b) => a + Number(b.count), 0);
 
             data.push({
                 name: format(date, 'MMM dd'),
@@ -62,17 +61,17 @@ export const AnalyticsView: React.FC = () => {
     // Grid: 7 rows (Mon-Sun), 24 cols (0-23)
     // Backend returns dayOfWeek (0-6, 0=Sunday)
     const heatmapGrid = useMemo(() => {
-        const grid = [];
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const grid = [];
         
         for (let d = 0; d < 7; d++) {
             const row = [];
             for (let h = 0; h < 24; h++) {
                 // Find matching entry
                 const cell = heatmapData.find(item => 
-                    parseInt(item.dayOfWeek) === d && parseInt(item.hour) === h
+                    Number(item.dayOfWeek) === d && Number(item.hour) === h
                 );
-                row.push(cell ? cell.count : 0);
+                row.push(cell ? Number(cell.count) : 0);
             }
             grid.push({ day: days[d], hours: row });
         }
@@ -99,14 +98,14 @@ export const AnalyticsView: React.FC = () => {
     if (!selectedGroup) return <div style={{ padding: '2rem' }}>Select a group to view analytics.</div>;
 
     return (
-        <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%', overflowY: 'auto' }}>
+        <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem', flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
            
            {/* Growth Chart */}
            <GlassPanel style={{ height: '350px', padding: '1rem', display: 'flex', flexDirection: 'column' }}>
                 <h3 style={{ margin: '0 0 1rem 0', color: 'white', fontWeight: 600, flexShrink: 0 }}>30-Day Activity Growth</h3>
-                <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+                <div style={{ flex: 1, minHeight: 0, position: 'relative', width: '100%', overflow: 'hidden' }}>
                     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" debounce={50} minWidth={0} minHeight={0}>
                             <AreaChart data={growthChartData}>
                                 <defs>
                                     <linearGradient id="colorJoins" x1="0" y1="0" x2="0" y2="1">

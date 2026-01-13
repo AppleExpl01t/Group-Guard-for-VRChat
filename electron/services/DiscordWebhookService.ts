@@ -26,6 +26,7 @@ export class DiscordWebhookService {
 
     public setWebhook(groupId: string, url: string) {
         if (!url || url.trim() === '') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             store.delete(`webhooks.${groupId}` as any);
         } else {
             store.set(`webhooks.${groupId}`, url.trim());
@@ -64,7 +65,7 @@ export class DiscordWebhookService {
         }
     }
 
-    private async postToDiscord(url: string, body: any) {
+    private async postToDiscord(url: string, body: Record<string, unknown>) {
         try {
             const response = await fetch(url, {
                 method: 'POST',

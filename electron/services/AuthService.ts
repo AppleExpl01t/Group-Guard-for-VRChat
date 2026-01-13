@@ -95,95 +95,66 @@ interface CookieJarLike {
 }
 
 // Helper to extract auth cookie from client
-function extractAuthCookie(client: { jar?: CookieJarLike; cookieJar?: CookieJarLike; cookies?: CookieLike[] | CookieJarLike }): string | undefined {
+function extractAuthCookie(client: any): string | undefined {
   try {
-    // Check for jar in common locations, including internal axios instances
-    const jar = client.jar || 
-                client.cookieJar || 
-                client.cookies || 
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                (client as any).api?.defaults?.jar || 
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                (client as any).axios?.defaults?.jar;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const clientAny = client;
+// ...
     
-    if (!jar) {
-      logger.debug('No cookie jar found on client');
-      return undefined;
+    // Strategy 1: Axios Defaults (Most reliable for this SDK version)
+    if (clientAny.api && clientAny.api.defaults && clientAny.api.defaults.headers) {
+        const defaults = clientAny.api.defaults.headers;
+        if (defaults.cookie) return defaults.cookie as string;
+        if (defaults.common && defaults.common.cookie) return defaults.common.cookie as string;
     }
 
-    // Helper to try getting cookies from jar
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tryGetCookies = (j: any, url: string) => {
-        if (typeof j.getCookiesSync === 'function') return j.getCookiesSync(url);
-        if (j._jar && typeof j._jar.getCookiesSync === 'function') return j._jar.getCookiesSync(url);
-        return [];
-    };
-
-    // Try multiple variations of the URL to ensure we catch domain-level cookies
-    const urlsToTry = [
-        VRCHAT_API_BASE,
-        'https://api.vrchat.cloud',
-        'https://vrchat.cloud',
-        'https://www.vrchat.com',
-        'https://vrchat.com'
-    ];
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const jarObj = jar as any;
+    // Strategy 2: Cookie Jar (if present)
+    const jar = clientAny.jar || clientAny.cookieJar || clientAny.cookies || clientAny.api?.defaults?.jar || clientAny.axios?.defaults?.jar;
     
-    // Accumulate unique cookies by key/name
-    const uniqueCookies = new Map<string, string>();
+    if (jar) {
+        // Collect all cookies for VRChat domains
+        const urlsToTry = [
+            'https://api.vrchat.cloud',
+            'https://vrchat.com'
+        ];
+        
+        const uniqueCookies = new Map<string, string>();
+        
+        // Helper to extract from tough-cookie style jar
+        const processCookie = (c: CookieLike) => {
+            const key = c.key || c.name;
+            const value = c.value;
+            if (key && value) uniqueCookies.set(key, value);
+        };
 
-    for (const url of urlsToTry) {
-        try {
-            const found = tryGetCookies(jarObj, url);
-            if (Array.isArray(found)) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                found.forEach((c: any) => {
-                    const key = c.key || c.name;
-                    const value = c.value;
-                    if (key && value) {
-                        uniqueCookies.set(key, value);
-                    }
-                });
-            }
-        } catch {
-            // ignore
+        const getCookiesFromJar = (j: CookieJarLike, url: string) => {
+            if (typeof j.getCookiesSync === 'function') return j.getCookiesSync(url);
+            if (j._jar && typeof j._jar.getCookiesSync === 'function') return j._jar.getCookiesSync(url);
+            return [];
+        };
+
+        urlsToTry.forEach(url => {
+            try {
+                const found = getCookiesFromJar(jar, url);
+                if (Array.isArray(found)) found.forEach(processCookie);
+            } catch (e) { /* ignore */ }
+        });
+
+        // Also check if jar itself is just an array of cookies
+        if (Array.isArray(jar)) jar.forEach(processCookie);
+        
+        if (uniqueCookies.size > 0) {
+            const parts: string[] = [];
+            uniqueCookies.forEach((val, key) => parts.push(`${key}=${val}`));
+            return parts.join('; ');
         }
     }
 
-    // Fallback: if 'cookies' property was just an array
-    if (Array.isArray(jar)) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (jar as any[]).forEach((c: any) => {
-             const key = c.key || c.name;
-             const value = c.value;
-             if (key && value) {
-                 uniqueCookies.set(key, value);
-             }
-        });
-    }
-
-    if (uniqueCookies.size === 0) {
-      // logger.warn('No cookies found in jar');
-      return undefined;
-    }
-
-    // Convert map to cookie string
-    const cookieParts: string[] = [];
-    uniqueCookies.forEach((value, key) => {
-        cookieParts.push(`${key}=${value}`);
-    });
-
-    const fullCookieString = cookieParts.join('; ');
-    // logger.debug(`Extracted ${uniqueCookies.size} cookies.`);
-    
-    return fullCookieString;
-
-  } catch (err) {
-    logger.warn('Failed to extract auth cookie:', err);
+    return undefined;
+  } catch (e) {
+    logger.warn('Failed to extract auth cookie', e);
+    return undefined;
   }
-  return undefined;
 }
 
 /**
@@ -329,6 +300,12 @@ async function performLogin(username: string, password: string, twoFactorCode?: 
       // Extract and save auth cookie
       const newAuthCookie = extractAuthCookie(client);
       
+      if (newAuthCookie) {
+          logger.info('Auth cookie extracted successfully during login');
+      } else {
+          logger.warn('Login successful but FAILED to extract auth cookie - session may not persist!');
+      }
+      
       vrchatClient = client;
       currentUser = user;
       
@@ -470,7 +447,134 @@ async function performLogin(username: string, password: string, twoFactorCode?: 
   }
 }
 
+/**
+ * Attempt to login using a saved cookie string (bypasses 2FA if cookie is valid)
+ */
+async function tryLoginWithCookie(cookie: string): Promise<{
+    success: boolean;
+    user?: Record<string, unknown>;
+    error?: string;
+}> {
+    try {
+        logger.info('Attempting login with saved auth cookie...');
+        
+        // Create client with keyv store to allow session persistence update
+        const clientOptions = {
+            application: APP_INFO,
+            baseUrl: VRCHAT_API_BASE,
+            keyv: getSessionStore()
+        };
+        const client = new VRChat(clientOptions);
+
+        // SAFELY Inject cookie into the internal Axios/Got instance
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const apiClient = (client as any).api;
+        
+        if (apiClient && apiClient.defaults) {
+             apiClient.defaults.headers = apiClient.defaults.headers || {};
+             apiClient.defaults.headers.cookie = cookie;
+             
+             // Also try common headers if specific structure exists (axios specific)
+             if (apiClient.defaults.headers.common) {
+                 apiClient.defaults.headers.common['cookie'] = cookie;
+             }
+             logger.debug('Injected cookie into client headers');
+        } else {
+             logger.warn('Could not inject cookie: client.api.defaults not found. VRChat SDK structure might have changed.');
+             // We continue anyway, maybe Keyv store has it?
+        }
+        
+        // Now try to fetch current user
+        const userResponse = await client.getCurrentUser({ throwOnError: true });
+        const user = userResponse?.data || userResponse;
+
+        if (user && user.id) {
+            logger.info(`Cookie login successful for: ${user.displayName}`);
+            
+            // Sanitize ID
+            if (user.id && typeof user.id === 'string') user.id = user.id.trim();
+
+            vrchatClient = client;
+            currentUser = user as Record<string, unknown>;
+            
+            // Re-connect pipeline
+            onUserLoggedIn();
+            
+            return { success: true, user: currentUser };
+        }
+        
+        return { success: false, error: 'Cookie invalid' };
+
+    } catch (e) {
+        logger.warn('Cookie login failed:', e);
+        return { success: false, error: String(e) };
+    }
+}
+
+/**
+ * Fetches the current user's location directly from the API.
+ * Used for synchronizing log watchers on app startup.
+ */
+export async function fetchCurrentLocationFromApi(): Promise<string | null> {
+    if (!vrchatClient) return null;
+    try {
+        const userRes = await vrchatClient.getCurrentUser({ throwOnError: true });
+        // SDK structure: { data: user } or just user? SDK v2 usually { data: ... }
+        // VRChat library logic (lines 185-186) handles userRes?.data
+        const user = userRes?.data as { location?: string };
+        
+        if (user && user.location && user.location !== 'offline' && user.location !== '') {
+            return user.location;
+        }
+        return null;
+    } catch (e) {
+        logger.warn('[AuthService] Failed to fetch current location from API:', e);
+        return null;
+    }
+}
+
+/**
+ * Fetches the user list for a specific instance from the API.
+ * Used to reconcile "Ghost" players or fill gaps in rotated logs.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchInstancePlayers(location: string): Promise<{ id: string; displayName: string }[]> {
+    if (!vrchatClient) return [];
+    try {
+        // Parse world and instance IDs from location string (wrld_xxx:12345)
+        const parts = location.split(':');
+        if (parts.length < 2) return [];
+        
+        const worldId = parts[0];
+        const instanceId = parts.slice(1).join(':'); // Rejoin in case instanceId contains colons
+        
+        // Fetch instance details
+        const resp = await vrchatClient.getInstance({ 
+            worldId: worldId, 
+            instanceId: instanceId 
+        });
+        
+        const instance = resp.data || resp;
+        
+        // Return users array if present
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (instance && Array.isArray(instance.users)) {
+             return instance.users.map((u: any) => ({
+                 id: u.id,
+                 displayName: u.displayName
+             }));
+        }
+        return [];
+
+    } catch (e) {
+        logger.warn(`[AuthService] Failed to fetch players for ${location}`, e);
+        return [];
+    }
+}
+
 export function setupAuthHandlers() {
+// ...
+// ...
   
   // LOGIN Handler - accepts rememberMe flag
   ipcMain.handle('auth:login', async (_event, { username, password, rememberMe = false }: { 
@@ -485,7 +589,14 @@ export function setupAuthHandlers() {
     // If we have saved credentials for this user, try to restore session first to skip 2FA
     if (isSavedUser) {
         logger.info('Login matches saved user, attempting session restoration to bypass 2FA...');
-        const restoreResult = await tryRestoreSession();
+        
+        // 1. Try Keyv Store
+        let restoreResult = await tryRestoreSession();
+        
+        // 2. If Keyv failed but we have a saved cookie, try that
+        if ((!restoreResult.success || !restoreResult.user) && saved.authCookie) {
+             restoreResult = await tryLoginWithCookie(saved.authCookie);
+        }
         
         // If restoration worked, we are logged in!
         // We do strictly verify the user ID to ensure we aren't using a stale cookie for the wrong account (though username check helps)
@@ -524,42 +635,45 @@ export function setupAuthHandlers() {
       logger.info('Verifying 2FA code using existing client session...');
       
       // Use the existing client that has the session from the first login attempt
-      // Try TOTP verification first (most common)
       const client = vrchatClient;
       
       // Try to verify with TOTP (authenticator app)
+      logger.info('Attempting TOTP verification...');
       let verifyResult = await client.verify2Fa({ 
         body: { code },
         throwOnError: false 
       });
+      logger.info('TOTP verify result:', JSON.stringify(verifyResult, null, 2));
       
       // If TOTP didn't work, try email OTP
       if (!verifyResult?.data?.verified) {
-        logger.info('TOTP verification failed, trying email OTP...');
+        logger.info('TOTP not verified, trying email OTP...');
         verifyResult = await client.verify2FaEmailCode({ 
           body: { code },
           throwOnError: false 
         });
+        logger.info('Email OTP verify result:', JSON.stringify(verifyResult, null, 2));
       }
       
       // If email OTP didn't work, try recovery code
       if (!verifyResult?.data?.verified) {
-        logger.info('Email OTP verification failed, trying recovery code...');
+        logger.info('Email OTP not verified, trying recovery code...');
         verifyResult = await client.verifyRecoveryCode({ 
           body: { code },
           throwOnError: false 
         });
+        logger.info('Recovery code verify result:', JSON.stringify(verifyResult, null, 2));
       }
       
       if (!verifyResult?.data?.verified) {
-        logger.warn('All 2FA verification methods failed');
+        logger.warn('All 2FA verification methods failed. Full result:', JSON.stringify(verifyResult, null, 2));
         return { success: false, error: 'Invalid 2FA code. Please try again.' };
       }
       
       logger.info('2FA verification successful, fetching user data...');
       
       // Now get the current user to complete login
-      const userResponse = await client.getCurrentUser({ throwOnError: true });
+      const userResponse = await vrchatClient.getCurrentUser({ throwOnError: true });
       const user = userResponse?.data || userResponse;
       
       if (!user || !user.id) {
@@ -577,9 +691,18 @@ export function setupAuthHandlers() {
       
       // Save credentials if rememberMe was set during initial login
       if (pendingLoginCredentials.rememberMe) {
-        const authCookie = extractAuthCookie(client);
-        saveCredentials(pendingLoginCredentials.username, pendingLoginCredentials.password, authCookie);
-        logger.info('Credentials saved for auto-login after 2FA');
+        // IMPORTANT: Extract cookie from the client we just verified!
+        const authCookie = extractAuthCookie(vrchatClient);
+        
+        if (authCookie) {
+             logger.info('Extracted auth cookie after 2FA verification');
+             saveCredentials(pendingLoginCredentials.username, pendingLoginCredentials.password, authCookie);
+             logger.info('Credentials AND Cookie saved for auto-login after 2FA');
+        } else {
+             logger.warn('2FA successful but NO COOKIE found to save. Auto-login might fail next time.');
+             // Save anyway so we have username/pass, although reuse without cookie is limited
+             saveCredentials(pendingLoginCredentials.username, pendingLoginCredentials.password, undefined); 
+        }
       }
       
       pendingLoginCredentials = null; // Clear pending credentials
@@ -626,8 +749,13 @@ export function setupAuthHandlers() {
     
     logger.info('Found saved credentials, attempting session restoration...');
     
-    // FIRST: Try to restore session from Keyv store (no 2FA required!)
-    const sessionResult = await tryRestoreSession();
+    // 1. Try Keyv Store (Fastest, uses active session)
+    let sessionResult = await tryRestoreSession();
+    
+    // 2. If Keyv failed but we have a saved cookie for this user, try cookie login
+    if ((!sessionResult.success || !sessionResult.user) && credentials.authCookie) {
+         sessionResult = await tryLoginWithCookie(credentials.authCookie);
+    }
     
     if (sessionResult.success && sessionResult.user) {
       logger.info('Session restored successfully without re-authentication!');
@@ -688,8 +816,9 @@ export function setupAuthHandlers() {
       
       if (clearSaved) {
         clearCredentials();
-        logger.info('Saved credentials cleared');
-        logger.debug('Saved credentials cleared');
+        logger.info('Saved credentials cleared (user requested removal)');
+      } else {
+        logger.info('Saved credentials preserved (logout only cleared active session)');
       }
     } catch (e) {
       logger.warn('Logout cleanup:', e);
@@ -707,6 +836,9 @@ export function setupAuthHandlers() {
     
     return { success: true };
   });
+
+  // Multi-Account Handlers Removed
+
 }
 
 // Helper to share client with other services (Groups, Audit, etc.)
@@ -741,4 +873,30 @@ export function getAuthCookieString(): string | undefined {
   }
   
   return cookie;
+}
+
+// Helper to check online status
+export async function checkOnlineStatus(): Promise<boolean> {
+  if (!vrchatClient || !currentUser) return false;
+  
+  try {
+      // We can fetch our own user entry. 
+      // Optimized: Just check /auth/user which is cached/fast usually, or check presence?
+      // fetching user with client.getCurrentUser() is reliable.
+      const userResponse = await vrchatClient.getCurrentUser();
+      const user = userResponse?.data || userResponse;
+      
+      // If user is present, check 'state' or 'status'
+      // state: 'offline', 'active', 'online'
+      if (user && (user.state === 'offline' || user.status === 'offline')) {
+          return false;
+      }
+      return true;
+  } catch (error) {
+      logger.warn('Failed to check online status:', error);
+      // Assume offline on error? Or keep alive? 
+      // If API fails, we probably shouldn't kill the session immediately unless it's a 401.
+      // But for "Game Closed" detection, if API fails, maybe we are just disconnected.
+      return false;
+  }
 }

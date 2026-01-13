@@ -30,26 +30,44 @@ class OscService {
             defaults: { osc: DEFAULT_CONFIG }
         });
         this.config = this.store.get('osc');
-        this.initClient();
+        // Lazy init: initClient() is now called via start()
     }
 
     private initClient() {
+        if (this.config.enabled) {
+            try {
+                const { senderIp, senderPort } = this.config;
+                logger.info(`Initializing OSC Client with IP: ${senderIp}, Port: ${senderPort}`);
+                
+                // Double check we don't have a lingering client
+                if (this.client) {
+                    logger.warn('Existing client found during init, closing it.');
+                    this.stop();
+                }
+
+                this.client = new Client(senderIp, senderPort);
+                logger.info(`OSC Client initialized successfully.`);
+            } catch (e) {
+                logger.error('Failed to initialize OSC client', e);
+            }
+        }
+    }
+
+    public start() {
+        if (this.client) return; // Already running
+        logger.info('[OscService] Starting service...');
+        this.initClient();
+    }
+
+    public stop() {
         if (this.client) {
             try {
                 this.client.close();
+                logger.info('[OscService] Service stopped');
             } catch (e) {
                 logger.warn('Error closing OSC client', e);
             }
             this.client = null;
-        }
-
-        if (this.config.enabled) {
-            try {
-                logger.info(`Initializing OSC Client to ${this.config.senderIp}:${this.config.senderPort}`);
-                this.client = new Client(this.config.senderIp, this.config.senderPort);
-            } catch (e) {
-                logger.error('Failed to initialize OSC client', e);
-            }
         }
     }
 
@@ -60,26 +78,43 @@ class OscService {
     public setConfig(newConfig: Partial<OscConfig>) {
         this.config = { ...this.config, ...newConfig };
         this.store.set('osc', this.config);
-        this.initClient();
+        
+        // Always restart service to apply changes (start() checks enabled flag)
+        this.stop();
+        this.start();
         return this.config;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    public send(address: string, args: any[]) {
-        if (!this.client || !this.config.enabled) {
-             // Silently fail if disabled, or return false?
-             // If expressly called while disabled, maybe warn.
-             if (!this.config.enabled) logger.debug('OSC Send skipped: Disabled');
-             return false;
-        }
+    public send(address: string, args: any[]): Promise<boolean> {
+        return new Promise((resolve, reject) => {
+            if (!this.config.enabled) {
+                logger.debug('OSC Send skipped: Disabled');
+                // For test button purposes, this should probably be an error if we explicitly tried to send
+                reject(new Error("OSC is disabled in config"));
+                return;
+            }
 
-        try {
-            this.client.send(address, ...args);
-            return true;
-        } catch (e) {
-            logger.error(`Failed to send OSC message to ${address}`, e);
-            return false;
-        }
+            if (!this.client) {
+                logger.error('OSC Send failed: Client not initialized');
+                reject(new Error("OSC Client not initialized"));
+                return;
+            }
+
+            try {
+                this.client.send(address, ...args, (err: Error | null) => {
+                    if (err) {
+                        logger.error(`OSC Send Error (${address}):`, err);
+                        reject(err);
+                    } else {
+                        logger.debug(`OSC Message sent to ${address}`);
+                        resolve(true);
+                    }
+                });
+            } catch (e) {
+                logger.error(`Failed to send OSC message to ${address}`, e);
+                reject(e);
+            }
+        });
     }
 }
 

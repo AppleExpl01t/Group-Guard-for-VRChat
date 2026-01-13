@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal } from '../ui/Modal';
 import { NeonButton } from '../ui/NeonButton';
 import { UserProfileDialog } from '../../features/dashboard/dialogs/UserProfileDialog';
+import { Download } from 'lucide-react';
 
 interface GlobalModalsProps {
   isLogoutConfirmOpen: boolean;
@@ -80,7 +81,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                   justifyContent: 'center',
                   margin: '0 auto 1.5rem auto'
               }}>
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                  <Download size={32} />
               </div>
               <p style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.5rem', color: 'white' }}>
                   New Version Downloaded

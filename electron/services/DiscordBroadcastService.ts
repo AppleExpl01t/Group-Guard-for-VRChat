@@ -131,7 +131,7 @@ export class DiscordBroadcastService {
         if (this.rpc) {
             try {
                 await this.rpc.destroy();
-            } catch (e) {
+            } catch {
                 // Ignore destroy errors
             }
             this.isReady = false;
@@ -152,7 +152,7 @@ export class DiscordBroadcastService {
         if (!this.isReady) return;
         try {
             this.rpc.clearActivity().catch(() => {});
-        } catch (e) {
+        } catch {
             // Ignore
         }
     }
@@ -206,7 +206,7 @@ export class DiscordBroadcastService {
         );
     }
     
-    public updateGroupStatus(groupName: string, memberCount?: number, _violationCount?: number) {
+    public updateGroupStatus(groupName: string, memberCount?: number) {
         this.currentGroupName = groupName;
         this.currentMemberCount = memberCount || 0;
         

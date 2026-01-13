@@ -4,6 +4,8 @@ import { useGroupStore } from '../../../stores/groupStore';
 import { useUserProfileStore } from '../../../stores/userProfileStore';
 import { GlassPanel } from '../../../components/ui/GlassPanel';
 import { NeonButton } from '../../../components/ui/NeonButton';
+import { useConfirm } from '../../../context/ConfirmationContext';
+import { useNotificationStore } from '../../../stores/notificationStore';
 
 interface Props {
     isOpen: boolean;
@@ -14,6 +16,9 @@ export const BansListDialog: React.FC<Props> = ({ isOpen, onClose }) => {
     const { bans, selectedGroup, fetchGroupBans, isBansLoading } = useGroupStore();
     const { openProfile } = useUserProfileStore();
     const [search, setSearch] = useState('');
+    
+    const { confirm } = useConfirm();
+    const { addNotification } = useNotificationStore();
 
     useEffect(() => {
         if (isOpen && selectedGroup) {
@@ -23,18 +28,39 @@ export const BansListDialog: React.FC<Props> = ({ isOpen, onClose }) => {
 
     const handleUnban = async (userId: string, displayName: string) => {
         if (!selectedGroup) return;
-        if (!confirm(`Are you sure you want to UNBAN ${displayName}?`)) return;
+        
+        const confirmed = await confirm({
+            title: 'Unban User',
+            message: `Are you sure you want to UNBAN ${displayName}?`,
+            confirmLabel: 'Unban',
+            variant: 'warning'
+        });
+
+        if (!confirmed) return;
 
         try {
             const res = await window.electron.unbanUser(selectedGroup.id, userId);
             if (res.success) {
                 fetchGroupBans(selectedGroup.id);
+                addNotification({
+                    type: 'success',
+                    title: 'User Unbanned',
+                    message: `${displayName} has been unbanned.`
+                });
             } else {
-                alert(`Error unbanning user: ${res.error}`);
+                addNotification({
+                    type: 'error',
+                    title: 'Unban Failed',
+                    message: res.error || 'Unknown error'
+                });
             }
         } catch (e) {
             console.error("Unban failed", e);
-            alert("Failed to unban user. Check console.");
+            addNotification({
+                type: 'error',
+                title: 'Error',
+                message: "Failed to process unban request."
+            });
         }
     };
 

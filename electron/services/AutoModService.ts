@@ -12,6 +12,8 @@ import { evaluateUser } from './AutoModLogic';
 import { fetchUser } from './UserService';
 import { windowService } from './WindowService';
 import { discordWebhookService } from './DiscordWebhookService';
+import { watchlistService } from './WatchlistService';
+import { serviceEventBus } from './ServiceEventBus';
 
 const logger = log.scope('AutoModService');
 
@@ -73,7 +75,8 @@ const persistAction = async (logEntry: any) => {
             action: logEntry.action,
             reason: logEntry.reason,
             module: logEntry.module,
-            details: logEntry.details
+            // Stringify details if it's an object
+            details: typeof logEntry.details === 'object' ? JSON.stringify(logEntry.details) : logEntry.details
         });
         logger.info('Persisted AutoMod action to database');
     } catch (error) {
@@ -144,8 +147,32 @@ export const processJoinRequest = async (
             }
         }
 
+        // ---------------------------------------------------------
+        // WATCHLIST CHECK
+        // ---------------------------------------------------------
+        const watched = watchlistService.getEntity(userId);
+        if (watched) {
+            // Critical flag or low priority = Instant Reject
+            if (watched.critical || watched.priority <= -10 || watched.tags.includes('malicious') || watched.tags.includes('nuisance')) {
+                const reason = `Watchlist: ${watched.notes || 'Flagged Entity'}`;
+                logger.info(`[AutoMod] Watchlist BLOCK for ${displayName}: ${reason}`);
+                
+                // Execute rejection immediately
+                // We reuse the rejection logic below by creating a synthetic evaluation result
+                 // We log it here, but the actual override happens after evaluateUser below
+                // to ensure we have the full context if needed.
+                 
+                 // Reuse the existing rejection block logic by jumping to it? 
+                 // It's cleaner to return early or let it fall through if we refactor. 
+                 // Let's refactor slightly to allow a "pre-determined" evaluation.
+                 
+                 // Actually, let's just use the existing logic flow by overwriting 'evaluation' 
+                 // BUT 'evaluation' is const. So we must rename the variable or move this check.
+            }
+        }
+        
         // Evaluate user against all enabled rules
-        const evaluation = await evaluateUser({
+        let evaluation = await evaluateUser({
             id: userId,
             displayName: displayName,
             tags: fullUser?.tags,
@@ -155,6 +182,23 @@ export const processJoinRequest = async (
             pronouns: fullUser?.pronouns,
             ageVerificationStatus: fullUser?.ageVerificationStatus
         });
+
+        // OVERRIDE with Watchlist if applicable
+        if (watched) {
+             if (watched.critical || watched.priority <= -10 || (watched.tags && (watched.tags.includes('malicious') || watched.tags.includes('nuisance')))) {
+                 evaluation = {
+                     action: 'REJECT',
+                     reason: `Watchlist: ${watched.displayName} (Priority: ${watched.priority})`,
+                     ruleName: 'Watchlist'
+                 };
+             } else if (watched.priority >= 10 || watched.tags.includes('community')) {
+                 // Whitelist logic? 
+                 // If high priority, maybe we ALLOW even if rules say otherwise?
+                 // For now, let's NOT override blocks, only add blocks. 
+                 // Unless we want a "Trust" system. 
+                 // Let's stick to blocking bad actors first.
+             }
+        }
 
         logger.info(`[AutoMod] Gatekeeper evaluation for ${displayName}: ${evaluation.action}${evaluation.reason ? ` (${evaluation.reason})` : ''}`);
 
@@ -386,6 +430,14 @@ export const processGroupJoinNotification = async (notification: {
 
 export const setupAutoModHandlers = () => {
     logger.info('Initializing AutoMod handlers...');
+    
+    // Subscribe to group updates to triggering re-scan
+    serviceEventBus.on('groups-updated', () => {
+        logger.info('[AutoMod] Groups updated, triggering re-scan of pending requests');
+        setTimeout(() => {
+             processAllPendingRequests().catch(err => logger.error('AutoMod trigger failed', err));
+        }, 2000); // Small delay to ensuring other services updated first
+    });
 
     // Handlers
     ipcMain.handle('automod:get-rules', () => {
@@ -485,7 +537,7 @@ export const setupAutoModHandlers = () => {
         return match ? match[1] : null;
     };
 
-    const executeAction = async (player: { userId: string; displayName: string }, rule: AutoModRule, groupId: string, notifyOnly: boolean = false) => {
+    const executeAction = async (player: { userId: string; displayName: string }, rule: AutoModRule, groupId: string, notifyOnly: boolean = false, isBackfill: boolean = false) => {
         // SECURITY: Validate that we have permission to moderate this group
         if (!groupAuthorizationService.isGroupAllowed(groupId)) {
             logger.warn(`[AutoMod] [SECURITY BLOCK] Attempted action on unauthorized group: ${groupId}. Skipping.`);
@@ -495,9 +547,9 @@ export const setupAutoModHandlers = () => {
         const client = getVRChatClient();
         if (!client) return;
 
-        logger.info(`[AutoMod] Executing ${rule.actionType} on ${player.displayName} (${player.userId}) for rule ${rule.name}`);
+        logger.info(`[AutoMod] Executing ${rule.actionType} on ${player.displayName} (${player.userId}) for rule ${rule.name} (Backfill: ${isBackfill})`);
 
-        // Persist the violation
+        // Persist the violation (Always persist for audit)
         await persistAction({
             timestamp: new Date(),
             user: player.displayName,
@@ -506,42 +558,46 @@ export const setupAutoModHandlers = () => {
             action: rule.actionType,
             reason: `Violated Rule: ${rule.name}`,
             module: 'AutoMod',
-            details: { ruleId: rule.id, config: rule.config }
+            details: { ruleId: rule.id, config: rule.config, backfill: isBackfill }
         });
 
         // NOTIFY RENDERER (TOAST)
-        // NOTIFY RENDERER (TOAST)
-        // NOTIFY RENDERER (TOAST)
-        windowService.broadcast('automod:violation', {
-            displayName: player.displayName,
-            userId: player.userId,
-            action: rule.actionType,
-            reason: rule.name,
-            skipped: notifyOnly // Tell frontend if action was skipped
-        });
+        // Suppress notification if backfill
+        if (!isBackfill) {
+            windowService.broadcast('automod:violation', {
+                displayName: player.displayName,
+                userId: player.userId,
+                action: rule.actionType,
+                reason: rule.name,
+                skipped: notifyOnly 
+            });
+        }
 
         // WEBHOOK
         const isActionable = rule.actionType === 'REJECT' || rule.actionType === 'AUTO_BLOCK';
         const actionColor = isActionable ? 0xED4245 : 0xFEE75C;
         
         let title = `🛡️ AutoMod Violation: ${rule.actionType}`;
-        let actionValue = rule.actionType;
+        let actionValue: string = rule.actionType;
         
         if (notifyOnly && isActionable) {
             title = `🛡️ AutoMod Alert: ${rule.actionType} (Action Skipped)`;
             actionValue = `${rule.actionType} (Prevented by Auto-Ban OFF)`;
         }
 
-        discordWebhookService.sendEvent(
-            groupId,
-            title,
-            `**User**: ${player.displayName} (${player.userId})\n**Reason**: ${rule.name}`,
-            actionColor,
-            [
-                { name: 'Action Taken', value: actionValue, inline: true },
-                { name: 'Location', value: getCurrentGroupId() === groupId ? 'Current Group Instance' : 'Remote Request', inline: true }
-            ]
-        );
+        // Suppress Webhook if backfill
+        if (!isBackfill) {
+            discordWebhookService.sendEvent(
+                groupId,
+                title,
+                `**User**: ${player.displayName} (${player.userId})\n**Reason**: ${rule.name}`,
+                actionColor,
+                [
+                    { name: 'Action Taken', value: actionValue, inline: true },
+                    { name: 'Location', value: getCurrentGroupId() === groupId ? 'Current Group Instance' : 'Remote Request', inline: true }
+                ]
+            );
+        }
 
         if (!notifyOnly && (rule.actionType === 'REJECT' || rule.actionType === 'AUTO_BLOCK')) {
             try {
@@ -559,7 +615,7 @@ export const setupAutoModHandlers = () => {
         // NOTIFY_ONLY is handled by just logging (and potentially frontend events via log database)
     };
 
-    const checkPlayer = async (player: { userId: string; displayName: string }, groupId: string) => {
+    const checkPlayer = async (player: { userId: string; displayName: string }, groupId: string, isBackfill: boolean = false) => {
         // Prevent duplicate checks
         const key = `${groupId}:${player.userId}`;
         if (processedRequests.has(key)) return;
@@ -590,6 +646,16 @@ export const setupAutoModHandlers = () => {
              }
         } catch (e) {
             logger.warn(`[AutoMod] Failed to fetch user details for ${player.displayName}`, e);
+        }
+
+        // GHOST CHECK: Verify player is still in the instance (e.g. checking historical logs on startup)
+        // We check AFTER the async fetch because the log parser might have processed a 'Leave' event in the meantime.
+        const currentPlayers = logWatcherService.getPlayers();
+        const isStillHere = currentPlayers.some(p => p.userId === player.userId);
+        
+        if (!isStillHere) {
+            logger.debug(`[AutoMod] Player ${player.displayName} left before check completed (or was a ghost entry). Skipping.`);
+            return;
         }
 
         // Evaluate using central logic
@@ -626,7 +692,7 @@ export const setupAutoModHandlers = () => {
             
             logger.info(`[AutoMod] Action Triggered. LiveAutoBan: ${liveAutoBanSetting}, NotifyOnly: ${notifyOnly}`);
 
-            await executeAction(player, syntheticRule, groupId, notifyOnly);
+            await executeAction(player, syntheticRule, groupId, notifyOnly, isBackfill);
         }
         
         // Mark as checked
@@ -657,7 +723,12 @@ export const setupAutoModHandlers = () => {
             
             for (const p of players) {
                 if (!p.userId) continue;
-                await checkPlayer({ userId: p.userId, displayName: p.displayName }, groupId);
+                // Periodic checks are implicitly "backfill" if they are just re-checking?
+                // No, periodic check is "Current State Check".
+                // We typically want to notify if a NEW violation occurs on an existing player?
+                // But checkPlayer de-duplicates via processedRequests.
+                // So this logic is fine.
+                await checkPlayer({ userId: p.userId, displayName: p.displayName }, groupId, false);
             }
 
         } catch (error) {
@@ -666,7 +737,7 @@ export const setupAutoModHandlers = () => {
     };
 
     // Listen for realtime joins
-    logWatcherService.on('player-joined', async (event: { displayName: string; userId?: string }) => {
+    logWatcherService.on('player-joined', async (event: { displayName: string; userId?: string; timestamp: string; isBackfill?: boolean }) => {
         if (!event.userId) return;
         const groupId = getCurrentGroupId();
         if (!groupId) return;
@@ -675,8 +746,9 @@ export const setupAutoModHandlers = () => {
         if (!groupAuthorizationService.isGroupAllowed(groupId)) {
             return; // Silently skip - not our group
         }
-        
-        await checkPlayer({ userId: event.userId, displayName: event.displayName }, groupId);
+
+        // Pass isBackfill flag to suppress notifications if needed
+        await checkPlayer({ userId: event.userId, displayName: event.displayName }, groupId, event.isBackfill);
     });
 
     // Start Loop (Backup)

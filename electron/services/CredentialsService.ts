@@ -22,7 +22,8 @@ const store: any = new Store({
   name: 'group-guard-credentials',
   encryptionKey: 'group-guard-secure-storage-v1', // Additional layer of encryption
   defaults: {
-    rememberMe: false
+    rememberMe: false,
+    savedAccounts: [] // New: Array of StoredCredentials
   }
 });
 
@@ -50,6 +51,7 @@ export function saveCredentials(username: string, password: string, authCookie?:
       authCookie
     };
     
+    // Simplified: Just save the single credential
     store.set('savedCredentials', credentials);
     store.set('rememberMe', true);
     
@@ -143,9 +145,6 @@ export function hasSavedCredentials(): boolean {
   return store.has('savedCredentials') && store.get('rememberMe', false);
 }
 
-/**
- * Get the remember me preference
- */
 export function getRememberMe(): boolean {
   return store.get('rememberMe', false);
 }

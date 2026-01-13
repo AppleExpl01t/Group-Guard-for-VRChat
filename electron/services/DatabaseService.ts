@@ -99,7 +99,20 @@ class DatabaseService {
             "details" TEXT,
             "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         );`,
-        `CREATE UNIQUE INDEX IF NOT EXISTS "Session_sessionId_key" ON "Session"("sessionId");`
+        `CREATE TABLE IF NOT EXISTS "ScannedUser" (
+            "id" TEXT NOT NULL PRIMARY KEY,
+            "displayName" TEXT NOT NULL,
+            "rank" TEXT,
+            "thumbnailUrl" TEXT,
+            "firstSeenAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "lastSeenAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "groupId" TEXT,
+            "timesEncountered" INTEGER NOT NULL DEFAULT 1
+        );`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS "Session_sessionId_key" ON "Session"("sessionId");`,
+        `CREATE INDEX IF NOT EXISTS "ScannedUser_displayName_idx" ON "ScannedUser"("displayName");`,
+        `CREATE INDEX IF NOT EXISTS "ScannedUser_groupId_idx" ON "ScannedUser"("groupId");`,
+        `CREATE INDEX IF NOT EXISTS "ScannedUser_lastSeenAt_idx" ON "ScannedUser"("lastSeenAt");`
       ];
 
       for (const stmt of statements) {
@@ -239,13 +252,6 @@ class DatabaseService {
       
       // 1. Instance Traffic (from local session logs)
       // Group sessions only might be hard if `groupId` isn't always set, but we try.
-      const traffic = await this.getClient().logEntry.groupBy({
-          by: ['timestamp'], // Prisma SQLite doesn't support Date functions well in groupBy, might need raw query
-          where: {
-             type: { in: ['PLAYER_JOIN', 'JOIN'] },
-             timestamp: { gte: cutoff }
-          },
-      });
       // SQLite truncating needed. Let's use raw query for date grouping.
       
       const trafficRaw = await this.getClient().$queryRaw`
@@ -257,7 +263,7 @@ class DatabaseService {
         AND sessionId IN (SELECT sessionId FROM Session WHERE groupId = ${groupId} OR groupId IS NULL) 
         AND timestamp >= ${cutoff}
         GROUP BY date
-      `;
+      ` as { date: string; count: bigint }[];
 
       // 2. AutoMod Activity (Kicks/Bans/Blocks)
       const automodRaw = await this.getClient().$queryRaw`
@@ -269,9 +275,21 @@ class DatabaseService {
         WHERE groupId = ${groupId}
         AND timestamp >= ${cutoff}
         GROUP BY date, action
-      `;
+      ` as { date: string; count: bigint; action: string }[];
 
-      return { traffic: trafficRaw, automod: automodRaw };
+      // Serialize BigInts
+      const traffic = trafficRaw.map(t => ({
+          date: t.date,
+          count: Number(t.count)
+      }));
+
+      const automod = automodRaw.map(a => ({
+          date: a.date,
+          count: Number(a.count),
+          action: a.action
+      }));
+
+      return { traffic, automod };
   }
 
   public async getActivityHeatmap(groupId: string) {
@@ -287,10 +305,129 @@ class DatabaseService {
         WHERE type IN ('PLAYER_JOIN', 'JOIN')
         AND sessionId IN (SELECT sessionId FROM Session WHERE groupId = ${groupId} OR groupId IS NULL)
         GROUP BY dayOfWeek, hour
-      `;
+      ` as { dayOfWeek: string; hour: string; count: bigint }[];
       
-      return activityRaw;
+      return activityRaw.map(a => ({
+          dayOfWeek: a.dayOfWeek,
+          hour: a.hour,
+          count: Number(a.count)
+      }));
+  }
+
+  // ============================================
+  // SCANNED USERS
+  // ============================================
+
+  public async upsertScannedUser(user: {
+      id: string;
+      displayName: string;
+      rank?: string;
+      thumbnailUrl?: string;
+      groupId?: string;
+  }) {
+      try {
+          // Check if user exists
+          const existing = await this.getClient().$queryRaw`
+              SELECT id, timesEncountered FROM ScannedUser WHERE id = ${user.id}
+          ` as { id: string; timesEncountered: number }[];
+
+          if (existing.length > 0) {
+              // Update existing user
+              await this.getClient().$executeRaw`
+                  UPDATE ScannedUser 
+                  SET displayName = ${user.displayName},
+                      rank = ${user.rank || null},
+                      thumbnailUrl = ${user.thumbnailUrl || null},
+                      groupId = ${user.groupId || null},
+                      lastSeenAt = ${new Date().toISOString()},
+                      timesEncountered = ${existing[0].timesEncountered + 1}
+                  WHERE id = ${user.id}
+              `;
+          } else {
+              // Insert new user
+              await this.getClient().$executeRaw`
+                  INSERT INTO ScannedUser (id, displayName, rank, thumbnailUrl, groupId, firstSeenAt, lastSeenAt, timesEncountered)
+                  VALUES (${user.id}, ${user.displayName}, ${user.rank || null}, ${user.thumbnailUrl || null}, ${user.groupId || null}, ${new Date().toISOString()}, ${new Date().toISOString()}, 1)
+              `;
+          }
+          return true;
+      } catch (error) {
+          logger.error('Failed to upsert scanned user:', error);
+          return false;
+      }
+  }
+
+  public async searchScannedUsers(query: string, limit: number = 20) {
+      try {
+          const searchPattern = `%${query}%`;
+          const results = await this.getClient().$queryRaw`
+              SELECT id, displayName, rank, thumbnailUrl, groupId, lastSeenAt, timesEncountered
+              FROM ScannedUser
+              WHERE displayName LIKE ${searchPattern} OR id LIKE ${searchPattern}
+              ORDER BY timesEncountered DESC, lastSeenAt DESC
+              LIMIT ${limit}
+          ` as {
+              id: string;
+              displayName: string;
+              rank: string | null;
+              thumbnailUrl: string | null;
+              groupId: string | null;
+              lastSeenAt: string;
+              timesEncountered: number;
+          }[];
+          return results;
+      } catch (error) {
+          logger.error('Failed to search scanned users:', error);
+          return [];
+      }
+  }
+
+  public async getScannedUser(userId: string) {
+      try {
+          const results = await this.getClient().$queryRaw`
+              SELECT id, displayName, rank, thumbnailUrl, groupId, firstSeenAt, lastSeenAt, timesEncountered
+              FROM ScannedUser
+              WHERE id = ${userId}
+          ` as {
+              id: string;
+              displayName: string;
+              rank: string | null;
+              thumbnailUrl: string | null;
+              groupId: string | null;
+              firstSeenAt: string;
+              lastSeenAt: string;
+              timesEncountered: number;
+          }[];
+          return results[0] || null;
+      } catch (error) {
+          logger.error('Failed to get scanned user:', error);
+          return null;
+      }
+  }
+
+  public async getRecentScannedUsers(limit: number = 50) {
+      try {
+          const results = await this.getClient().$queryRaw`
+              SELECT id, displayName, rank, thumbnailUrl, groupId, lastSeenAt, timesEncountered
+              FROM ScannedUser
+              ORDER BY lastSeenAt DESC
+              LIMIT ${limit}
+          ` as {
+              id: string;
+              displayName: string;
+              rank: string | null;
+              thumbnailUrl: string | null;
+              groupId: string | null;
+              lastSeenAt: string;
+              timesEncountered: number;
+          }[];
+          return results;
+      } catch (error) {
+          logger.error('Failed to get recent scanned users:', error);
+          return [];
+      }
   }
 }
 
 export const databaseService = new DatabaseService();
+

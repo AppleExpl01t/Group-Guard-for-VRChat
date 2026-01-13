@@ -6,6 +6,7 @@ import { databaseService } from './DatabaseService';
 import { groupAuthorizationService } from './GroupAuthorizationService';
 import { networkService } from './NetworkService';
 import { discordWebhookService } from './DiscordWebhookService';
+import { serviceEventBus } from './ServiceEventBus';
 
 export function setupGroupHandlers() {
 
@@ -54,10 +55,17 @@ export function setupGroupHandlers() {
           // map the groups to ensure 'id' is the Group ID (grp_), not the Member ID (gmem_)
           const mappedGroups = moderatableGroups.map((g) => {
             if (g.groupId && typeof g.groupId === 'string' && g.groupId.startsWith('grp_')) {
+                // Map API fields if available (type casting as VRChat API types are loose)
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const groupObj = g as any;
+                const innerGroup = groupObj.group || {};
+                
                 return {
                     ...g,
                     id: g.groupId,      // helper for frontend
-                    _memberId: g.id     // preserve original membership ID
+                    _memberId: g.id,    // preserve original membership ID
+                    onlineMemberCount: innerGroup.onlineMemberCount ?? groupObj.onlineMemberCount, 
+                    activeInstanceCount: innerGroup.activeInstanceCount ?? groupObj.activeInstanceCount
                 };
             }
             return g;
@@ -65,19 +73,13 @@ export function setupGroupHandlers() {
 
           logger.info(`fetched ${mappedGroups.length} moderatable groups`);
           
-          // SIDE EFFECTS (Updating other services)
-          // We wrap this in a non-blocking way or try/catch so it doesn't fail the main request
+          // SIDE EFFECTS via Event Bus
+          // Decoupled: We just announce that we have fresh group data.
+          // Listeners (Security, AutoMod, InstanceLogger) handle the rest.
           try {
-              // eslint-disable-next-line @typescript-eslint/no-require-imports
-              const { instanceLoggerService } = require('./InstanceLoggerService');
-              instanceLoggerService.setAllowedGroups(mappedGroups.map(g => g.id));
-              
-              // Trigger AutoMod
-              import('./AutoModService').then(({ processAllPendingRequests }) => {
-                  processAllPendingRequests().catch(err => logger.error('AutoMod trigger failed', err));
-              });
+             serviceEventBus.emit('groups-updated', { groups: mappedGroups });
           } catch (e) {
-              logger.error('Failed to update side-effects', e);
+              logger.error('Failed to emit groups-updated event', e);
           }
 
           return { groups: mappedGroups }; // Return object suitable for data in ExecutionResult
@@ -299,17 +301,19 @@ export function setupGroupHandlers() {
           });
           if (!response.error) {
               const rawLogs = extractArray(response.data);
-              setLogs = rawLogs.map((l: any) => ({
-                  ...l,
-                  type: l.eventType || 'unknown', // Map eventType to type
-                  eventType: l.eventType,
+              setLogs = rawLogs.map((l: unknown) => {
+                  const log = l as Record<string, unknown>;
+                  return {
+                  ...log,
+                  type: log.eventType || 'unknown', // Map eventType to type
+                  eventType: log.eventType,
                   // Ensure other fields are present/flat
-                  actorId: l.actorId || l.actor?.id,
-                  actorDisplayName: l.actorDisplayName || l.actor?.displayName,
-                  targetId: l.targetId || l.target?.id,
-                  targetDisplayName: l.targetDisplayName || l.target?.displayName,
-                  created_at: l.created_at || l.createdAt
-              }));
+                  actorId: log.actorId || log.actor?.id,
+                  actorDisplayName: log.actorDisplayName || log.actor?.displayName,
+                  targetId: log.targetId || log.target?.id,
+                  targetDisplayName: log.targetDisplayName || log.target?.displayName,
+                  created_at: log.created_at || log.createdAt
+              };});
           }
       } catch (e) {
           logger.warn('Failed to fetch remote audit logs', e);
@@ -461,7 +465,7 @@ export function setupGroupHandlers() {
         if (!client) throw new Error("Not authenticated");
         logger.info(`[GroupService] Banning user ${userId} from group ${groupId}`);
         
-        const response = await client.banGroupMember({ 
+        await client.banGroupMember({ 
           path: { groupId }, 
           body: { userId } 
         });

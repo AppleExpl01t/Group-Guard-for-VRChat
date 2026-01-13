@@ -1,3 +1,55 @@
+/* Visual indicator at bottom of screen when dock is hidden */
+.dockIndicator {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+  pointer-events: auto; /* Entire area triggers hover */
+  cursor: pointer;
+  padding: 20px 60px 10px 60px; /* Larger hover area: more on top and sides */
+}
+
+.dockIndicatorPill {
+  pointer-events: none; /* Pill is just visual, container handles hover */
+  width: 80px;
+  height: 5px;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+  border-radius: 6px;
+  opacity: 0.8;
+  box-shadow: 
+    0 0 8px var(--color-primary), 
+    0 0 16px var(--color-primary),
+    0 0 4px var(--color-accent);
+  animation: dockPulse 2s ease-in-out infinite;
+}
+
+@keyframes dockPulse {
+  0%, 100% {
+    opacity: 0.6;
+    box-shadow: 
+      0 0 6px var(--color-primary), 
+      0 0 12px var(--color-primary);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 
+      0 0 10px var(--color-primary), 
+      0 0 20px var(--color-primary),
+      0 0 30px var(--color-accent);
+  }
+}
+
+.dockIndicator:hover .dockIndicatorPill {
+  opacity: 1;
+  transform: scaleX(1.3);
+  animation: none;
+  box-shadow: 
+    0 0 12px var(--color-primary), 
+    0 0 24px var(--color-primary),
+    0 0 8px var(--color-accent);
+}
+
 .dockContainer {
   position: fixed;
   bottom: 1.5rem;

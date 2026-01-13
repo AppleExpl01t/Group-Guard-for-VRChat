@@ -1,12 +1,45 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { NeonButton } from '../../components/ui/NeonButton';
 import { useAuthStore } from '../../stores/authStore';
-import { motion } from 'framer-motion';
+import { useConfirm } from '../../context/ConfirmationContext';
+import { useNotificationStore } from '../../stores/notificationStore';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../context/ThemeContext';
 import { OscSettings } from './OscSettings';
 import { DiscordRpcSettings } from './DiscordRpcSettings';
 import { DiscordWebhookSettings } from './DiscordWebhookSettings';
+import { AudioSettings } from './AudioSettings';
+import { SettingsTabBar, type SettingsTab } from './SettingsTabBar';
+import { SettingsSearch, matchesSearch } from './SettingsSearch';
+import { SearchX } from 'lucide-react';
+
+// Inner card style for settings sections (used inside main GlassPanel)
+const innerCardStyle: React.CSSProperties = {
+    background: 'rgba(0,0,0,0.2)',
+    borderRadius: '12px',
+    padding: '1.25rem',
+    border: '1px solid rgba(255,255,255,0.05)',
+};
+
+// Searchable text for each section
+const SECTION_SEARCH_DATA = {
+    appearance: ['Appearance', 'Theme', 'Primary Neon', 'Accent Neon', 'Color', 'Hue'],
+    audio: ['Audio', 'Notification Sound', 'Volume', 'Alert', 'Music'],
+    notifications: ['Notifications', 'Test', 'Alert', 'Visual'],
+    security: ['Security', 'Data', 'Auto-Login', 'Credentials', 'Sign in', 'Remember', 'Forget Device'],
+    osc: ['OSC', 'Integration', 'VRChat', 'Open Sound Control', 'Port', 'IP', 'Chatbox'],
+    discordWebhook: ['Discord', 'Webhook', 'Logs', 'Channel', 'Events'],
+    discordRpc: ['Discord', 'RPC', 'Rich Presence', 'Status', 'Activity'],
+    about: ['About', 'System', 'Version', 'Group Guard'],
+};
+
+// Map sections to tabs
+const TAB_SECTIONS: Record<SettingsTab, (keyof typeof SECTION_SEARCH_DATA)[]> = {
+    general: ['appearance', 'audio', 'notifications', 'security'],
+    integrations: ['osc', 'discordWebhook', 'discordRpc'],
+    about: ['about'],
+};
 
 const HueSpectrumPicker: React.FC<{ 
     label: string; 
@@ -45,13 +78,13 @@ const HueSpectrumPicker: React.FC<{
                         inset: 0,
                         width: '100%',
                         height: '100%',
-                        opacity: 0, // Hide default track
+                        opacity: 0,
                         cursor: 'pointer',
                         margin: 0
                     }}
                  />
 
-                 {/* Custom Thumb Indicator (Visual only, follows logic) */}
+                 {/* Custom Thumb Indicator */}
                  <div style={{
                      position: 'absolute',
                      left: `${(hue / 360) * 100}%`,
@@ -68,178 +101,327 @@ const HueSpectrumPicker: React.FC<{
     );
 };
 
+const tabContentVariants = {
+    hidden: { opacity: 0, y: 10 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.2 } },
+    exit: { opacity: 0, y: -10, transition: { duration: 0.15 } }
+};
+
 export const SettingsView: React.FC = () => {
   const { rememberMe, setRememberMe } = useAuthStore();
-  const { primaryHue, setPrimaryHue, accentHue, setAccentHue, uiScale, setUiScale, resetTheme } = useTheme();
+  const { primaryHue, setPrimaryHue, accentHue, setAccentHue, resetTheme } = useTheme();
+  const { confirm } = useConfirm();
+  const { addNotification } = useNotificationStore();
+
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [shouldCrash, setShouldCrash] = useState(false);
+
+  if (shouldCrash) {
+    throw new Error("Manual Crash Test via Settings");
+  }
 
   const handleClearCredentials = async () => {
-    if (confirm('Are you sure you want to clear saved login data?')) {
+    const confirmed = await confirm({
+      title: 'Clear Saved Credentials',
+      message: 'Are you sure you want to clear saved login data? You will need to log in again.',
+      confirmLabel: 'Clear Data',
+      variant: 'default'
+    });
+
+    if (confirmed) {
       await window.electron.clearCredentials();
-      alert('Credentials cleared.');
+      addNotification({ type: 'success', title: 'Success', message: 'Credentials cleared.' });
     }
   };
 
-  const handleResetLayout = async () => {
-      if (confirm('Are you sure you want to reset the dashboard layout to default?')) {
-          if (window.electron?.uiLayout?.delete) {
-            await window.electron.uiLayout.delete('dashboardState');
-          }
-          window.location.reload();
+  // Determine which sections are visible based on search
+  const visibleSections = useMemo(() => {
+    const result: Record<keyof typeof SECTION_SEARCH_DATA, boolean> = {
+        appearance: false,
+        audio: false,
+        notifications: false,
+        security: false,
+        osc: false,
+        discordWebhook: false,
+        discordRpc: false,
+        about: false,
+    };
+    
+    for (const [section, keywords] of Object.entries(SECTION_SEARCH_DATA)) {
+        result[section as keyof typeof SECTION_SEARCH_DATA] = matchesSearch(searchQuery, ...keywords);
+    }
+    
+    return result;
+  }, [searchQuery]);
+
+  // Count visible sections per tab (for search badges)
+  const tabCounts = useMemo(() => {
+    if (!searchQuery.trim()) return undefined;
+    
+    const counts: Record<SettingsTab, number> = { general: 0, integrations: 0, about: 0 };
+    
+    for (const [tab, sections] of Object.entries(TAB_SECTIONS)) {
+        counts[tab as SettingsTab] = sections.filter(s => visibleSections[s]).length;
+    }
+    
+    return counts;
+  }, [searchQuery, visibleSections]);
+
+  // Get sections to render for current tab
+  const currentTabSections = TAB_SECTIONS[activeTab];
+  const visibleInCurrentTab = currentTabSections.filter(s => visibleSections[s]);
+  const hasNoResults = searchQuery.trim() && visibleInCurrentTab.length === 0;
+
+  // Auto-switch to a tab with results when current tab has none
+  React.useEffect(() => {
+    if (!searchQuery.trim()) return;
+    
+    // If current tab has results, stay here
+    if (visibleInCurrentTab.length > 0) return;
+    
+    // Find the first tab that has results
+    const tabOrder: SettingsTab[] = ['general', 'integrations', 'about'];
+    for (const tab of tabOrder) {
+      const sections = TAB_SECTIONS[tab];
+      const hasResults = sections.some(s => visibleSections[s]);
+      if (hasResults) {
+        setActiveTab(tab);
+        return;
       }
+    }
+  }, [searchQuery, visibleSections, visibleInCurrentTab.length]);
+
+  const handleTabChange = (tab: SettingsTab) => {
+    setActiveTab(tab);
+    // Optionally clear search: setSearchQuery('');
   };
 
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      style={{ padding: '2rem', paddingBottom: 'var(--dock-height)', maxWidth: '800px', margin: '0 auto', height: '100%', overflowY: 'auto' }}
+      style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        height: '100%', 
+        width: '100%',
+        padding: '1rem', 
+        paddingBottom: 'var(--dock-height)',
+        gap: '1rem',
+        maxWidth: '900px',
+        margin: '0 auto',
+        overflow: 'hidden'
+      }}
     >
-      <h1 className="text-gradient" style={{ fontSize: '2.5rem', marginBottom: '2rem' }}>SETTINGS</h1>
+      {/* Fixed Header Area */}
+      <div style={{ flexShrink: 0, width: '100%' }}>
+        <h1 className="text-gradient" style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>SETTINGS</h1>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-        
-        {/* Appearance Section */}
-        <section>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-             <h2 style={{ color: 'white', margin: 0 }}>Appearance</h2>
-             <div style={{ display: 'flex', gap: '0.5rem' }}>
-                 <NeonButton variant="ghost" onClick={handleResetLayout} style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem' }}>Reset Layout</NeonButton>
-                 <NeonButton variant="ghost" onClick={resetTheme} style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem' }}>Reset Theme</NeonButton>
-             </div>
-          </div>
-          
-          <GlassPanel>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-                <HueSpectrumPicker 
-                    label="Primary Neon" 
-                    hue={primaryHue} 
-                    onChange={setPrimaryHue} 
-                />
-                <HueSpectrumPicker 
-                    label="Accent Neon" 
-                    hue={accentHue} 
-                    onChange={setAccentHue} 
-                />
-            </div>
-            
-            {/* UI Scale Slider */}
-            <div style={{ marginTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <span style={{ color: 'white', fontWeight: 600 }}>UI Scale</span>
-                <span style={{ 
-                  color: 'var(--color-primary)', 
-                  fontWeight: 700,
-                  fontSize: '0.9rem',
-                  background: 'rgba(var(--primary-hue), 100%, 50%, 0.1)',
-                  padding: '2px 8px',
-                  borderRadius: '4px'
-                }}>
-                  {Math.round(uiScale * 100)}%
-                </span>
-              </div>
-              <input
-                type="range"
-                min="0.7"
-                max="1.2"
-                step="0.1"
-                value={uiScale}
-                onChange={(e) => setUiScale(parseFloat(e.target.value))}
-                style={{
-                  width: '100%',
-                  cursor: 'pointer',
-                  accentColor: 'var(--color-primary)'
-                }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--color-text-dim)', marginTop: '4px' }}>
-                <span>Compact (70%)</span>
-                <span>Default (100%)</span>
-                <span>Large (120%)</span>
-              </div>
-              <p style={{ fontSize: '0.75rem', color: 'var(--color-text-dim)', fontStyle: 'italic', marginTop: '0.5rem' }}>
-                Adjusts dashboard widget minimum sizes and row heights. Smaller values allow more compact layouts.
-              </p>
-            </div>
-            
-            <p style={{ fontSize: '0.8rem', color: 'var(--color-text-dim)', fontStyle: 'italic', textAlign: 'center', marginTop: '1rem' }}>
-              Theme settings are automatically saved.
-            </p>
-          </GlassPanel>
-        </section>
+        {/* Search Bar */}
+        <SettingsSearch 
+          value={searchQuery} 
+          onChange={setSearchQuery} 
+          placeholder="Search settings..."
+        />
 
-        {/* Security Section */}
-        <section>
-          <h2 style={{ color: 'white', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>Security & Data</h2>
-          <GlassPanel>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-              <div>
-                <div style={{ color: 'white', fontWeight: 600 }}>Auto-Login</div>
-                <div style={{ color: 'var(--color-text-dim)', fontSize: '0.9rem' }}>Automatically sign in when application starts</div>
-              </div>
-              <div 
-                onClick={() => setRememberMe(!rememberMe)}
-                style={{
-                  width: '50px',
-                  height: '26px',
-                  background: rememberMe ? 'var(--color-primary)' : 'rgba(255,255,255,0.1)',
-                  borderRadius: '13px',
-                  position: 'relative',
-                  cursor: 'pointer',
-                  transition: 'background 0.3s ease',
-                  border: '1px solid rgba(255,255,255,0.1)'
-                }}
-              >
-                <div style={{
-                  width: '20px',
-                  height: '20px',
-                  background: 'white',
-                  borderRadius: '50%',
-                  position: 'absolute',
-                  top: '2px',
-                  left: rememberMe ? '26px' : '2px',
-                  transition: 'left 0.3s ease',
-                  boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
-                }} />
+        {/* Tab Bar */}
+        <SettingsTabBar 
+          activeTab={activeTab} 
+          onTabChange={handleTabChange}
+          tabCounts={tabCounts}
+        />
+      </div>
+
+      {/* Scrollable Content Area */}
+      <GlassPanel style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, width: '100%' }}>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            variants={tabContentVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '1.5rem',
+              flex: 1,
+              overflowY: 'auto',
+              padding: '1.5rem',
+              scrollbarGutter: 'stable',
+              width: '100%'
+            }}
+          >
+          {/* No Results Message */}
+          {hasNoResults && (
+            <div style={innerCardStyle}>
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center', 
+                gap: '1rem', 
+                padding: '2rem',
+                color: 'var(--color-text-dim)' 
+              }}>
+                <SearchX size={48} style={{ opacity: 0.5 }} />
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.1rem', marginBottom: '0.25rem' }}>No settings found</div>
+                  <div style={{ fontSize: '0.9rem', opacity: 0.7 }}>
+                    Try a different search term or check other tabs
+                  </div>
+                </div>
               </div>
             </div>
+          )}
 
-            <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1.5rem' }}>
-               <NeonButton variant="secondary" onClick={handleClearCredentials} style={{ borderColor: '#ef4444', color: '#ef4444' }}>
-                 Forget This Device
-               </NeonButton>
-               <p style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--color-text-dim)' }}>
-                 Completely removes your saved login data from this device. You will need to enter credentials and 2FA again.
-               </p>
-            </div>
-          </GlassPanel>
-        </section>
+          {/* === GENERAL TAB === */}
+          {activeTab === 'general' && (
+            <>
+              {/* Appearance Section */}
+              {visibleSections.appearance && (
+                <section>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                     <h2 style={{ color: 'white', margin: 0 }}>Appearance</h2>
+                     <NeonButton variant="ghost" onClick={resetTheme} style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem' }}>Reset Theme</NeonButton>
+                  </div>
+                  
+                  <div style={innerCardStyle}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                        <HueSpectrumPicker 
+                            label="Primary Neon" 
+                            hue={primaryHue} 
+                            onChange={setPrimaryHue} 
+                        />
+                        <HueSpectrumPicker 
+                            label="Accent Neon" 
+                            hue={accentHue} 
+                            onChange={setAccentHue} 
+                        />
+                    </div>
+                    
+                    <p style={{ fontSize: '0.8rem', color: 'var(--color-text-dim)', fontStyle: 'italic', textAlign: 'center', marginTop: '1rem' }}>
+                      Theme settings are automatically saved.
+                    </p>
+                  </div>
+                </section>
+              )}
 
-        {/* OSC Integration */}
-        <OscSettings />
+              {/* Audio Settings */}
+              {visibleSections.audio && <AudioSettings />}
 
-        {/* Discord Webhook */}
-        <DiscordWebhookSettings />
+              {/* Notifications Section */}
+              {visibleSections.notifications && (
+                <section>
+                  <h2 style={{ color: 'white', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>Notifications</h2>
+                  <div style={innerCardStyle}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                       <div>
+                          <div style={{ color: 'white', fontWeight: 600 }}>Test Notifications</div>
+                          <div style={{ color: 'var(--color-text-dim)', fontSize: '0.9rem' }}>Send a test notification to verify audio and visual alerts.</div>
+                       </div>
+                       <NeonButton 
+                          variant="primary"
+                          onClick={() => window.electron.automod.testNotification()}
+                       >
+                          Test Notification
+                       </NeonButton>
+                    </div>
+                  </div>
+                </section>
+              )}
 
-        {/* Discord RPC */}
-        <DiscordRpcSettings />
+              {/* Security Section */}
+              {visibleSections.security && (
+                <section>
+                  <h2 style={{ color: 'white', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>Security & Data</h2>
+                  <div style={innerCardStyle}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+                      <div>
+                        <div style={{ color: 'white', fontWeight: 600 }}>Auto-Login</div>
+                        <div style={{ color: 'var(--color-text-dim)', fontSize: '0.9rem' }}>Automatically sign in when application starts</div>
+                      </div>
+                      <div 
+                        onClick={() => setRememberMe(!rememberMe)}
+                        style={{
+                          width: '50px',
+                          height: '26px',
+                          background: rememberMe ? 'var(--color-primary)' : 'rgba(255,255,255,0.1)',
+                          borderRadius: '13px',
+                          position: 'relative',
+                          cursor: 'pointer',
+                          transition: 'background 0.3s ease',
+                          border: '1px solid rgba(255,255,255,0.1)'
+                        }}
+                      >
+                        <div style={{
+                          width: '20px',
+                          height: '20px',
+                          background: 'white',
+                          borderRadius: '50%',
+                          position: 'absolute',
+                          top: '2px',
+                          left: rememberMe ? '26px' : '2px',
+                          transition: 'left 0.3s ease',
+                          boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
+                        }} />
+                      </div>
+                    </div>
 
-        {/* About Section */}
-        <section>
-           <h2 style={{ color: 'white', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>About System</h2>
-           <GlassPanel>
-             <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-               <div style={{ fontSize: '2.5rem', filter: 'drop-shadow(0 0 10px var(--color-primary))' }}>🛡️</div>
-               <div>
-                 <h3 style={{ margin: 0, fontSize: '1.2rem' }}>VRChat Group Guard</h3>
-                 <p style={{ color: 'var(--color-text-dim)', margin: '0.2rem 0' }}>Version 1.0.3 (Beta)</p>
-                 <div style={{ fontSize: '0.8rem', color: 'var(--color-text-dim)', opacity: 0.6 }}>
-                   Developed by <a href="https://vrchat.com/home/user/usr_ef7c23be-3c3c-40b4-a01c-82f59b2a8229" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)', textDecoration: 'underline', cursor: 'pointer' }}>AppleExpl01t</a> • Electron • React • Vite
+                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1.5rem' }}>
+                       <NeonButton variant="secondary" onClick={handleClearCredentials} style={{ borderColor: '#ef4444', color: '#ef4444' }}>
+                         Forget This Device
+                       </NeonButton>
+                       <p style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--color-text-dim)' }}>
+                         Completely removes your saved login data from this device. You will need to enter credentials and 2FA again.
+                       </p>
+                    </div>
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+
+          {/* === INTEGRATIONS TAB === */}
+          {activeTab === 'integrations' && (
+            <>
+              {visibleSections.osc && <OscSettings />}
+              {visibleSections.discordWebhook && <DiscordWebhookSettings />}
+              {visibleSections.discordRpc && <DiscordRpcSettings />}
+            </>
+          )}
+
+          {/* === ABOUT TAB === */}
+          {activeTab === 'about' && visibleSections.about && (
+            <section>
+               <h2 style={{ color: 'white', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>About System</h2>
+               <div style={innerCardStyle}>
+                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                   <div style={{ fontSize: '2.5rem', filter: 'drop-shadow(0 0 10px var(--color-primary))' }}>🛡️</div>
+                   <div>
+                     <h3 style={{ margin: 0, fontSize: '1.2rem' }}>VRChat Group Guard</h3>
+                     <p style={{ color: 'var(--color-text-dim)', margin: '0.2rem 0' }}>Version 1.0.3 (Beta)</p>
+                     <div style={{ marginTop: '0.5rem' }}>
+                        <NeonButton 
+                          variant="ghost" 
+                          onClick={() => setShouldCrash(true)}
+                          style={{ fontSize: '0.7rem', opacity: 0.5, color: '#ef4444' }}
+                        >
+                          Debug: Crash App
+                        </NeonButton>
+                     </div>
+                     <div style={{ fontSize: '0.8rem', color: 'var(--color-text-dim)', opacity: 0.6 }}>
+                       Developed by <a href="https://vrchat.com/home/user/usr_ef7c23be-3c3c-40b4-a01c-82f59b2a8229" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)', textDecoration: 'underline', cursor: 'pointer' }}>AppleExpl01t</a> • Electron • React • Vite
+                     </div>
+                   </div>
                  </div>
                </div>
-             </div>
-           </GlassPanel>
-        </section>
+            </section>
+          )}
 
-      </div>
+        </motion.div>
+      </AnimatePresence>
+      </GlassPanel>
     </motion.div>
   );
 };

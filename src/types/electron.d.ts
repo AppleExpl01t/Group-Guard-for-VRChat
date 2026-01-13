@@ -249,6 +249,17 @@ export interface RallyTarget {
     thumbnailUrl?: string;
 }
 
+// Type for Scanned User (users encountered during instance scans)
+export interface ScannedUser {
+    id: string;
+    displayName: string;
+    rank: string | null;
+    thumbnailUrl: string | null;
+    groupId: string | null;
+    lastSeenAt: string;
+    timesEncountered: number;
+}
+
 // Type for AutoMod user check input
 export interface AutoModUserInput {
     id: string;
@@ -269,14 +280,42 @@ export interface OscConfig {
     receiverPort: number;
 }
 
+export interface WatchedEntity {
+  id: string; // usr_..., grp_...
+  type: 'user' | 'group' | 'avatar' | 'world';
+  displayName: string;
+  tags: string[]; // IDs of tags or raw strings
+  notes: string;
+  priority: number; // -100 to 100
+  critical: boolean; // Flag for high alert
+  silent: boolean; // Flag for no notification
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface ModerationTag {
+  id: string; // slug-style id
+  label: string;
+  description: string;
+  color?: string; // Hex color
+}
+
 export interface GroupAnnouncementConfig {
     greetingEnabled: boolean;
     greetingMessage: string;
     greetingMessageMembers?: string;
+    greetingMessageRep?: string;
     periodicEnabled: boolean;
     periodicMessage: string;
     periodicIntervalMinutes: number;
     displayDurationSeconds?: number;
+}
+
+export interface AppSettings {
+    audio: {
+        notificationSoundPath: string | null;
+        volume: number;
+    };
 }
 
 export interface ElectronAPI {
@@ -342,6 +381,9 @@ export interface ElectronAPI {
     onPlayerLeft: (callback: (event: { displayName: string; userId?: string; timestamp: string }) => void) => () => void;
     onLocation: (callback: (event: { worldId: string; timestamp: string }) => void) => () => void;
     onWorldName: (callback: (event: { name: string; timestamp: string }) => void) => () => void;
+    onGameClosed: (callback: () => void) => () => void;
+    onVoteKick: (callback: (event: { target: string; initiator: string; timestamp: string }) => void) => () => void;
+    onVideoPlay: (callback: (event: { url: string; requestedBy: string; timestamp: string }) => void) => () => void;
   };
 
   // Database API for local logging
@@ -349,6 +391,7 @@ export interface ElectronAPI {
       getSessions: (groupId?: string) => Promise<unknown[]>;
       getSessionEvents: (filename: string) => Promise<unknown[]>;
       clearSessions: () => Promise<boolean>;
+      updateSessionWorldName: (sessionId: string, worldName: string) => Promise<boolean>;
       rallyFromSession: (filename: string) => Promise<{
           success: boolean;
           invited?: number;
@@ -385,7 +428,8 @@ export interface ElectronAPI {
     getRallyTargets: (groupId: string) => Promise<{ success: boolean; targets?: { id: string; displayName: string; thumbnailUrl: string }[]; error?: string }>;
     inviteToCurrent: (userId: string, message?: string) => Promise<{ success: boolean; error?: string; cached?: boolean }>;
     rallyFromSession: (filename: string, message?: string) => Promise<{ success: boolean; invited?: number; failed?: number; total?: number; error?: string; errors?: string[] }>;
-    massInviteFriends: (options: { filterAutoMod?: boolean; delayMs?: number; message?: string }) => Promise<{ success: boolean; invited?: number; skipped?: number; failed?: number; total?: number; error?: string }>;
+    massInviteFriends: (options: { filterAutoMod?: boolean; delayMs?: number; message?: string }) => Promise<{ success: boolean; invited?: number; skipped?: number; failed?: number; total?: number; error?: string; errors?: string[] }>;
+    getInviteSlotsState: () => Promise<{ success: boolean; slots?: { index: number; message: string | null; lastUpdate: number; cooldownRemaining: number }[]; error?: string }>;
       closeInstance: (worldId?: string, instanceId?: string) => Promise<{ success: boolean; error?: string }>;
       inviteSelf: (worldId: string, instanceId: string) => Promise<{ success: boolean; error?: string }>;
       getInstanceInfo: () => Promise<{ success: boolean; worldId?: string; instanceId?: string; name?: string; imageUrl?: string; error?: string }>;
@@ -419,6 +463,7 @@ export interface ElectronAPI {
       testNotification: () => Promise<boolean>;
       getLiveAutoBan: () => Promise<boolean>;
       setLiveAutoBan: (enabled: boolean) => Promise<boolean>;
+      getHistory: () => Promise<unknown[]>; // TODO: Define AutoModLogEntry type
   };
 
   // OSC API
@@ -430,12 +475,18 @@ export interface ElectronAPI {
       setAnnouncementConfig: (groupId: string, config: Partial<GroupAnnouncementConfig>) => Promise<GroupAnnouncementConfig>;
   };
 
+  // Report API
+  report: {
+    getTemplates: () => Promise<{ id: string; name: string; content: string; type: string }[]>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generate: (templateId: string, context: any) => Promise<string>;
+  };
+
   // Discord RPC API
   discordRpc: {
       getConfig: () => Promise<DiscordRpcConfig>;
       setConfig: (config: DiscordRpcConfig) => Promise<{ success: boolean }>;
       getStatus: () => Promise<{ connected: boolean; enabled: boolean }>;
-      reconnect: () => Promise<{ success: boolean; error?: string }>;
       reconnect: () => Promise<{ success: boolean; error?: string }>;
       disconnect: () => Promise<{ success: boolean }>;
   };
@@ -451,6 +502,29 @@ export interface ElectronAPI {
       getUrl: (groupId: string) => Promise<string>;
       setUrl: (groupId: string, url: string) => Promise<boolean>;
       test: (groupId: string) => Promise<boolean>;
+  };
+
+  // Watchlist API
+  watchlist: {
+      getEntities: () => Promise<WatchedEntity[]>;
+      getEntity: (id: string) => Promise<WatchedEntity | undefined>;
+      saveEntity: (entity: Partial<WatchedEntity>) => Promise<WatchedEntity>;
+      deleteEntity: (id: string) => Promise<boolean>;
+      getTags: () => Promise<ModerationTag[]>;
+      saveTag: (tag: ModerationTag) => Promise<void>;
+      deleteTag: (id: string) => Promise<void>;
+      import: (json: string) => Promise<boolean>;
+      export: () => Promise<string>;
+      searchScannedUsers: (query: string) => Promise<ScannedUser[]>;
+      onUpdate: (callback: (data: { entities: WatchedEntity[]; tags: ModerationTag[] }) => void) => () => void;
+  };
+
+  // Settings API
+  settings: {
+      get: () => Promise<AppSettings>;
+      update: (settings: Partial<AppSettings>) => Promise<AppSettings>;
+      selectAudio: () => Promise<{ path: string; name: string; data: string } | null>;
+      getAudioData: (path: string) => Promise<string | null>;
   };
 }
 

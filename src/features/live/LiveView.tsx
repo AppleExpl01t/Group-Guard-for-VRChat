@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { NeonButton } from '../../components/ui/NeonButton';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldAlert, Users, Radio, Crosshair, UserPlus, Activity, Gavel } from 'lucide-react';
+import { Crosshair, ShieldAlert, Radio, RefreshCw, Activity, UserPlus, Gavel, FileText, Users } from 'lucide-react';
 import { AppShieldIcon } from '../../components/ui/AppShieldIcon';
 import { useGroupStore } from '../../stores/groupStore';
 import { useInstanceMonitorStore, type LiveEntity } from '../../stores/instanceMonitorStore';
@@ -11,6 +11,10 @@ import { OscAnnouncementWidget } from '../dashboard/widgets/OscAnnouncementWidge
 import { RecruitResultsDialog } from './dialogs/RecruitResultsDialog';
 import { AutoModAlertOverlay } from './overlays/AutoModAlertOverlay';
 import { useAutoModAlertStore } from '../../stores/autoModAlertStore';
+import { ReportGeneratorDialog } from '../reports/ReportGeneratorDialog';
+
+import { useConfirm } from '../../context/ConfirmationContext';
+import { useNotificationStore } from '../../stores/notificationStore';
 
 interface LogEntry {
     message: string;
@@ -18,13 +22,39 @@ interface LogEntry {
     id: number;
 }
 
+interface ReportContext {
+    target: { displayName: string; id: string };
+    world: { name?: string };
+    timestamp: string;
+}
+
+const ToggleButton = ({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) => (
+    <div 
+        onClick={onToggle}
+        style={{
+            width: '40px', height: '22px', 
+            background: enabled ? 'var(--color-success)' : 'rgba(255,255,255,0.2)',
+            borderRadius: '20px', position: 'relative', cursor: 'pointer',
+            transition: 'background 0.2s'
+        }}
+    >
+        <div style={{
+            width: '18px', height: '18px', 
+            background: 'white', borderRadius: '50%',
+            position: 'absolute', top: '2px', left: enabled ? '20px' : '2px',
+            transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+        }} />
+    </div>
+);
+
 const EntityCard: React.FC<{ 
     entity: LiveEntity; 
     onInvite: (id: string, name: string) => void;
     onKick: (id: string, name: string) => void;
     onBan: (id: string, name: string) => void;
+    onReport: (id: string, name: string) => void;
     readOnly?: boolean;
-}> = ({ entity, onInvite, onKick, onBan, readOnly }) => (
+}> = ({ entity, onInvite, onKick, onBan, onReport, readOnly }) => (
     <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -72,6 +102,17 @@ const EntityCard: React.FC<{
         </div>
         
         <div style={{ display: 'flex', gap: '8px' }}>
+             {/* Report Button */}
+             <NeonButton 
+                size="sm" 
+                variant="secondary" 
+                style={{ padding: '4px 8px', fontSize: '0.75rem', opacity: 0.7 }}
+                onClick={() => onReport(entity.id, entity.displayName)}
+                title="Generate Report"
+            >
+                <FileText size={14} />
+            </NeonButton>
+
             {!readOnly && !entity.isGroupMember && (
                 <NeonButton 
                     size="sm" 
@@ -138,8 +179,14 @@ export const LiveView: React.FC = () => {
     const [banDialogUser, setBanUserDialog] = useState<{ id: string; displayName: string } | null>(null);
     const [recruitResults, setRecruitResults] = useState<{ blocked: {name:string, reason?:string}[], invited: number } | null>(null);
     
+    // Report Dialog State
+    const [reportContext, setReportContext] = useState<ReportContext | null>(null);
+    
     // Tab state for entity list
     const [entityTab, setEntityTab] = useState<'active' | 'left'>('active');
+
+    const { confirm } = useConfirm();
+    const { addNotification } = useNotificationStore();
 
     // Helpers to add logs
     const addLog = useCallback((message: string, type: 'info' | 'warn' | 'success' | 'error' = 'info') => {
@@ -151,8 +198,14 @@ export const LiveView: React.FC = () => {
         setBanUserDialog({ id: userId, displayName: name });
     };
 
+    const handleReportClick = (userId: string, name: string) => {
+        setReportContext({
+            target: { displayName: name, id: userId },
+            world: { name: instanceInfo?.name },
+            timestamp: new Date().toISOString()
+        });
+    };
 
-    // ... (render logic) ...
 
     const performScan = useCallback(async () => {
         if (!selectedGroup && !isRoamingMode) return;
@@ -160,15 +213,14 @@ export const LiveView: React.FC = () => {
         try {
             // 1. Scan Entities
             const scanGroupId = selectedGroup ? selectedGroup.id : undefined;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const results = await window.electron.instance.scanSector(scanGroupId as any);
+            const results = await window.electron.instance.scanSector(scanGroupId);
 
             // Update store (it handles active/left logic)
             // We need to cast results to LiveEntity[] if types mismatch slightly or ensure implicit compatibility
             updateLiveScan(results as LiveEntity[]);
 
             // 2. Fetch Instance Info
-            // ... (rest same) ...
+            // We should use the updated instance methods
             if (window.electron.instance.getInstanceInfo) {
                 const info = await window.electron.instance.getInstanceInfo();
                 if (info.success) {
@@ -215,33 +267,33 @@ export const LiveView: React.FC = () => {
     // Listen for Entity Updates (Live)
     useEffect(() => {
         const unsubscribe = window.electron.instance.onEntityUpdate((updatedEntity: LiveEntity) => {
-             // We can just call updateLiveScan with single entity? 
-             // Logic in store assumes list. 
-             // Simpler to just trigger a rescan or add a 'updateSingleEntity' action?
-             // For now, re-using updateLiveScan with [entity] might act weird if logic assumes full snapshot.
-             // Store logic: "Mark all current active as left... then revive". 
-             // PASSING A SINGLE ENTITY WOULD MARK EVERYONE ELSE AS LEFT!
-             
-             // CORRECT FIX: We need a mergeEntity or similar action in Store, OR just let the polling handle it.
-             // But realtime is nice.
-             // Actually, the current socket event might be "partial update", but 'scanSector' is "full snapshot".
-             // Let's assume for now we just rely on polling (performScan) which runs every 5s.
-             // OR, better: The previous code was:
-             /*
-             setEntities(prev => {
-                 const clone = [...prev];
-                 const idx = clone.findIndex(e => e.id === updatedEntity.id);
-                 if (idx >= 0) { clone[idx] = updatedEntity; } else { clone.push(updatedEntity); }
-                 return clone;
-             });
-             */
-             // I should add `mergeEntity` to store if I want this. 
-             // For now, I'll skip realtime single-entity updates to avoid complexity/bugs and rely on the 5s poll.
-             // The user didn't ask for realtime optimizations, just persistence.
-             
              addLog(`[SCAN] Profile Resolved: ${updatedEntity.displayName} (Rank: ${updatedEntity.rank})`, 'info');
         });
         return unsubscribe;
+    }, [addLog]);
+
+    // LOG WATCHER INTEGRATION
+    useEffect(() => {
+        // Start the watcher
+        window.electron.logWatcher.start();
+        
+        // Listeners
+        const unsubKick = window.electron.logWatcher.onVoteKick((event) => {
+            addLog(`[VOTE KICK] ${event.initiator} initiated vote kick against ${event.target}`, 'warn');
+            // Optionally could trigger a toast or notification
+        });
+
+        const unsubVideo = window.electron.logWatcher.onVideoPlay((event) => {
+            // Shorten URL for display
+            const shortUrl = event.url.length > 50 ? event.url.substring(0, 47) + '...' : event.url;
+            addLog(`[VIDEO] Now Playing: ${shortUrl} (Req: ${event.requestedBy})`, 'info');
+        });
+
+        return () => {
+            unsubKick();
+            unsubVideo();
+            // Optional: window.electron.logWatcher.stop(); // Don't stop, let it run in bg?
+        };
     }, [addLog]);
 
 
@@ -259,7 +311,15 @@ export const LiveView: React.FC = () => {
 
     const handleKick = async (userId: string, name: string) => {
         if (!selectedGroup) return;
-        if (!confirm(`Are you sure you want to KICK (Vote/Ban) ${name}?`)) return;
+        
+        const confirmed = await confirm({
+            title: 'Confirm Kick',
+            message: `Are you sure you want to KICK (Vote/Ban) ${name}?`,
+            confirmLabel: 'Kick',
+            variant: 'warning'
+        });
+
+        if (!confirmed) return;
         
         addLog(`[CMD] Kicking ${name}...`, 'warn');
         try {
@@ -269,6 +329,11 @@ export const LiveView: React.FC = () => {
              setEntityStatus(userId, 'kicked');
         } catch {
             addLog(`[CMD] Failed to kick ${name}`, 'error');
+            addNotification({
+                type: 'error',
+                title: 'Kick Failed',
+                message: `Failed to kick ${name}`
+            });
         }
     };
     
@@ -276,10 +341,11 @@ export const LiveView: React.FC = () => {
     const [progressMode, setProgressMode] = useState<'recruit' | 'rally' | null>(null);
     const [currentProcessingUser, setCurrentProcessingUser] = useState<{ name: string; phase: 'checking' | 'inviting' | 'skipped' } | null>(null);
 
-    // ... existing code ...
-
     const handleRecruitAll = async () => {
-        if (!entities.length) return;
+        if (!entities.length) {
+            addLog(`[CMD] No players detected yet. Try leaving and re-entering the instance.`, 'warn');
+            return;
+        }
         const targets = entities.filter(e => !e.isGroupMember && e.status === 'active');
         if (targets.length === 0) {
             addLog(`[CMD] No strangers to recruit.`, 'warn');
@@ -376,8 +442,6 @@ export const LiveView: React.FC = () => {
         setProgress(null);
         setProgressMode(null);
     };
-
-    // ... existing code ...
 
     const handleRally = async () => {
         if (!selectedGroup) return;
@@ -535,18 +599,40 @@ export const LiveView: React.FC = () => {
     };
 
     const handleLockdown = async () => {
-        if (!confirm("⚠️ DANGER ZONE ⚠️\n\nAre you sure you want to CLOSE this instance?\n\nThis will kick ALL players (including you) and lock the instance. This cannot be undone.")) return;
+        const confirmed = await confirm({
+            title: '⚠️ DANGER ZONE ⚠️',
+            message: "Are you sure you want to CLOSE this instance?\n\nThis will kick ALL players (including you) and lock the instance. This cannot be undone.",
+            confirmLabel: 'CLOSE INSTANCE',
+            variant: 'danger'
+        });
+
+        if (!confirmed) return;
         
         addLog(`[CMD] INITIATING INSTANCE LOCKDOWN...`, 'warn');
         try {
             const res = await window.electron.instance.closeInstance();
             if (res.success) {
                 addLog(`[CMD] Instance Closed Successfully.`, 'success');
+                addNotification({
+                    type: 'success',
+                    title: 'Instance Closed',
+                    message: 'Lockdown successful.'
+                });
             } else {
                  addLog(`[CMD] Failed to close instance: ${res.error}`, 'error');
+                 addNotification({
+                     type: 'error',
+                     title: 'Lockdown Failed',
+                     message: res.error || 'Unknown error'
+                 });
             }
         } catch {
              addLog(`[CMD] Lockdown failed. API Error.`, 'error');
+             addNotification({
+                 type: 'error',
+                 title: 'Error',
+                 message: 'Lockdown failed due to API error.'
+             });
         }
     };
 
@@ -591,6 +677,11 @@ export const LiveView: React.FC = () => {
                                 LIVE SECTOR SCAN
                             </div>
                         </div>
+                    </div>
+
+                    {/* Header Actions */}
+                    <div style={{ position: 'relative', zIndex: 1, display: 'flex', gap: '8px' }}>
+                        
                     </div>
                 </GlassPanel>
 
@@ -673,6 +764,39 @@ export const LiveView: React.FC = () => {
                                 {entities.filter(e => e.status === 'left' || e.status === 'kicked').length}
                             </span>
                         </button>
+                        
+                        <div style={{ width: '1px', background: 'var(--border-color)', margin: '5px 0' }} />
+
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                const icon = e.currentTarget.querySelector('svg');
+                                if (icon) icon.style.animation = 'spin 1s linear infinite';
+                                window.electron.instance.scanSector().finally(() => {
+                                     if (icon) {
+                                         icon.style.animation = 'none';
+                                         // force redraw of animation
+                                         void icon.getBoundingClientRect().width;
+                                     }
+                                });
+                            }}
+                            title="Force Refresh"
+                            style={{
+                                padding: '0 1rem',
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--color-text-dim)',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                transition: 'color 0.2s ease',
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.color = 'white'}
+                            onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-dim)'}
+                        >
+                            <RefreshCw size={16} />
+                        </button>
                     </GlassPanel>
 
                     {/* Entity List Content */}
@@ -704,6 +828,7 @@ export const LiveView: React.FC = () => {
                                                     onInvite={handleRecruit}
                                                     onKick={handleKick}
                                                     onBan={handleBanClick}
+                                                    onReport={handleReportClick}
                                                     readOnly={isRoamingMode}
                                                 />
                                             </motion.div>
@@ -735,6 +860,7 @@ export const LiveView: React.FC = () => {
                                                     onInvite={() => {}} 
                                                     onKick={() => {}}
                                                     onBan={handleBanClick}
+                                                    onReport={handleReportClick}
                                                     readOnly={true}
                                                 />
                                             </motion.div>
@@ -779,11 +905,11 @@ export const LiveView: React.FC = () => {
                         
                         <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.1)' }}></div>
                         
-                        {/* Auto-Ban */}
+                        {/* AutoBan */}
                         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <Gavel size={16} color={liveAutoBan ? '#ef4444' : 'gray'} />
-                                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'white' }}>Auto-Ban</span>
+                                <Gavel size={16} color={liveAutoBan ? '#f87171' : 'gray'} />
+                                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'white' }}>AutoBan</span>
                             </div>
                             <ToggleButton 
                                 enabled={liveAutoBan} 
@@ -818,94 +944,87 @@ export const LiveView: React.FC = () => {
                         </div>
                     )}
 
-                    {!isRoamingMode ? (
-                        <div style={{ display: 'grid', gap: '10px' }}>
-                            <div style={{ display: 'flex', gap: '10px' }}>
-                                {renderRecruitButton()}
-                                {renderRallyButton()}
-                            </div>
-                             <NeonButton 
-                                onClick={handleLockdown}
-                                variant="danger" 
-                                style={{ width: '100%', height: '40px', fontSize: '0.8rem', opacity: 0.8 }}
-                             >
-                                 <AppShieldIcon size={16} style={{ marginRight: '8px' }} />
-                                 CLOSE INSTANCE
-                             </NeonButton>
-                        </div>
-                    ) : (
-                        <div style={{ 
-                            padding: '1.5rem', 
-                            textAlign: 'center', 
-                            opacity: 0.5, 
-                            fontSize: '0.8rem', 
-                            border: '1px dashed rgba(255,255,255,0.2)', 
-                            borderRadius: '8px',
-                            background: 'rgba(0,0,0,0.1)'
-                        }}>
-                           Local Monitoring Active
-                        </div>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                        {renderRecruitButton()}
+                        {renderRallyButton()}
+                    </div>
+                    
+                    {!isRoamingMode && selectedGroup && (
+                        <NeonButton 
+                            variant="danger" 
+                            style={{ height: '40px', fontSize: '0.75rem', marginTop: '0.5rem', opacity: 0.8 }}
+                            onClick={handleLockdown}
+                        >
+                            <ShieldAlert size={16} />
+                            EMERGENCY LOCKDOWN
+                        </NeonButton>
                     )}
                 </GlassPanel>
 
-                {/* LIVE TERMINAL FEED */}
-                <GlassPanel style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'rgba(0,0,0,0.2)' }}>
-                    <div style={{ padding: '0.8rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--color-text-dim)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {/* LOG TERMINAL */}
+                <GlassPanel style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '0', overflow: 'hidden', background: '#050510', border: '1px solid #1a1a2e' }}>
+                    <div style={{ 
+                        padding: '0.8rem', borderBottom: '1px solid rgba(255,255,255,0.05)', 
+                        fontSize: '0.8rem', color: 'var(--color-primary)', fontWeight: 700, letterSpacing: '0.1em',
+                        display: 'flex', alignItems: 'center', gap: '8px'
+                    }}>
                         <Activity size={14} />
-                        SYSTEM FEED
+                        LIVE TELEMETRY
                     </div>
-                    <div style={{ flex: 1, padding: '1rem', fontFamily: 'monospace', fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {logs.map(log => (
+                    
+                    <div style={{ 
+                        flex: 1, overflowY: 'auto', padding: '10px', 
+                        fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem', 
+                        display: 'flex', flexDirection: 'column-reverse', gap: '4px' 
+                    }}>
+                        {logs.slice().reverse().map(log => (
                             <div key={log.id} style={{ 
-                                color: log.type === 'error' ? '#fca5a5' : 
-                                       log.type === 'success' ? '#86efac' : 
-                                       log.type === 'warn' ? '#fde047' : 'inherit' 
+                                padding: '4px 8px', borderRadius: '4px',
+                                background: log.type === 'error' ? 'rgba(239, 68, 68, 0.1)' : log.type === 'warn' ? 'rgba(234, 179, 8, 0.1)' : 'transparent',
+                                color: log.type === 'error' ? '#fca5a5' : log.type === 'warn' ? '#fde047' : log.type === 'success' ? '#86efac' : '#94a3b8',
+                                borderLeft: `2px solid ${log.type === 'error' ? '#ef4444' : log.type === 'warn' ? '#eab308' : log.type === 'success' ? '#22c55e' : '#64748b'}`
                             }}>
                                 {log.message}
                             </div>
                         ))}
-                        <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span style={{ width: '6px', height: '12px', background: 'var(--color-primary)', display: 'block', animation: 'blink 1s infinite' }}></span>
-                        </div>
                     </div>
                 </GlassPanel>
-
             </div>
-            <BanUserDialog 
-                key={banDialogUser ? banDialogUser.id : 'closed'}
-                isOpen={!!banDialogUser} 
-                onClose={() => setBanUserDialog(null)}
-                user={banDialogUser}
-                initialGroupId={selectedGroup?.id}
-            />
-            <RecruitResultsDialog 
-                isOpen={!!recruitResults}
-                onClose={() => setRecruitResults(null)}
-                blockedUsers={recruitResults?.blocked || []}
-                totalInvited={recruitResults?.invited || 0}
+            
+            {/* GLOBAL DIALOGS */}
+            <AnimatePresence>
+                {banDialogUser && selectedGroup && (
+                    <BanUserDialog 
+                        key={banDialogUser ? banDialogUser.id : 'closed'}
+                        isOpen={!!banDialogUser} 
+                        onClose={() => setBanUserDialog(null)}
+                        user={banDialogUser}
+                        initialGroupId={selectedGroup?.id}
+                    />
+                )}
+                
+                {recruitResults && selectedGroup && (
+                    <RecruitResultsDialog 
+                        isOpen={!!recruitResults}
+                        onClose={() => setRecruitResults(null)}
+                        blockedUsers={recruitResults?.blocked || []}
+                        totalInvited={recruitResults?.invited || 0}
+                    />
+                )}
+            </AnimatePresence>
+
+            {/* AutoMod Alert Overlay */}
+            <AutoModAlertOverlay />
+            
+            {/* Report Generator Dialog */}
+            <ReportGeneratorDialog
+                isOpen={!!reportContext}
+                onClose={() => setReportContext(null)}
+                context={reportContext}
             />
 
-            <AutoModAlertOverlay />
+
+
         </div>
     );
 };
-
-const ToggleButton = ({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) => (
-    <div 
-        onClick={onToggle}
-        style={{
-            width: '40px', height: '22px', 
-            background: enabled ? 'var(--color-success)' : 'rgba(255,255,255,0.2)',
-            borderRadius: '20px', position: 'relative', cursor: 'pointer',
-            transition: 'background 0.2s'
-        }}
-    >
-        <div style={{
-            width: '18px', height: '18px', 
-            background: 'white', borderRadius: '50%',
-            position: 'absolute', top: '2px', left: enabled ? '20px' : '2px',
-            transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
-        }} />
-    </div>
-);
-

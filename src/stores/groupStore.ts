@@ -10,6 +10,8 @@ interface Group {
   iconUrl?: string;
   ownerId: string;
   memberCount: number;
+  onlineMemberCount?: number;
+  activeInstanceCount?: number;
 }
 
 // Refresh intervals in milliseconds
@@ -119,7 +121,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const currentGroup = get().selectedGroup;
     set({ isRoamingMode: false }); // Always exit roaming mode when selecting a group (or null)
     
-    if (currentGroup?.id === group?.id) return;
+    if (currentGroup?.id === group?.id) {
+         return;
+    }
     
     // Clear data only when switching to a different group
     set({ 
@@ -133,6 +137,10 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       lastPipelineEvent: null
     });
   },
+
+  // ... (unchanged methods)
+
+
 
   fetchGroupRequests: async (groupId: string) => {
     set({ isRequestsLoading: true });

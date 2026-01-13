@@ -1,20 +1,21 @@
 import React, { useEffect, useState, useMemo, useCallback, lazy, Suspense } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
+import { ConfirmationProvider } from './context/ConfirmationContext';
 import { TitleBar } from './components/layout/TitleBar';
 import { GlobalModals } from './components/layout/GlobalModals';
 import { ToastContainer } from './components/ui/ToastContainer';
 import { LoginView } from './features/auth/LoginView';
 import { useAuthStore } from './stores/authStore';
 import { useGroupStore } from './stores/groupStore';
-import { GlassPanel } from './components/ui/GlassPanel';
-import { motion } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { NeonDock, type DockView } from './components/layout/NeonDock';
+import { usePipelineStore } from './stores/pipelineStore';
 import { usePipelineInit } from './hooks/usePipelineInit';
 import { useInstanceMonitorInit } from './hooks/useInstanceMonitorInit';
 import { useAutoModNotifications } from './hooks/useAutoModNotifications';
 import { SetupView } from './features/setup/SetupView';
 
-import { AnimatePresence } from 'framer-motion';
+
 import { PageTransition } from './components/layout/PageTransition';
 
 // Lazy load heavy views for better performance
@@ -26,62 +27,15 @@ const DatabaseView = lazy(() => import('./features/database/DatabaseView').then(
 const AutoModView = lazy(() => import('./features/automod/AutoModView').then(m => ({ default: m.AutoModView })));
 const LiveView = lazy(() => import('./features/live/LiveView').then(m => ({ default: m.LiveView })));
 const AuditLogView = lazy(() => import('./features/audit/AuditLogView').then(m => ({ default: m.AuditLogView })));
+const WatchlistView = lazy(() => import('./features/watchlist/WatchlistView').then(m => ({ default: m.WatchlistView })));
 
-// Simple loading fallback
-const ViewLoader = () => (
-  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: '200px' }}>
-    <div style={{ width: 32, height: 32, border: '3px solid var(--border-color)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-  </div>
-);
-
-// Loading screen component for auto-login
-const AutoLoginLoadingScreen: React.FC = () => (
-  <div style={{ 
-    display: 'flex', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    height: '100vh',
-    background: 'radial-gradient(circle at center, hsla(var(--primary-hue), 50%, 10%, 0.4) 0%, var(--color-bg-app) 100%)'
-  }}>
-    <GlassPanel style={{ 
-      width: '400px', 
-      display: 'flex', 
-      flexDirection: 'column', 
-      gap: '1.5rem',
-      alignItems: 'center',
-      padding: '3rem'
-    }}>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: '1rem', color: 'var(--color-primary)', letterSpacing: '0.2em', fontWeight: 600, marginBottom: '-0.3rem' }}>VRCHAT</div>
-        <h1 className="text-gradient" style={{ fontSize: '2rem', fontWeight: 800, margin: 0 }}>
-          GROUP GUARD
-        </h1>
-      </div>
-      
-      {/* Animated loading spinner */}
-      <motion.div
-        animate={{ rotate: 360 }}
-        transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
-        style={{
-          width: '48px',
-          height: '48px',
-          borderRadius: '50%',
-          border: '3px solid var(--border-color)',
-          borderTopColor: 'var(--color-primary)',
-        }}
-      />
-      
-      <p style={{ color: 'var(--color-text-dim)', textAlign: 'center' }}>
-        Signing you in automatically...
-      </p>
-    </GlassPanel>
-  </div>
-);
+import { ViewLoader } from './components/ui/ViewLoader';
+import { AutoLoginLoadingScreen } from './features/auth/AutoLoginLoadingScreen';
 
 function App() {
   const { isAuthenticated, autoLogin, status, logout } = useAuthStore();
   const { selectedGroup, selectGroup, isRoamingMode } = useGroupStore();
+  const connected = usePipelineStore(state => state.connected); // Connection to backend pipeline
   const [isCheckingAutoLogin, setIsCheckingAutoLogin] = useState(true);
   const [isStorageConfigured, setIsStorageConfigured] = useState<boolean | null>(null);
   const [currentView, setCurrentView] = useState<DockView>('main');
@@ -122,6 +76,14 @@ function App() {
 
   // Monitor Live Log state to toggle Live Mode UI
   useEffect(() => {
+    if (!connected) {
+        if (isLiveMode) {
+          const timeoutId = setTimeout(() => setIsLiveMode(false), 0);
+          return () => clearTimeout(timeoutId);
+        }
+        return;
+    }
+
     if (isRoamingMode) {
       if (!isLiveMode) {
          const t = setTimeout(() => setIsLiveMode(true), 0);
@@ -146,21 +108,47 @@ function App() {
     };
     checkStatus();
 
-    // 2. Listen for changes
-    if (!window.electron?.instance?.onGroupChanged) return;
+    // 2. Listen for group changes
+    let unsubscribeGroupChange: (() => void) | undefined;
+    if (window.electron?.instance?.onGroupChanged) {
+        unsubscribeGroupChange = window.electron.instance.onGroupChanged((groupId) => {
+            if (!selectedGroup) {
+                setIsLiveMode(false);
+            } else {
+                setIsLiveMode(groupId === selectedGroup.id);
+            }
+        });
+    }
 
-    const unsubscribe = window.electron.instance.onGroupChanged((groupId) => {
-        if (!selectedGroup) {
+    // 3. Listen for game closed event
+    let unsubscribeGameClosed: (() => void) | undefined;
+    if (window.electron?.logWatcher?.onGameClosed) {
+        unsubscribeGameClosed = window.electron.logWatcher.onGameClosed(() => {
+            console.log('[App] Game closed detected, exiting live mode');
             setIsLiveMode(false);
-        } else {
-            setIsLiveMode(groupId === selectedGroup.id);
-        }
-    });
+        });
+    }
 
     return () => {
-        unsubscribe();
+        unsubscribeGroupChange?.();
+        unsubscribeGameClosed?.();
     };
-  }, [selectedGroup, isRoamingMode, isLiveMode]);
+  }, [selectedGroup, isRoamingMode, isLiveMode, connected]);
+
+  // Redirect from Live view when Live mode ends (smooth transition)
+  useEffect(() => {
+    if (!isLiveMode && !isRoamingMode && currentView === 'live') {
+      console.log('[App] Live mode ended while on Live view, redirecting to dashboard');
+      const t = setTimeout(() => {
+        if (selectedGroup) {
+          setCurrentView('main'); // Go to group dashboard
+        } else {
+          setCurrentView('main'); // Go to group selection
+        }
+      }, 100); // Small delay for smooth transition
+      return () => clearTimeout(t);
+    }
+  }, [isLiveMode, isRoamingMode, currentView, selectedGroup]);
 
   // Check storage configuration first
   useEffect(() => {
@@ -224,7 +212,7 @@ function App() {
         return;
     }
 
-    if ((view === 'moderation' || view === 'audit' || view === 'database' || view === 'live') && !selectedGroup) {
+    if ((view === 'moderation' || view === 'audit' || view === 'database' || view === 'live' || view === 'watchlist') && !selectedGroup) {
       // If trying to access group features without a group, go to group selection
       selectGroup(null);
       setCurrentView('main');
@@ -244,6 +232,8 @@ function App() {
         return <LiveView />;
       case 'audit':
         return <AuditLogView />;
+      case 'watchlist':
+        return <WatchlistView />;
       case 'database':
         return <DatabaseView />;
       case 'main':
@@ -271,43 +261,45 @@ function App() {
   } else {
       // Main Authenticated App
       currentScreen = (
-        <AppLayout>
-          <TitleBar 
-            onSettingsClick={() => setCurrentView('settings')}
-            onLogoutClick={() => setIsLogoutConfirmOpen(true)}
-          />
+        <ConfirmationProvider>
+          <AppLayout>
+            <TitleBar 
+              onSettingsClick={() => setCurrentView('settings')}
+              onLogoutClick={() => setIsLogoutConfirmOpen(true)}
+            />
 
-          {/* Main Content Render - Epic Transition */}
-          <AnimatePresence mode="wait">
-            <PageTransition key={currentView + (selectedGroup ? selectedGroup.id : 'home')}>
-              <Suspense fallback={<ViewLoader />}>
-                {content}
-              </Suspense>
-            </PageTransition>
-          </AnimatePresence>
+            {/* Main Content Render - Epic Transition */}
+            <AnimatePresence mode="wait">
+              <PageTransition key={currentView + (selectedGroup ? selectedGroup.id : 'home')}>
+                <Suspense fallback={<ViewLoader />}>
+                  {content}
+                </Suspense>
+              </PageTransition>
+            </AnimatePresence>
 
-          {/* Neon Dock Navigation */}
-          <NeonDock 
-            currentView={currentView}
-            onViewChange={handleViewChange}
-            selectedGroup={selectedGroup}
-            onGroupClick={() => {
-                selectGroup(null);
-                setCurrentView('main');
-            }}
-            isLiveMode={isLiveMode}
-          />
-          
-          <GlobalModals 
-            isLogoutConfirmOpen={isLogoutConfirmOpen}
-            setIsLogoutConfirmOpen={setIsLogoutConfirmOpen}
-            onLogoutConfirm={() => {
-                logout(false);
-                setIsLogoutConfirmOpen(false);
-            }}
-            isUpdateReady={isUpdateReady}
-          />
-        </AppLayout>
+            {/* Neon Dock Navigation */}
+            <NeonDock 
+              currentView={currentView}
+              onViewChange={handleViewChange}
+              selectedGroup={selectedGroup}
+              onGroupClick={() => {
+                  selectGroup(null);
+                  setCurrentView('main');
+              }}
+              isLiveMode={isLiveMode}
+            />
+            
+            <GlobalModals 
+              isLogoutConfirmOpen={isLogoutConfirmOpen}
+              setIsLogoutConfirmOpen={setIsLogoutConfirmOpen}
+              onLogoutConfirm={() => {
+                  logout(false);
+                  setIsLogoutConfirmOpen(false);
+              }}
+              isUpdateReady={isUpdateReady}
+            />
+          </AppLayout>
+        </ConfirmationProvider>
       );
       screenKey = 'app-layout';
   }

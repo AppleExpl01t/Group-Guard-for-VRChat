@@ -46,3 +46,18 @@ model AutoModLog {
   details          String?
   createdAt        DateTime @default(now())
 }
+
+model ScannedUser {
+  id               String   @id // usr_xxx (VRChat user ID)
+  displayName      String
+  rank             String?  // Trust level (e.g., "Trusted", "Known", etc.)
+  thumbnailUrl     String?
+  firstSeenAt      DateTime @default(now())
+  lastSeenAt       DateTime @updatedAt
+  groupId          String?  // Which group context they were last seen in
+  timesEncountered Int      @default(1)
+  
+  @@index([displayName])
+  @@index([groupId])
+  @@index([lastSeenAt])
+}

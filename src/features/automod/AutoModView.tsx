@@ -1,473 +1,42 @@
 import React, { useState } from 'react';
-import { createPortal } from 'react-dom';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { useAuditStore } from '../../stores/auditStore';
 import { useGroupStore } from '../../stores/groupStore';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import styles from './AutoModView.module.css';
 
 // Extracted components
-import { ModuleTab } from './components/ModuleTab';
-import { TagBadge } from './components/TagBadge';
 import { KeywordConfigModal } from './dialogs/KeywordConfigModal';
-import { getTrustColor, parseUserTags } from './utils/automodHelpers';
+import { UserActionModal } from './dialogs/UserActionModal';
+import { RuleCard } from './components/RuleCard';
+import { InterceptionLog, type LogEntry } from './components/InterceptionLog';
+import { StatTile } from '../dashboard/components/StatTile';
+import type { AutoModRule } from '../../types/electron';
 
-// --- Types ---
-type AutoModModule = 'GATEKEEPER' | 'GROUP_SCANNER';
-
-
-// --- User Action Modal ---
-const UserActionModal: React.FC<{
-    isOpen: boolean;
-    onClose: () => void;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    logEntry: any;
-    onActionComplete: () => void;
-}> = ({ isOpen, onClose, logEntry, onActionComplete }) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [user, setUser] = useState<any>(null);
-    const [loading, setLoading] = useState(false);
-    const [actionLoading, setActionLoading] = useState<string | null>(null);
-
-    const fetchUser = React.useCallback(async () => {
-        if (!logEntry?.userId) return;
-        setLoading(true);
-        try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const response = await (window as any).electron.getUser(logEntry.userId);
-            // API returns { success: true, user: userData }
-            if (response?.success && response?.user) {
-                setUser(response.user);
-            } else {
-                console.error('Failed to fetch user:', response?.error);
-                setUser(null);
-            }
-        } catch (e) {
-            console.error('Failed to fetch user', e);
-            setUser(null);
+const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+        opacity: 1,
+        transition: {
+            staggerChildren: 0.1,
+            delayChildren: 0.2
         }
-        setLoading(false);
-    }, [logEntry]);
-
-    React.useEffect(() => {
-        if (isOpen && logEntry?.userId) {
-            fetchUser();
-        } else {
-            setUser(null);
-        }
-    }, [isOpen, logEntry?.userId, fetchUser]);
-
-    const { selectedGroup } = useGroupStore();
-
-    const handleAction = async (action: string, shouldClose = true) => {
-        if (!logEntry?.userId) return;
-        
-        // Use log's group ID if available, otherwise fallback to currently selected group
-        const groupId = logEntry.groupId || selectedGroup?.id;
-        
-        if (!groupId || groupId === 'grp_unknown') {
-            alert("Could not determine which Group to perform this action for. Please ensure you have a Group selected in the Dashboard.");
-            return;
-        }
-
-        setActionLoading(action);
-        try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const electron = (window as any).electron;
-            
-            let result: { success: boolean; error?: string } = { success: false };
-            
-            switch (action) {
-                case 'invite':
-                    result = await electron.instance.recruitUser(groupId, logEntry.userId);
-                    break;
-                case 'unban':
-                    result = await electron.instance.unbanUser(groupId, logEntry.userId);
-                    break;
-                case 'kick':
-                    result = await electron.instance.kickUser(groupId, logEntry.userId);
-                    break;
-                case 'ban':
-                    result = await electron.banUser(groupId, logEntry.userId);
-                    break;
-            }
-            
-            if (result?.success) {
-                // If we aren't closing, we should ideally wait a bit or just proceed. 
-                // We still want to refresh logs potentially?
-                if (shouldClose) {
-                    onActionComplete();
-                    onClose();
-                } else {
-                     // For multi-step, we might want to refresh logs but keep modal open? 
-                     // Or just wait for final step. 
-                     // Let's at least refresh history so status updates if possible (though logs might not update that fast)
-                     // onActionComplete(); // This might trigger reload which might be distracting if done twice.
-                }
-            } else {
-                console.error(`Action ${action} failed:`, result?.error);
-                // Show error to user (could add a toast/notification here)
-                alert(`Action failed: ${result?.error || 'Unknown error'}`);
-            }
-        } catch (e) {
-            console.error(`Failed to perform action: ${action}`, e);
-
-            alert(`Action failed: ${e instanceof Error ? e.message : 'Unknown error'}\n\nCheck console for payload details.`);
-        }
-        setActionLoading(null);
-    };
-
-    if (!isOpen) return null;
-
-    const actionType = logEntry?.action || 'BLOCKED';
-    const userTags = user?.tags ? parseUserTags(user.tags) : [];
-    const isAgeVerified = user?.ageVerificationStatus === '18+';
-    const hasVRCPlus = user?.tags?.some((t: string) => t.includes('supporter'));
-    const trustColor = user?.tags ? getTrustColor(user.tags) : '#6b7280';
-    
-    return createPortal(
-        <AnimatePresence>
-            {isOpen && (
-                <>
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={onClose}
-                        style={{
-                            position: 'fixed',
-                            inset: 0,
-                            background: 'rgba(0,0,0,0.85)',
-                            backdropFilter: 'blur(10px)',
-                            zIndex: 10000,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            padding: '20px'
-                        }}
-                    >
-                        <motion.div
-                            initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                            animate={{ scale: 1, opacity: 1, y: 0 }}
-                            exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                            onClick={e => e.stopPropagation()}
-                            style={{ 
-                                width: '100%', 
-                                maxWidth: '520px', 
-                                maxHeight: '85vh',
-                                zIndex: 10001,
-                                display: 'flex',
-                                flexDirection: 'column'
-                            }}
-                        >
-                            <GlassPanel style={{ 
-                                padding: '0', 
-                                border: `1px solid ${trustColor}40`,
-                                boxShadow: `0 0 40px ${trustColor}20`,
-                                overflow: 'hidden',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                maxHeight: '100%'
-                            }}>
-                                {/* Header with Name & Close */}
-                                <div style={{ 
-                                    padding: '1rem 1.25rem', 
-                                    background: 'rgba(0,0,0,0.3)',
-                                    borderBottom: '1px solid rgba(255,255,255,0.05)',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    flexShrink: 0
-                                }}>
-                                    <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>
-                                        {loading ? 'Loading...' : (user?.displayName || logEntry?.user || 'Unknown User')}
-                                    </h2>
-                                    <button onClick={onClose} style={{ 
-                                        background: 'rgba(255,255,255,0.1)', 
-                                        border: 'none', 
-                                        color: 'rgba(255,255,255,0.7)', 
-                                        cursor: 'pointer', 
-                                        padding: '6px',
-                                        borderRadius: '6px',
-                                        display: 'flex'
-                                    }}>
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                                        </svg>
-                                    </button>
-                                </div>
-
-                                {/* Scrollable Content */}
-                                <div style={{ overflowY: 'auto', flex: 1 }}>
-                                    {/* Profile Section */}
-                                    <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
-                                            {/* Avatar */}
-                                            <div style={{
-                                                width: '80px', 
-                                                height: '80px', 
-                                                borderRadius: '12px',
-                                                background: 'rgba(255,255,255,0.1)',
-                                                backgroundImage: user?.currentAvatarThumbnailImageUrl ? `url(${user.currentAvatarThumbnailImageUrl})` : 'none',
-                                                backgroundSize: 'cover', 
-                                                backgroundPosition: 'center',
-                                                border: `2px solid ${trustColor}`,
-                                                flexShrink: 0
-                                            }} />
-                                            
-                                            {/* Name & Status */}
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                <h3 style={{ margin: '0 0 4px', fontSize: '1.15rem', fontWeight: 700, color: 'white' }}>
-                                                    {user?.displayName || logEntry?.user || 'Unknown'}
-                                                </h3>
-                                                {user?.statusDescription && (
-                                                    <div style={{ 
-                                                        fontSize: '0.85rem', 
-                                                        color: 'rgba(255,255,255,0.7)',
-                                                        whiteSpace: 'nowrap',
-                                                        overflow: 'hidden',
-                                                        textOverflow: 'ellipsis'
-                                                    }}>
-                                                        {user.statusDescription}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                        
-                                        {/* Tags Row */}
-                                        {userTags.length > 0 && (
-                                            <div style={{ 
-                                                display: 'flex', 
-                                                flexWrap: 'wrap', 
-                                                gap: '6px', 
-                                                marginBottom: '1rem' 
-                                            }}>
-                                                {userTags.map((tag, i) => (
-                                                    <TagBadge key={i} label={tag.label} color={tag.color} />
-                                                ))}
-                                            </div>
-                                        )}
-                                        
-                                        {/* Badges Row (18+, VRC+, etc) */}
-                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                            {isAgeVerified && (
-                                                <span style={{
-                                                    background: '#ef4444',
-                                                    color: 'white',
-                                                    padding: '4px 10px',
-                                                    borderRadius: '4px',
-                                                    fontSize: '0.75rem',
-                                                    fontWeight: 'bold'
-                                                }}>
-                                                    18+
-                                                </span>
-                                            )}
-                                            {hasVRCPlus && (
-                                                <span style={{
-                                                    background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)',
-                                                    color: 'white',
-                                                    padding: '4px 10px',
-                                                    borderRadius: '4px',
-                                                    fontSize: '0.75rem',
-                                                    fontWeight: 'bold'
-                                                }}>
-                                                    supporter
-                                                </span>
-                                            )}
-                                            {user?.pronouns && (
-                                                <span style={{
-                                                    background: 'rgba(255,255,255,0.1)',
-                                                    color: 'rgba(255,255,255,0.8)',
-                                                    padding: '4px 10px',
-                                                    borderRadius: '4px',
-                                                    fontSize: '0.75rem'
-                                                }}>
-                                                    {user.pronouns}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Bio Section */}
-                                    {user?.bio && (
-                                        <div style={{ 
-                                            padding: '1rem 1.5rem', 
-                                            borderBottom: '1px solid rgba(255,255,255,0.05)',
-                                            background: 'rgba(0,0,0,0.2)'
-                                        }}>
-                                            <div style={{ 
-                                                fontSize: '0.7rem', 
-                                                fontWeight: 'bold', 
-                                                color: 'var(--color-text-dim)', 
-                                                marginBottom: '8px',
-                                                textTransform: 'uppercase',
-                                                letterSpacing: '0.05em'
-                                            }}>
-                                                BIO
-                                            </div>
-                                            <div style={{ 
-                                                fontSize: '0.9rem', 
-                                                color: 'rgba(255,255,255,0.9)',
-                                                lineHeight: 1.6,
-                                                whiteSpace: 'pre-wrap',
-                                                wordBreak: 'break-word'
-                                            }}>
-                                                {user.bio}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* AutoMod Action Info */}
-                                    <div style={{ 
-                                        padding: '1rem 1.5rem', 
-                                        background: (actionType === 'BLOCKED' || actionType === 'FLAGGED') ? 'rgba(239, 68, 68, 0.1)' : actionType === 'ACCEPTED' ? 'rgba(74, 222, 128, 0.1)' : 'rgba(251, 191, 36, 0.1)',
-                                        borderBottom: '1px solid rgba(255,255,255,0.05)'
-                                    }}>
-                                        <div style={{ 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            gap: '8px',
-                                            marginBottom: '8px'
-                                        }}>
-                                            <span style={{ 
-                                                width: '10px', 
-                                                height: '10px', 
-                                                borderRadius: '50%', 
-                                                background: (actionType === 'BLOCKED' || actionType === 'FLAGGED') ? '#f87171' : actionType === 'ACCEPTED' ? '#4ade80' : '#fbbf24'
-                                            }} />
-                                            <span style={{ 
-                                                fontWeight: 'bold', 
-                                                color: (actionType === 'BLOCKED' || actionType === 'FLAGGED') ? '#f87171' : actionType === 'ACCEPTED' ? '#4ade80' : '#fbbf24',
-                                                fontSize: '0.85rem',
-                                                textTransform: 'uppercase'
-                                            }}>
-                                                {actionType}
-                                            </span>
-                                        </div>
-                                        <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.8)', marginBottom: '4px' }}>
-                                            <strong>Reason:</strong> {logEntry?.reason || 'No reason recorded'}
-                                        </div>
-                                        <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
-                                            {logEntry?.timestamp ? new Date(logEntry.timestamp).toLocaleString() : 'Unknown time'}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Action Buttons - Fixed at bottom */}
-                                <div style={{ 
-                                    padding: '1rem 1.5rem', 
-                                    background: 'rgba(0,0,0,0.3)',
-                                    display: 'flex', 
-                                    flexDirection: 'column', 
-                                    gap: '0.5rem',
-                                    flexShrink: 0
-                                }}>
-                                    <div style={{ 
-                                        fontSize: '0.7rem', 
-                                        fontWeight: 'bold', 
-                                        color: 'var(--color-text-dim)', 
-                                        marginBottom: '0.25rem', 
-                                        textTransform: 'uppercase', 
-                                        letterSpacing: '0.05em' 
-                                    }}>
-                                        Reversal Actions
-                                    </div>
-
-                                    {(actionType === 'BLOCKED' || actionType === 'REJECTED') && (
-                                        <button onClick={() => handleAction('invite')} disabled={actionLoading !== null} style={{ 
-                                            width: '100%', 
-                                            padding: '12px', 
-                                            background: 'rgba(74, 222, 128, 0.15)', 
-                                            border: '1px solid #4ade80', 
-                                            color: '#4ade80', 
-                                            borderRadius: '8px', 
-                                            fontWeight: 'bold', 
-                                            fontSize: '0.85rem', 
-                                            cursor: actionLoading ? 'wait' : 'pointer', 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            justifyContent: 'center', 
-                                            gap: '8px', 
-                                            opacity: actionLoading && actionLoading !== 'invite' ? 0.5 : 1,
-                                            transition: 'all 0.2s'
-                                        }}>
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                                                <circle cx="8.5" cy="7" r="4"></circle>
-                                                <line x1="20" y1="8" x2="20" y2="14"></line>
-                                                <line x1="23" y1="11" x2="17" y2="11"></line>
-                                            </svg>
-                                            {actionLoading === 'invite' ? 'Inviting...' : 'Invite to Group'}
-                                        </button>
-                                    )}
-
-                                    {actionType === 'BANNED' && (
-                                        <>
-                                            <button onClick={() => handleAction('unban')} disabled={actionLoading !== null} style={{ 
-                                                width: '100%', padding: '12px', background: 'rgba(251, 191, 36, 0.15)', 
-                                                border: '1px solid #fbbf24', color: '#fbbf24', borderRadius: '8px', 
-                                                fontWeight: 'bold', fontSize: '0.85rem', cursor: actionLoading ? 'wait' : 'pointer', 
-                                                opacity: actionLoading && actionLoading !== 'unban' ? 0.5 : 1 
-                                            }}>
-                                                {actionLoading === 'unban' ? 'Unbanning...' : 'Unban User'}
-                                            </button>
-                                            <button onClick={async () => { await handleAction('unban', false); await handleAction('invite', true); }} disabled={actionLoading !== null} style={{ 
-                                                width: '100%', padding: '12px', background: 'rgba(74, 222, 128, 0.15)', 
-                                                border: '1px solid #4ade80', color: '#4ade80', borderRadius: '8px', 
-                                                fontWeight: 'bold', fontSize: '0.85rem', cursor: actionLoading ? 'wait' : 'pointer', 
-                                                opacity: actionLoading ? 0.5 : 1 
-                                            }}>
-                                                Unban + Invite to Group
-                                            </button>
-                                        </>
-                                    )}
-
-                                    {(actionType === 'ACCEPTED' || actionType === 'FLAGGED') && (
-                                        <>
-                                            <button onClick={() => handleAction('kick')} disabled={actionLoading !== null} style={{ 
-                                                width: '100%', padding: '12px', background: 'rgba(251, 191, 36, 0.15)', 
-                                                border: '1px solid #fbbf24', color: '#fbbf24', borderRadius: '8px', 
-                                                fontWeight: 'bold', fontSize: '0.85rem', cursor: actionLoading ? 'wait' : 'pointer', 
-                                                opacity: actionLoading && actionLoading !== 'kick' ? 0.5 : 1 
-                                            }}>
-                                                {actionLoading === 'kick' ? 'Kicking...' : 'Kick from Group'}
-                                            </button>
-                                            <button onClick={() => handleAction('ban')} disabled={actionLoading !== null} style={{ 
-                                                width: '100%', padding: '12px', background: 'rgba(239, 68, 68, 0.15)', 
-                                                border: '1px solid #ef4444', color: '#ef4444', borderRadius: '8px', 
-                                                fontWeight: 'bold', fontSize: '0.85rem', cursor: actionLoading ? 'wait' : 'pointer', 
-                                                opacity: actionLoading && actionLoading !== 'ban' ? 0.5 : 1 
-                                            }}>
-                                                {actionLoading === 'ban' ? 'Banning...' : 'Ban from Group'}
-                                            </button>
-                                        </>
-                                    )}
-                                </div>
-                            </GlassPanel>
-                        </motion.div>
-                    </motion.div>
-                </>
-            )}
-        </AnimatePresence>,
-        document.body
-    );
+    }
 };
 
-
-const GatekeeperView = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [rules, setRules] = useState<any[]>([]);
+export const AutoModView: React.FC = () => {
+    const [rules, setRules] = useState<AutoModRule[]>([]);
+    
+    // Dialog State
     const [showKeywordConfig, setShowKeywordConfig] = useState(false);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [interceptionLog, setInterceptionLog] = useState<any[]>([]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [selectedLogEntry, setSelectedLogEntry] = useState<any>(null);
+    const [interceptionLog, setInterceptionLog] = useState<LogEntry[]>([]);
+    const [selectedLogEntry, setSelectedLogEntry] = useState<LogEntry | null>(null);
 
+    // Initial Data Fetch
     const loadHistory = async () => {
         try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const history = await (window as any).electron.automod.getHistory();
-            setInterceptionLog(history || []);
+            const history = await window.electron.automod.getHistory();
+            setInterceptionLog(history as LogEntry[] || []);
         } catch (e) {
             console.error("Failed to load AutoMod history", e);
         }
@@ -475,8 +44,7 @@ const GatekeeperView = () => {
 
     const loadRules = async () => {
         try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const fetched = await (window as any).electron.automod.getRules();
+            const fetched = await window.electron.automod.getRules();
             setRules(fetched || []);
         } catch (e) {
             console.error("Failed to load AutoMod rules", e);
@@ -488,21 +56,19 @@ const GatekeeperView = () => {
         loadHistory();
         
         // Listen for AutoMod Logs (real-time)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const handleLog = (_: any, log: any) => {
-            setInterceptionLog(prev => [log, ...prev].slice(0, 50));
+        const handleLog = (_: unknown, log: unknown) => {
+            setInterceptionLog(prev => [log as LogEntry, ...prev].slice(0, 50));
         };
         
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const removeListener = (window as any).electron.ipcRenderer.on('automod:log', handleLog);
+        const removeListener = window.electron.automod.onViolation((data) => {
+             handleLog(null, data);
+        });
         return () => removeListener();
     }, []);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const toggleRule = async (type: string, config?: any) => {
+    const toggleRule = async (type: string, config?: Record<string, unknown>) => {
         const existing = rules.find(r => r.type === type);
         
-        // If it's a new rule and no config passed, initialize with defaults
         let initialConfig = {};
         if (type === 'KEYWORD_BLOCK') {
             initialConfig = {
@@ -511,26 +77,22 @@ const GatekeeperView = () => {
                 matchMode: 'WHOLE_WORD',
                 scanBio: true,
                 scanStatus: true,
-                scanPronouns: true  // Now defaults to true
+                scanPronouns: true
             };
         } else if (type === 'AGE_VERIFICATION') {
             initialConfig = { autoAcceptVerified: false };
         }
 
         const newRule = {
-            id: existing?.id,
+            id: existing?.id || 0,
             name: type === 'AGE_VERIFICATION' ? 'Age Verification Firewall' : (type === 'KEYWORD_BLOCK' ? 'Keyword Text Filter' : 'Unknown Rule'),
-            type: type,
-            // Logic: If config is provided, we are UPDATING parameters, so keep enabled state.
-            // If config is NOT provided, we are TOGGLING the enabled state.
+            type: type as AutoModRule['type'],
             enabled: config ? (existing ? existing.enabled : true) : (!existing?.enabled),
-            actionType: 'REJECT',
-            // Merge: New Config > Existing Config > Defaults
+            actionType: 'REJECT' as const,
             config: JSON.stringify(config || (existing ? JSON.parse(existing.config || '{}') : initialConfig))
         };
         
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (window as any).electron.automod.saveRule(newRule);
+        await window.electron.automod.saveRule(newRule);
         loadRules();
     };
 
@@ -541,14 +103,115 @@ const GatekeeperView = () => {
     const isKeywordEnabled = keywordRule?.enabled;
     const keywordConfig = keywordRule ? JSON.parse(keywordRule.config || '{}') : {};
     
-    // Determine button state
     const isKeywordConfigured = (keywordConfig.keywords && keywordConfig.keywords.length > 0);
 
     const { fetchLogs } = useAuditStore();
     const { selectedGroup, fetchGroupBans, fetchGroupMembers } = useGroupStore();
 
+    // Derived Vars
+    const activeRulesCount = rules.filter(r => r.enabled).length;
+    const totalInterceptions = interceptionLog.length;
+
     return (
         <>
+            <motion.div 
+                className={styles.container}
+                variants={containerVariants}
+                initial="hidden"
+                animate="show"
+                style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '1rem', padding: '1rem', paddingBottom: 'var(--dock-height)' }}
+            >
+                {/* Header Section */}
+                <GlassPanel className={styles.headerPanel} style={{ flexShrink: 0 }}>
+                    <div className={styles.titleSection}>
+                        <h1 className={`${styles.title} text-gradient`}>
+                            AutoMod
+                        </h1>
+                        <div className={styles.subtitle}>
+                            AUTOMATED MODERATION SYSTEM
+                        </div>
+                    </div>
+
+                    <div className={styles.statsGrid}>
+                        <StatTile 
+                            label="ACTIVE RULES"
+                            value={activeRulesCount}
+                            color="var(--color-primary)"
+                        />
+                        <StatTile 
+                            label="INTERCEPTIONS"
+                            value={totalInterceptions}
+                            color="var(--color-danger)"
+                        />
+                         <StatTile 
+                            label="STATUS"
+                            value="ACTIVE"
+                            color="var(--color-success)"
+                            headerRight={<span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_#4ade80]"></span>}
+                        />
+                    </div>
+                </GlassPanel>
+
+                {/* Main Content Split */}
+                <div style={{ display: 'flex', gap: '1rem', flex: 1, minHeight: 0 }}>
+                    
+                    {/* Left: Interception Log (Activity Feed) */}
+                    <GlassPanel style={{ flex: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0 }}>
+                         <InterceptionLog 
+                            logs={interceptionLog} 
+                            onSelectEntry={setSelectedLogEntry} 
+                        />
+                    </GlassPanel>
+
+                    {/* Right: Rules & Config */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        
+                         <GlassPanel style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1.5rem', overflowY: 'auto' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Active Rules</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                {/* Age Verification Rule Card */}
+                                <RuleCard
+                                    title="18+ Age Firewall"
+                                    statusLabel={isAgeEnabled ? 'ON' : 'OFF'}
+                                    isEnabled={!!isAgeEnabled}
+                                    onToggle={() => toggleRule('AGE_VERIFICATION')}
+                                    color="var(--color-success)"
+                                    icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>}
+                                />
+
+                                {/* Keyword Filter Rule Card */}
+                                <RuleCard
+                                    title="Keyword Filter"
+                                    statusLabel={isKeywordEnabled ? 'ON' : 'OFF'}
+                                    isEnabled={!!isKeywordEnabled}
+                                    onToggle={() => toggleRule('KEYWORD_BLOCK')}
+                                    color="var(--color-danger)"
+                                    icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>}
+                                    actionLabel={isKeywordConfigured ? 'Configure' : 'Setup'}
+                                    onAction={() => setShowKeywordConfig(true)}
+                                />
+
+                                <div style={{ 
+                                    padding: '1rem', 
+                                    border: '1px dashed rgba(255,255,255,0.1)', 
+                                    borderRadius: '8px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: 'var(--color-text-dim)',
+                                    fontSize: '0.85rem',
+                                    fontStyle: 'italic',
+                                    marginTop: '0.5rem'
+                                }}>
+                                    More rules coming soon...
+                                </div>
+                            </div>
+                        </GlassPanel>
+                    </div>
+                </div>
+            </motion.div>
+
+            {/* Modals */}
             <KeywordConfigModal 
                 isOpen={showKeywordConfig} 
                 onClose={() => setShowKeywordConfig(false)}
@@ -564,593 +227,11 @@ const GatekeeperView = () => {
                     loadHistory();
                     if (selectedGroup) {
                         fetchLogs(selectedGroup.id);
-                        // Refresh bans in case of unban/ban action
                         fetchGroupBans(selectedGroup.id);
-                        // Refresh members in case of kick/invite acceptance (though invite doesn't add member immediately)
                         fetchGroupMembers(selectedGroup.id, 0);
                     }
                 }}
             />
-            
-            <motion.div 
-                initial={{ opacity: 0, y: 10 }} 
-                animate={{ opacity: 1, y: 0 }} 
-                exit={{ opacity: 0, y: -10 }}
-                style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '1.5rem', minHeight: 0 }}
-            >
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem', height: '100%', minHeight: 0 }}>
-                    {/* Rules Area */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', overflowY: 'auto', paddingRight: '8px' }}>
-                        <GlassPanel style={{ padding: '1.5rem', borderLeft: '4px solid var(--color-primary)' }}>
-                            <h3 style={{ margin: '0 0 0.5rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span style={{ width: '8px', height: '8px', background: '#4ade80', borderRadius: '50%', boxShadow: '0 0 10px #4ade80' }}></span>
-                                Request Firewall
-                            </h3>
-                            <p style={{ margin: 0, color: 'var(--color-text-dim)', fontSize: '0.9rem' }}>
-                                Active sorting protocols for incoming group join requests. 
-                                Requests are pre-scanned before you even see them.
-                            </p>
-                            <button 
-                                onClick={() => window.electron.automod.testNotification()}
-                                style={{
-                                    marginTop: '1rem',
-                                    padding: '8px 16px',
-                                    background: 'rgba(255,255,255,0.05)',
-                                    border: '1px solid rgba(255,255,255,0.1)',
-                                    borderRadius: '6px',
-                                    color: 'var(--color-text-dim)',
-                                    cursor: 'pointer',
-                                    fontSize: '0.8rem',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                    transition: 'all 0.2s'
-                                }}
-                                onMouseEnter={e => {
-                                    e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-                                    e.currentTarget.style.color = 'white';
-                                }}
-                                onMouseLeave={e => {
-                                    e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-                                    e.currentTarget.style.color = 'var(--color-text-dim)';
-                                }}
-                            >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
-                                Test Notification
-                            </button>
-                        </GlassPanel>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
-                            
-                            {/* Age Verification Rule Card */}
-                            <motion.div 
-                                className="glass-panel"
-                                style={{ 
-                                    padding: '1.5rem',
-                                    height: 'auto', 
-                                    minHeight: '180px',
-                                    display: 'flex', 
-                                    flexDirection: 'column',
-                                    alignItems: 'center', 
-                                    justifyContent: 'flex-start', // Top align for expansion
-                                    border: isAgeEnabled ? '1px solid #4ade80' : '1px dashed rgba(255,255,255,0.1)',
-                                    background: isAgeEnabled ? 'rgba(74, 222, 128, 0.05)' : 'transparent',
-                                    transition: 'border 0.2s ease, box-shadow 0.2s ease', 
-                                    boxShadow: isAgeEnabled ? '0 0 15px rgba(74, 222, 128, 0.1)' : 'none',
-                                    position: 'relative'
-                                }}
-                            >
-                                {/* Main Toggle (Whole area click for main toggle, except sub-controls) */}
-                                <div 
-                                    style={{ cursor: 'pointer', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '10px' }}
-                                    onClick={() => toggleRule('AGE_VERIFICATION')}
-                                >
-                                    <div style={{ 
-                                        width: '40px', 
-                                        height: '40px', 
-                                        borderRadius: '50%', 
-                                        background: isAgeEnabled ? '#4ade80' : 'rgba(255,255,255,0.1)', 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        justifyContent: 'center',
-                                        marginBottom: '1rem',
-                                        color: isAgeEnabled ? 'black' : 'white',
-                                        transition: 'background 0.3s'
-                                    }}>
-                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-                                    </div>
-                                    <div style={{ fontWeight: 'bold', color: isAgeEnabled ? '#4ade80' : 'var(--color-text-dim)', transition: 'color 0.3s' }}>
-                                        18+ Age Verified Only
-                                    </div>
-                                    <div style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: isAgeEnabled ? '#4ade80' : 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                        {isAgeEnabled ? 'ACTIVE REJECTION' : 'DISABLED'}
-                                    </div>
-                                </div>
-                            </motion.div>
-
-                            {/* Keyword Filter Rule Card */}
-                            <motion.div 
-                                className="glass-panel"
-                                style={{ 
-                                    padding: '1.5rem',
-                                    height: 'auto', 
-                                    minHeight: '180px',
-                                    display: 'flex', 
-                                    flexDirection: 'column',
-                                    alignItems: 'center', 
-                                    justifyContent: 'flex-start',
-                                    border: isKeywordEnabled ? '1px solid #f87171' : '1px dashed rgba(255,255,255,0.1)',
-                                    background: isKeywordEnabled ? 'rgba(239, 68, 68, 0.05)' : 'transparent',
-                                    transition: 'border 0.2s ease, box-shadow 0.2s ease', 
-                                    boxShadow: isKeywordEnabled ? '0 0 15px rgba(239, 68, 68, 0.1)' : 'none',
-                                    position: 'relative'
-                                }}
-                            >
-                                {/* Main Toggle */}
-                                <div 
-                                    style={{ cursor: 'pointer', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '10px' }}
-                                    onClick={() => toggleRule('KEYWORD_BLOCK')}
-                                >
-                                    <div style={{ 
-                                        width: '40px', 
-                                        height: '40px', 
-                                        borderRadius: '50%', 
-                                        background: isKeywordEnabled ? '#f87171' : 'rgba(255,255,255,0.1)', 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        justifyContent: 'center',
-                                        marginBottom: '1rem',
-                                        color: isKeywordEnabled ? 'black' : 'white',
-                                        transition: 'background 0.3s'
-                                    }}>
-                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                                    </div>
-                                    <div style={{ fontWeight: 'bold', color: isKeywordEnabled ? '#f87171' : 'var(--color-text-dim)', transition: 'color 0.3s' }}>
-                                        Keyword Text Filter
-                                    </div>
-                                    <div style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: isKeywordEnabled ? '#f87171' : 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                        {isKeywordEnabled ? 'ACTIVE FILTERING' : 'DISABLED'}
-                                    </div>
-                                </div>
-
-                                {/* Setup / Edit Config Button */}
-                                {isKeywordEnabled && (
-                                    <motion.div 
-                                        initial={{ opacity: 0, height: 0 }}
-                                        animate={{ opacity: 1, height: 'auto' }}
-                                        style={{ marginTop: '1.2rem', width: '100%' }}
-                                    >
-                                        <button 
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setShowKeywordConfig(true);
-                                            }}
-                                            style={{
-                                                width: '100%',
-                                                padding: '8px 0',
-                                                background: isKeywordConfigured ? 'transparent' : '#f87171',
-                                                border: isKeywordConfigured ? '1px solid rgba(248, 113, 113, 0.4)' : 'none',
-                                                color: isKeywordConfigured ? '#fca5a5' : 'black',
-                                                borderRadius: '6px',
-                                                fontWeight: 'bold',
-                                                fontSize: '0.8rem',
-                                                cursor: 'pointer',
-                                                letterSpacing: '0.05em',
-                                                transition: 'all 0.2s',
-                                                textTransform: 'uppercase'
-                                            }}
-                                        >
-                                            {isKeywordConfigured ? 'Edit Config' : 'Setup'}
-                                        </button>
-                                    </motion.div>
-                                )}
-                            </motion.div>
-
-                            <GlassPanel style={{ height: 'auto', minHeight: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed rgba(255,255,255,0.1)', opacity: 0.5 }}>
-                                <span style={{ color: 'var(--color-text-dim)', fontStyle: 'italic' }}>More Rules Coming Soon</span>
-                            </GlassPanel>
-                        </div>
-                    </div>
-
-                    {/* Stats / Feed Sidepanel */}
-                <GlassPanel style={{ display: 'flex', flexDirection: 'column', minHeight: 0, maxHeight: '100%', overflow: 'hidden' }}>
-                    <div style={{ padding: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)', fontWeight: 'bold', fontSize: '0.85rem', letterSpacing: '0.05em', flexShrink: 0 }}>
-                        INTERCEPTION LOG
-                    </div>
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '0', minHeight: 0 }}>
-                        {interceptionLog.length > 0 ? (
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <AnimatePresence initial={false}>
-                                    {interceptionLog.map(log => (
-                                        <motion.div
-                                            key={log.id}
-                                            initial={{ opacity: 0, x: -20, height: 0 }}
-                                            animate={{ opacity: 1, x: 0, height: 'auto' }}
-                                            onClick={() => setSelectedLogEntry(log)}
-                                            style={{ 
-                                                padding: '10px 1rem', 
-                                                borderBottom: '1px solid rgba(255,255,255,0.05)',
-                                                fontSize: '0.8rem',
-                                                cursor: 'pointer',
-                                                transition: 'background 0.2s'
-                                            }}
-                                            whileHover={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-                                        >
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                                                <span style={{ fontWeight: 'bold', color: 'white' }}>{log.user}</span>
-                                                <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.3)' }}>{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                            </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <span style={{ 
-                                                    color: log.action === 'BLOCKED' ? '#f87171' : '#4ade80', 
-                                                    fontWeight: 'bold', 
-                                                    fontSize: '0.7rem' 
-                                                }}>
-                                                    {log.action}
-                                                </span>
-                                                <span style={{ color: 'var(--color-text-dim)', fontSize: '0.75rem' }}>
-                                                    {log.reason}
-                                                </span>
-                                            </div>
-                                        </motion.div>
-                                    ))}
-                                </AnimatePresence>
-                            </div>
-                        ) : (
-                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-dim)', fontSize: '0.8rem', fontFamily: 'monospace', padding: '1rem' }}>
-                                {isAgeEnabled || isKeywordEnabled ? (
-                                    <div style={{ textAlign: 'center', opacity: 0.7 }}>
-                                        <div style={{ color: '#4ade80', marginBottom: '4px' }}>● SYSTEM ARMED</div>
-                                        Monitoring requests...
-                                    </div>
-                                ) : (
-                                    '[NO ACTIVE RULES]'
-                                )}
-                            </div>
-                        )}
-                    </div>
-                </GlassPanel>
-            </div>
-        </motion.div>
         </>
-    );
-};
-
-
-
-// --- Group Scanner View ---
-
-const GroupScannerView = () => {
-    const { selectedGroup } = useGroupStore();
-    const [isScanning, setIsScanning] = useState(false);
-    const [progress, setProgress] = useState({ scanned: 0, violations: 0, total: 0 });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [results, setResults] = useState<any[]>([]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [selectedViolation, setSelectedViolation] = useState<any>(null);
-
-    const startScan = async () => {
-        if (!selectedGroup) return;
-        
-        setIsScanning(true);
-        setResults([]);
-        setProgress({ scanned: 0, violations: 0, total: selectedGroup.memberCount || 0 });
-        // setCurrentScanIndex(0);
-
-        const BATCH_SIZE = 100;
-        let offset = 0;
-        let keepScanning = true;
-        let processedCount = 0;
-
-        try {
-            while (keepScanning) {
-                // Check if scanning was cancelled (though we lack a cancel button currently, could add one)
-                // Fetch batch
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const response = await (window as any).electron.getGroupMembers(selectedGroup.id, offset, BATCH_SIZE);
-                
-                if (!response.success || !response.members || response.members.length === 0) {
-                    keepScanning = false;
-                    break;
-                }
-
-                const members = response.members;
-                
-                // Process batch
-                for (const member of members) {
-                    // Fetch full profile for deep scanning (Bio, Status, Age Verified)
-                    let userToCheck = member.user;
-                    try {
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        const profileRes = await (window as any).electron.getUser(member.userId);
-                        if (profileRes.success && profileRes.user) {
-                            userToCheck = profileRes.user;
-                        }
-                    } catch (e) {
-                        console.warn(`Failed to fetch full profile for ${member.userId}`, e);
-                    }
-
-                    // Construct check input from full user profile
-                    const userInput = {
-                        id: userToCheck.id,
-                        displayName: userToCheck.displayName,
-                        tags: userToCheck.tags,
-                        bio: userToCheck.bio,
-                        status: userToCheck.status,
-                        statusDescription: userToCheck.statusDescription,
-                        pronouns: userToCheck.pronouns,
-                        ageVerified: userToCheck.ageVerified, // Important for 18+ check
-                        ageVerificationStatus: userToCheck.ageVerificationStatus // Strict 18+ check
-                    };
-
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const result = await (window as any).electron.automod.checkUser(userInput);
-
-                    if (result.action !== 'ALLOW') {
-                        setResults(prev => [...prev, {
-                            member: { ...member, user: userToCheck }, // Update member with full user data for display
-                            check: result,
-                            // specific props for UserActionModal
-                            userId: userToCheck.id, // Use reliable ID from user object
-                            groupId: selectedGroup.id, // Ensure group ID is passed
-                            user: userToCheck.displayName,
-                            reason: result.reason,
-                            action: 'FLAGGED', // Special type for existing members who failed scan
-                            timestamp: new Date().toISOString()
-                        }]);
-                        setProgress(p => ({ ...p, violations: p.violations + 1 }));
-                    }
-
-                    processedCount++;
-                    // Update UI every few items to not thrash? state updates are fast enough usually
-                    setProgress(p => ({ ...p, scanned: processedCount }));
-                    
-                    // Small breathing room for UI and to prevent rate limit hammering
-                    await new Promise(r => setTimeout(r, 50)); 
-                }
-
-                offset += members.length;
-                if (members.length < BATCH_SIZE) {
-                    keepScanning = false;
-                }
-                
-                // Small delay to allow UI to breathe and not freeze
-                await new Promise(r => setTimeout(r, 10));
-            }
-        } catch (e) {
-            console.error("Scan failed:", e);
-            alert("Scan failed to complete. See console for details.");
-        } finally {
-            setIsScanning(false);
-        }
-    };
-
-    return (
-        <>
-            <UserActionModal
-                isOpen={selectedViolation !== null}
-                onClose={() => setSelectedViolation(null)}
-                logEntry={selectedViolation}
-                onActionComplete={() => {
-                    // Maybe remove from results?
-                    setResults(prev => prev.filter(r => r.userId !== selectedViolation?.userId));
-                    setSelectedViolation(null);
-                }}
-            />
-
-            <motion.div 
-                initial={{ opacity: 0, y: 10 }} 
-                animate={{ opacity: 1, y: 0 }} 
-                exit={{ opacity: 0, y: -10 }}
-                style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '1.5rem', minHeight: 0 }}
-            >
-                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) 2fr', gap: '1.5rem', height: '100%', minHeight: 0 }}>
-                    
-                    {/* Control Panel */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                        <GlassPanel style={{ padding: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', borderLeft: '4px solid #a855f7' }}>
-                            <div style={{ 
-                                width: '64px', height: '64px', marginBottom: '1.5rem', 
-                                background: isScanning ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255,255,255,0.05)', 
-                                borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                                color: isScanning ? '#d8b4fe' : 'var(--color-primary)' 
-                            }}>
-                                {isScanning ? (
-                                    <motion.div
-                                        animate={{ rotate: 360 }}
-                                        transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-                                    >
-                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-                                    </motion.div>
-                                ) : (
-                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-                                )}
-                            </div>
-                            
-                            <h2 style={{ margin: '0 0 0.5rem' }}>Group Scanner</h2>
-                            <p style={{ color: 'var(--color-text-dim)', marginBottom: '2rem', fontSize: '0.9rem' }}>
-                                Retroactively scan all existing group members against your current AutoMod Keyword & Age rules.
-                            </p>
-
-                            {!isScanning ? (
-                                <button 
-                                    onClick={startScan}
-                                    style={{ 
-                                        padding: '12px 32px', 
-                                        background: '#a855f7', 
-                                        color: 'white', 
-                                        border: 'none', 
-                                        borderRadius: '8px', 
-                                        fontWeight: 'bold', 
-                                        cursor: 'pointer',
-                                        boxShadow: '0 4px 15px rgba(168, 85, 247, 0.4)',
-                                        fontSize: '1rem',
-                                        display: 'flex', alignItems: 'center', gap: '8px'
-                                    }}
-                                >
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                                    Start Full Scan
-                                </button>
-                            ) : (
-                                <div style={{ width: '100%' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.8rem', color: 'var(--color-text-dim)' }}>
-                                        <span>Scanning...</span>
-                                        <span>{Math.round((progress.scanned / (progress.total || 1)) * 100)}%</span>
-                                    </div>
-                                    <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
-                                        <motion.div 
-                                            initial={{ width: 0 }}
-                                            animate={{ width: `${(progress.scanned / (progress.total || 1)) * 100}%` }}
-                                            style={{ height: '100%', background: '#a855f7' }}
-                                        />
-                                    </div>
-                                    <div style={{ marginTop: '1rem', fontSize: '0.9rem' }}>
-                                        <span style={{ color: 'white', fontWeight: 'bold' }}>{progress.scanned}</span>
-                                        <span style={{ color: 'var(--color-text-dim)' }}> scanned</span>
-                                    </div>
-                                </div>
-                            )}
-                        </GlassPanel>
-
-                        {/* Summary Stats */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                            <GlassPanel style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                <div style={{ fontSize: '2rem', fontWeight: 800, color: '#f87171' }}>{progress.violations}</div>
-                                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-dim)', textTransform: 'uppercase' }}>Detected</div>
-                            </GlassPanel>
-                            <GlassPanel style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                <div style={{ fontSize: '2rem', fontWeight: 800, color: '#4ade80' }}>{results.filter(r => r.check.action === 'ALLOW').length}</div>
-                                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-dim)', textTransform: 'uppercase' }}>Clean</div>
-                            </GlassPanel>
-                        </div>
-                    </div>
-
-                    {/* Results Area */}
-                    <GlassPanel style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-                        <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h3 style={{ margin: 0 }}>Scan Results</h3>
-                            {results.length > 0 && (
-                                <span style={{ fontSize: '0.8rem', padding: '4px 10px', background: 'rgba(248, 113, 113, 0.2)', color: '#f87171', borderRadius: '4px' }}>
-                                    {results.length} Issues Found
-                                </span>
-                            )}
-                        </div>
-                        
-                        <div style={{ flex: 1, overflowY: 'auto', padding: '0' }}>
-                            {results.length === 0 ? (
-                                <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.5, gap: '1rem' }}>
-                                    <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
-                                    </div>
-                                    <div style={{ color: 'var(--color-text-dim)' }}>
-                                        {isScanning ? 'Scanning in progress...' : 'No issues found or scan not started.'}
-                                    </div>
-                                </div>
-                            ) : (
-                                <div>
-                                    {results.map((res, i) => (
-                                        <div 
-                                            key={res.member.id + i}
-                                            onClick={() => setSelectedViolation(res)}
-                                            style={{ 
-                                                padding: '12px 1.5rem', 
-                                                borderBottom: '1px solid rgba(255,255,255,0.05)',
-                                                display: 'flex', 
-                                                alignItems: 'center',
-                                                gap: '1rem',
-                                                cursor: 'pointer',
-                                                transition: 'background 0.2s'
-                                            }}
-                                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                                        >
-                                            
-                                            <div style={{ 
-                                                width: '40px', height: '40px', borderRadius: '8px', background: '#333', 
-                                                backgroundImage: `url(${res.member.user.currentAvatarThumbnailImageUrl || res.member.user.userIcon})`,
-                                                backgroundSize: 'cover'
-                                            }} />
-                                            
-                                            <div style={{ flex: 1 }}>
-                                                <div style={{ fontWeight: 'bold', color: 'white', marginBottom: '2px' }}>
-                                                    {res.member.user.displayName}
-                                                </div>
-                                                <div style={{ fontSize: '0.8rem', color: '#f87171' }}>
-                                                    {res.check.reason}
-                                                </div>
-                                            </div>
-
-                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-                                                <div style={{ 
-                                                    fontSize: '0.7rem', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px',
-                                                    background: 'rgba(248, 113, 113, 0.2)', color: '#fca5a5'
-                                                }}>
-                                                    {res.check.ruleName || 'AUTOMOD'}
-                                                </div>
-                                                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-dim)' }}>
-                                                    Warn: Action Req.
-                                                </div>
-                                            </div>
-                                            
-                                            <div style={{ color: 'var(--color-text-dim)' }}>
-                                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </GlassPanel>
-                 </div>
-            </motion.div>
-        </>
-    );
-};
-
-// --- Main Container ---
-
-export const AutoModView: React.FC = () => {
-    const [activeModule, setActiveModule] = useState<AutoModModule>('GATEKEEPER');
-
-    return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '1rem', paddingBottom: 'var(--dock-height)' }}>
-            
-            {/* Top Navigation Bar */}
-            <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'center' }}>
-                <GlassPanel style={{ padding: '4px', borderRadius: '12px', display: 'flex', background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(10px)' }}>
-                    <ModuleTab 
-                        active={activeModule === 'GATEKEEPER'} 
-                        label="GATEKEEPER" 
-                        icon={<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="9" x2="15" y2="15"></line><line x1="15" y1="9" x2="9" y2="15"></line></svg>}
-                        onClick={() => setActiveModule('GATEKEEPER')} 
-                    />
-
-                    <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)', margin: '8px 0' }}></div>
-                    <ModuleTab 
-                        active={activeModule === 'GROUP_SCANNER'} 
-                        label="GROUP SCANNER" 
-                        icon={<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>}
-                        onClick={() => setActiveModule('GROUP_SCANNER')} 
-                    />
-                </GlassPanel>
-            </div>
-
-            {/* Main Content Area */}
-            <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
-                <AnimatePresence mode='wait'>
-                    {activeModule === 'GATEKEEPER' && (
-                        <motion.div key="gatekeeper" style={{ height: '100%' }}>
-                            <GatekeeperView />
-                        </motion.div>
-                    )}
-
-                    {activeModule === 'GROUP_SCANNER' && (
-                        <motion.div key="scanner" style={{ height: '100%' }}>
-                            <GroupScannerView />
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            </div>
-        </div>
     );
 };

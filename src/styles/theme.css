@@ -71,7 +71,7 @@
   --z-window-controls: 5000;
   
   /* --- LAYOUT --- */
-  --dock-height: 90px; /* Height of the dock + margin for content clearance */
+  --dock-height: 45px; /* Height for pill indicator clearance */
 
   /* --- TYPOGRAPHY --- */
   --font-size-xs: 0.75rem;

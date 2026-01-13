@@ -12,7 +12,7 @@
  * - Group events (member updates, role changes, join/leave)
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain } from 'electron';
 import log from 'electron-log';
 import WebSocket from 'ws';
 import { getVRChatClient, isAuthenticated } from './AuthService';

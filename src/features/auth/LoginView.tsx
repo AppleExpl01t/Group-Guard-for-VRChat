@@ -5,25 +5,17 @@ import { motion, AnimatePresence } from 'framer-motion';
 import styles from './LoginView.module.css';
 
 export const LoginView: React.FC = () => {
-  const { login, verify2FA, requires2FA, isLoading, error, rememberMe, setRememberMe, loadSavedCredentials } = useAuthStore();
+  const { login, verify2FA, requires2FA, isLoading, error, rememberMe, setRememberMe } = useAuthStore();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [showSecurityModal, setShowSecurityModal] = useState(false);
-  
-  // Load saved credentials on mount to pre-fill the form
+
+  // Load saved username if available (optional optimization)
   React.useEffect(() => {
-    const loadCreds = async () => {
-        const creds = await loadSavedCredentials();
-        if (creds && creds.username) {
-            setUsername(creds.username);
-            setPassword(creds.password);
-            setRememberMe(true);
-        }
-    };
-    loadCreds();
-  }, [loadSavedCredentials, setRememberMe]);
+    // We could pre-fill username here if desired
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,6 +134,7 @@ export const LoginView: React.FC = () => {
           </motion.p>
         </div>
 
+        {/* LOGIN FORM VIEW */}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           <AnimatePresence mode='wait'>
             {!requires2FA ? (

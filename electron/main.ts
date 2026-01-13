@@ -137,14 +137,24 @@ import { setupGroupHandlers } from './services/GroupService';
 import { setupUserHandlers } from './services/UserService';
 import { setupCredentialsHandlers } from './services/CredentialsService';
 import { setupPipelineHandlers } from './services/PipelineService';
-import { setupLogWatcherHandlers } from './services/LogWatcherService';
+import { setupLogWatcherHandlers, logWatcherService } from './services/LogWatcherService';
 import { setupAutoModHandlers } from './services/AutoModService';
 import { setupInstanceHandlers } from './services/InstanceService';
-import { setupOscHandlers } from './services/OscService';
+import { setupOscHandlers, oscService } from './services/OscService';
 import { setupOscAnnouncementHandlers } from './services/OscAnnouncementService';
 import { setupDiscordWebhookHandlers } from './services/DiscordWebhookService';
+import { setupReportHandlers } from './services/ReportService';
 
 // ...
+import { processService } from './services/ProcessService';
+
+// Process Service API (Debug/Status)
+ipcMain.handle('process:get-status', async () => {
+    return {
+        running: processService.isRunning
+    };
+});
+
 
 import { storageService } from './services/StorageService';
 import { discordBroadcastService } from './services/DiscordBroadcastService';
@@ -205,6 +215,9 @@ databaseService.initialize().catch(err => {
     logger.error('Failed to initialize database:', err);
 });
 
+import { watchlistService } from './services/WatchlistService';
+watchlistService.initialize();
+
 // Setup handlers
 setupAuthHandlers();
 setupGroupHandlers();
@@ -212,12 +225,34 @@ setupUserHandlers();
 setupCredentialsHandlers();
 setupPipelineHandlers();
 setupLogWatcherHandlers();
+logWatcherService.start(); // Start robust watching immediately
 setupAutoModHandlers();
 
 setupInstanceHandlers();
 setupOscHandlers();
+oscService.start();
 setupOscAnnouncementHandlers();
 setupDiscordWebhookHandlers();
+setupReportHandlers();
+
+import { settingsService, AppSettings } from './services/SettingsService';
+settingsService.initialize();
+
+ipcMain.handle('settings:get', () => {
+    return settingsService.getSettings();
+});
+
+ipcMain.handle('settings:update', (_event, settings: Partial<AppSettings>) => {
+    return settingsService.updateSettings(settings);
+});
+
+ipcMain.handle('settings:select-audio', () => {
+    return settingsService.selectAudioFile(mainWindow!);
+});
+
+ipcMain.handle('settings:get-audio', (_event, path: string) => {
+    return settingsService.getAudioData(path);
+});
 
 // Import to initialize (singleton)
 import './services/InstanceLoggerService';
