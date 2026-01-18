@@ -50,6 +50,7 @@ function App() {
   useAutoModNotifications();
 
   const [isUpdateReady, setIsUpdateReady] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<number | null>(null);
 
   // Listen for updates
   useEffect(() => {
@@ -65,10 +66,20 @@ function App() {
           console.error('Failed to check update status:', err);
       });
 
-      const unsubscribe = window.electron.updater.onUpdateDownloaded(() => {
+        const unsubscribe = window.electron.updater.onUpdateDownloaded(() => {
         setIsUpdateReady(true);
+        setUpdateProgress(null); // Clear progress when ready
       });
-      return unsubscribe;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const unsubscribeProgress = window.electron.updater.onDownloadProgress((progressObj: any) => {
+        setUpdateProgress(progressObj.percent);
+      });
+      
+      return () => {
+          unsubscribe();
+          unsubscribeProgress();
+      };
     }
   }, []);
 
@@ -288,6 +299,7 @@ function App() {
                   setIsLogoutConfirmOpen(false);
               }}
               isUpdateReady={isUpdateReady}
+              updateProgress={updateProgress}
             />
           </AppLayout>
         </ConfirmationProvider>

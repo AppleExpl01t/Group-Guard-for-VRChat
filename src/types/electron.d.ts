@@ -434,7 +434,10 @@ export interface ElectronAPI {
 
   // Updater API
   updater: {
-      onUpdateAvailable: (callback: () => void) => () => void;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onUpdateAvailable: (callback: (info: any) => void) => () => void;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onDownloadProgress: (callback: (progressObj: any) => void) => () => void;
       onUpdateDownloaded: (callback: () => void) => () => void;
       quitAndInstall: () => void;
       checkStatus: () => Promise<boolean>;

@@ -176,10 +176,19 @@ contextBridge.exposeInMainWorld('electron', {
 
     // Updater API
     updater: {
-        onUpdateAvailable: (callback: () => void) => {
-            const handler = () => callback();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        onUpdateAvailable: (callback: (info: any) => void) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const handler = (_event: any, info: any) => callback(info);
             ipcRenderer.on('updater:update-available', handler);
             return () => ipcRenderer.removeListener('updater:update-available', handler);
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        onDownloadProgress: (callback: (progressObj: any) => void) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const handler = (_event: any, progressObj: any) => callback(progressObj);
+            ipcRenderer.on('updater:download-progress', handler);
+            return () => ipcRenderer.removeListener('updater:download-progress', handler);
         },
         onUpdateDownloaded: (callback: () => void) => {
             const handler = () => callback();

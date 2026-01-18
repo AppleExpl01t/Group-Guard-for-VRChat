@@ -258,6 +258,10 @@ ipcMain.handle('window:close', () => {
 
 app.whenReady().then(async () => {
   logger.info('App ready, creating window...');
+  
+  // Track update state
+  let updateDownloaded = false;
+
   createWindow();
 
   // Open DevTools in development
@@ -273,13 +277,14 @@ app.whenReady().then(async () => {
           autoUpdater.logger.transports.file.level = 'info';
 
           logger.info('Initializing auto-updater...');
-          
+
           autoUpdater.on('checking-for-update', () => {
               logger.info('Checking for updates...');
           });
 
           autoUpdater.on('update-available', (info) => {
               logger.info('Update available:', info);
+              mainWindow?.webContents.send('updater:update-available', info);
           });
 
           autoUpdater.on('update-not-available', (info) => {
@@ -288,10 +293,12 @@ app.whenReady().then(async () => {
 
           autoUpdater.on('error', (err) => {
               logger.error('Error in auto-updater:', err);
+              mainWindow?.webContents.send('updater:error', err.message);
           });
 
           autoUpdater.on('download-progress', (progressObj) => {
               logger.info(`Download speed: ${progressObj.bytesPerSecond} - Downloaded ${progressObj.percent}%`);
+              mainWindow?.webContents.send('updater:download-progress', progressObj);
           });
 
           // Check but don't force notify yet, we'll handle the UI
@@ -300,9 +307,10 @@ app.whenReady().then(async () => {
           // When update is ready, tell the UI to show the modal
           autoUpdater.on('update-downloaded', (info) => {
               logger.info('Update downloaded:', info);
+              updateDownloaded = true;
               // Small delay to ensure UI is ready if it happened on startup
               setTimeout(() => {
-                  mainWindow?.webContents.send('updater:update-downloaded');
+                  mainWindow?.webContents.send('updater:update-downloaded', info);
               }, 2000);
           });
       } catch (err) {
@@ -325,11 +333,7 @@ app.whenReady().then(async () => {
       return updateDownloaded; 
   });
 
-  // Track update state
-  let updateDownloaded = false;
-  autoUpdater.on('update-downloaded', () => {
-      updateDownloaded = true;
-  });
+
 
   // macOS: Re-create window when dock icon is clicked
   app.on('activate', () => {

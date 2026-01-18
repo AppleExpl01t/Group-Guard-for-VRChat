@@ -1,6 +1,0 @@
-error: pathspec 'chore:' did not match any file(s) known to git
-error: pathspec 'repository' did not match any file(s) known to git
-error: pathspec 'cleanup' did not match any file(s) known to git
-error: pathspec 'and' did not match any file(s) known to git
-error: pathspec 'build' did not match any file(s) known to git
-error: pathspec 'fixes\ ' did not match any file(s) known to git

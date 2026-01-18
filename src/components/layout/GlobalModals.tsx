@@ -9,13 +9,15 @@ interface GlobalModalsProps {
   setIsLogoutConfirmOpen: (open: boolean) => void;
   onLogoutConfirm: () => void;
   isUpdateReady: boolean;
+  updateProgress: number | null;
 }
 
 export const GlobalModals: React.FC<GlobalModalsProps> = ({
   isLogoutConfirmOpen,
   setIsLogoutConfirmOpen,
   onLogoutConfirm,
-  isUpdateReady
+  isUpdateReady,
+  updateProgress
 }) => {
   return (
     <>
@@ -51,6 +53,36 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
 
       {/* Global User Profile Dialog (Controlled by its own store) */}
       <UserProfileDialog />
+
+      {/* Download Progress Toast */}
+      {updateProgress !== null && (
+        <div style={{ 
+            position: 'fixed', 
+            bottom: 20, 
+            right: 20, 
+            background: 'var(--color-surface-hover)', 
+            padding: '12px', 
+            borderRadius: '8px', 
+            zIndex: 9999,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            border: '1px solid var(--color-border)',
+            width: '240px'
+        }}>
+            <div style={{ color: 'var(--color-text-bright)', marginBottom: 8, fontSize: '0.9rem', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Downloading Update...</span>
+                <span>{Math.round(updateProgress)}%</span>
+            </div>
+            <div style={{ width: '100%', height: 4, background: 'var(--color-surface)', borderRadius: 2 }}>
+                <div style={{ 
+                    width: `${updateProgress}%`, 
+                    height: '100%', 
+                    background: 'var(--color-primary)', 
+                    borderRadius: 2,
+                    transition: 'width 0.2s ease-out'
+                }} />
+            </div>
+        </div>
+      )}
 
       {/* Update Available Modal (Non-escapable) */}
       <Modal
