@@ -1,0 +1,1 @@
+﻿src/features/automod/dialogs/WhitelistViewerModal.tsx(6,1): error TS6133: 'NeonButton' is declared but its value is never read.

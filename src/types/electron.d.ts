@@ -229,6 +229,8 @@ export interface AutoModRule {
     config: string;
     actionType: 'REJECT' | 'AUTO_BLOCK' | 'NOTIFY_ONLY';
     createdAt?: string;
+    whitelistedUserIds?: string[];
+    whitelistedGroupIds?: string[];
 }
 
 // Type for Live Entity (used in instance monitoring)
@@ -278,6 +280,7 @@ export interface OscConfig {
     senderIp: string;
     senderPort: number;
     receiverPort: number;
+    suppressChatboxSounds: boolean;
 }
 
 export interface WatchedEntity {
@@ -405,9 +408,10 @@ export interface ElectronAPI {
 
   // Storage API
   storage: {
-      getStatus: () => Promise<{ configured: boolean; path: string; defaultPath: string }>;
+      getStatus: () => Promise<{ configured: boolean; path: string; defaultPath: string; lastPath?: string | null }>;
       selectFolder: () => Promise<string | null>;
       setPath: (path: string) => Promise<boolean>;
+      reconfigure: () => Promise<boolean>;
   };
 
   // Instance Presence API
@@ -432,6 +436,8 @@ export interface ElectronAPI {
       onGroupChanged: (callback: (groupId: string | null) => void) => () => void;
   };
 
+
+
   // Updater API
   updater: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -450,18 +456,27 @@ export interface ElectronAPI {
 
   // AutoMod API
   automod: {
-      getRules: () => Promise<AutoModRule[]>;
-      saveRule: (rule: AutoModRule) => Promise<AutoModRule>;
-      deleteRule: (ruleId: number) => Promise<boolean>;
-      checkUser: (user: AutoModUserInput) => Promise<{ action: 'ALLOW' | 'REJECT' | 'AUTO_BLOCK' | 'NOTIFY_ONLY'; reason?: string; ruleName?: string }>;
-      onViolation: (callback: (data: { displayName: string; userId: string; action: string; reason: string }) => void) => () => void;
-      testNotification: () => Promise<boolean>;
-      getStatus: () => Promise<{ autoReject: boolean; autoBan: boolean }>;
-      setAutoReject: (enabled: boolean) => Promise<boolean>;
-      setAutoBan: (enabled: boolean) => Promise<boolean>;
-      getHistory: () => Promise<unknown[]>;
+      getRules: (groupId: string) => Promise<AutoModRule[]>;
+      saveRule: (rule: AutoModRule, groupId: string) => Promise<AutoModRule>;
+      deleteRule: (ruleId: number, groupId: string) => Promise<boolean>;
+      checkUser: (user: AutoModUserInput, groupId: string) => Promise<{ action: 'ALLOW' | 'REJECT' | 'AUTO_BLOCK' | 'NOTIFY_ONLY'; reason?: string; ruleName?: string }>;
+      onViolation: (callback: (data: { displayName: string; userId: string; action: string; reason: string; ruleId?: number; detectedGroupId?: string }) => void) => () => void;
+      testNotification: (groupId: string) => Promise<boolean>;
+      addToWhitelist: (groupId: string, ruleId: number, target: { userId?: string; groupId?: string }) => Promise<boolean>;
+      getWhitelistedEntities: (groupId: string) => Promise<{ users: { id: string; name: string; rules: string[] }[]; groups: { id: string; name: string; rules: string[] }[] }>;
+      removeFromWhitelist: (groupId: string, id: string, type: 'user' | 'group') => Promise<boolean>;
+      getStatus: (groupId: string) => Promise<{ autoReject: boolean; autoBan: boolean }>;
+      setAutoReject: (enabled: boolean, groupId: string) => Promise<boolean>;
+      setAutoBan: (enabled: boolean, groupId: string) => Promise<boolean>;
+      getHistory: (groupId?: string) => Promise<unknown[]>;
+      clearHistory: () => Promise<boolean>;
       searchGroups: (query: string) => Promise<{ success: boolean; groups?: VRChatGroup[]; error?: string }>;
+      scanGroupMembers: (groupId: string) => Promise<{ success: boolean; results?: ScanResult[]; error?: string }>;
+      fetchMembers: (groupId: string) => Promise<{ success: boolean; members: { user: VRChatUser }[]; error?: string }>;
+      evaluateMember: (args: { groupId: string; member: { user: VRChatUser } }) => Promise<ScanResult>;
   };
+
+
 
   // OSC API
   osc: {
@@ -534,4 +549,14 @@ declare global {
   interface Window {
     electron: ElectronAPI;
   }
+}
+
+export interface ScanResult {
+    userId: string;
+    displayName: string;
+    userIcon?: string;
+    action: 'BANNED' | 'VIOLATION' | 'SAFE';
+    reason?: string;
+    ruleName?: string;
+    ruleId?: number;
 }

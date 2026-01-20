@@ -134,7 +134,7 @@ const fetchQueue: string[] = [];
 let isFetching = false;
 
 // Track current context for the queue processor
-let currentEnrichmentContext: { groupId?: string } = {};
+const currentEnrichmentContext: { groupId?: string } = {};
 
 // ============================================
 // PUBLIC API
@@ -214,9 +214,14 @@ export async function processFetchQueue(groupId?: string): Promise<void> {
             logger.info(`[EntityEnrichment] Fetching details for ${userId} (Context: ${groupId || 'Roaming'})...`);
 
             try {
-                // 1. Get User Details (Rank, Avatar)
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const userRes = await (client as any).getUser({ path: { userId } });
+                // 1. Get User Details (Rank, Avatar) - Using Central Service Cache
+                // Dynamically import to avoid circular dependencies if they exist (safe pattern)
+                const { vrchatApiService } = await import('./VRChatApiService');
+                const userRes = await vrchatApiService.getUser(userId);
+                
+                if (!userRes.success || !userRes.data) {
+                    throw new Error(userRes.error || 'Failed to fetch user');
+                }
                 const userData = userRes.data;
 
                 // 2. Check Group Membership (Only if groupId provided)

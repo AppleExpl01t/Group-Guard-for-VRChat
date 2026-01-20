@@ -177,9 +177,10 @@ class DatabaseService {
       });
   }
 
-  public async getAutoModLogs() {
+  public async getAutoModLogs(groupId?: string) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (this.getClient() as any).autoModLog.findMany({
+          where: groupId ? { groupId } : undefined,
           orderBy: { timestamp: 'desc' }
       });
   }

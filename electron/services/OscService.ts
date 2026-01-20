@@ -10,13 +10,15 @@ export interface OscConfig {
     senderIp: string;
     senderPort: number;
     receiverPort: number; // For future server use
+    suppressChatboxSounds: boolean;
 }
 
 const DEFAULT_CONFIG: OscConfig = {
     enabled: false,
     senderIp: '127.0.0.1',
     senderPort: 9000,
-    receiverPort: 9001
+    receiverPort: 9001,
+    suppressChatboxSounds: true
 };
 
 class OscService {
@@ -101,6 +103,16 @@ class OscService {
             }
 
             try {
+                // Sound Suppression Logic
+                if (address === '/chatbox/input' && this.config.suppressChatboxSounds && args.length >= 3) {
+                    // Argument 2 (index 2) controls the sound. false = no sound.
+                    // VRChat OSC Schema: [text, instant, sound]
+                    // We modify the copy of args to ensure we don't mutate input if it's reused
+                    const newArgs = [...args];
+                    newArgs[2] = false;
+                    args = newArgs;
+                }
+
                 this.client.send(address, ...args, (err: Error | null) => {
                     if (err) {
                         logger.error(`OSC Send Error (${address}):`, err);

@@ -236,7 +236,7 @@ export const LiveView: React.FC = () => {
         
         let keywordRuleInvoked = false;
         try {
-            const rules = await window.electron.automod.getRules();
+            const rules = await window.electron.automod.getRules(selectedGroup.id);
             keywordRuleInvoked = rules.some(r => r.type === 'KEYWORD_BLOCK' && r.enabled);
             if (keywordRuleInvoked) {
                 addLog(`[AUTOMOD] Keyword Filter Active: Scanning profiles...`, 'info');
@@ -267,7 +267,7 @@ export const LiveView: React.FC = () => {
                             status: userRes.user.status,
                             statusDescription: userRes.user.statusDescription,
                             pronouns: userRes.user.pronouns
-                        });
+                        }, selectedGroup.id);
 
                         if (checkRes.action === 'REJECT' || checkRes.action === 'AUTO_BLOCK') {
                             setCurrentProcessingUser({ name: t.displayName, phase: 'skipped' });

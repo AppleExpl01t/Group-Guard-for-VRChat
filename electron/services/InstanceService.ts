@@ -27,7 +27,6 @@ import {
 import {
     LiveEntity,
     getCachedEntity,
-    hasCachedEntity,
     makeCacheKey,
     queueUserEnrichment,
     processFetchQueue
@@ -355,23 +354,30 @@ export function setupInstanceHandlers() {
         let imageUrl = null;
         let apiName = null;
 
-        const client = getVRChatClient();
-        if (client) {
-            const res = await networkService.execute(async () => {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const wRes = await (client as any).getWorld({ path: { worldId } });
-                return {
-                    imageUrl: wRes.data?.thumbnailImageUrl || wRes.data?.imageUrl,
-                    name: wRes.data?.name
-                };
-            }, `instance:get-instance-info:${worldId}`);
 
+
+        // If we have the name locally, we *could* skip fetching, but we usually want the image too.
+        // However, we use vrchatApiService.getWorld() which is cached, so it's cheap to call.
+        
+        // Include vrchatApiService import if not present (it's likely needed)
+        // Wait, InstanceService.ts doesn't import vrchatApiService yet?
+        // Checking existing imports... need to add it if missing.
+        // Assuming it's imported or I will add it. I'll check imports separately or just add the import at the top if needed.
+        // But for this block:
+
+        // Using centralized VRChatApiService (Cached)
+        try {
+            // This leverages the shared 10-minute cache for worlds
+            const res = await import('./VRChatApiService').then(m => m.vrchatApiService.getWorld(worldId));
+            
             if (res.success && res.data) {
-                imageUrl = res.data.imageUrl;
+                imageUrl = res.data.thumbnailImageUrl || res.data.imageUrl;
                 apiName = res.data.name;
             } else {
                 logger.warn(`[InstanceService] Failed to fetch world info via API: ${res.error}`);
             }
+        } catch (e) {
+            logger.error(`[InstanceService] Error resolving world info`, e);
         }
 
         return {

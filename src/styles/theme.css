@@ -58,11 +58,32 @@
   --color-text-dim: rgba(255, 255, 255, 0.6);
 
   /* --- GRADIENTS --- */
-  --gradient-primary: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
-  --gradient-secondary: linear-gradient(135deg, var(--color-accent) 0%, var(--color-tertiary) 100%);
-  --gradient-glow: linear-gradient(135deg, var(--color-primary-glow), var(--color-accent-glow));
-  --gradient-dark: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.8) 100%);
-  --gradient-shimmer: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.1) 50%, transparent 100%);
+  --gradient-primary: linear-gradient(
+    135deg,
+    var(--color-primary) 0%,
+    var(--color-accent) 100%
+  );
+  --gradient-secondary: linear-gradient(
+    135deg,
+    var(--color-accent) 0%,
+    var(--color-tertiary) 100%
+  );
+  --gradient-glow: linear-gradient(
+    135deg,
+    var(--color-primary-glow),
+    var(--color-accent-glow)
+  );
+  --gradient-dark: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, 0.8) 100%
+  );
+  --gradient-shimmer: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    transparent 100%
+  );
 
   /* --- AESTHETICS --- */
   --glass-blur: 20px;
@@ -82,7 +103,7 @@
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
   --color-info: #4cc9f0;
-  
+
   /* --- TRUST LEVELS --- */
   --color-trust-trusted: #a855f7;
   --color-trust-known: #f97316;
@@ -99,7 +120,7 @@
   --z-modal: 110;
   --z-tooltip: 500;
   --z-window-controls: 5000;
-  
+
   /* --- LAYOUT --- */
   --dock-height: 45px; /* Height for pill indicator clearance */
 
@@ -115,16 +136,34 @@
   --font-weight-bold: 700;
 
   /* --- VISUAL EFFECTS --- */
-  --focus-gradient: linear-gradient(135deg, var(--color-primary), var(--color-accent));
-  --focus-glow: 0 0 0 3px hsla(var(--primary-hue), var(--primary-sat), var(--primary-light), 0.3);
+  --focus-gradient: linear-gradient(
+    135deg,
+    var(--color-primary),
+    var(--color-accent)
+  );
+  --focus-glow: 0 0 0 3px
+    hsla(var(--primary-hue), var(--primary-sat), var(--primary-light), 0.3);
   --glow-sm: 0 0 10px;
   --glow-md: 0 0 20px;
   --glow-lg: 0 0 40px;
+
+  /* --- DEPTH & 3D --- */
+  --shadow-floating:
+    0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 10px 15px -3px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.15);
+
+  --shadow-floating-hover:
+    0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 20px 25px -5px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.25);
+
+  --border-highlight: rgba(255, 255, 255, 0.25);
+  --border-shadow: rgba(0, 0, 0, 0.3);
 }
 
 /* Pulse Animation for Real-Time Data */
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     transform: scale(1);
     opacity: 1;
   }
@@ -135,11 +174,14 @@
 }
 
 @keyframes glow-pulse {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 4px var(--color-primary-glow);
   }
   50% {
-    box-shadow: 0 0 12px var(--color-primary-glow), 0 0 20px var(--color-primary-glow);
+    box-shadow:
+      0 0 12px var(--color-primary-glow),
+      0 0 20px var(--color-primary-glow);
   }
 }
 

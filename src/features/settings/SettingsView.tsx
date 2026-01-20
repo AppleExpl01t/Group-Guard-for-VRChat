@@ -13,6 +13,7 @@ import { AudioSettings } from './AudioSettings';
 import { SettingsTabBar, type SettingsTab } from './SettingsTabBar';
 import { SettingsSearch, matchesSearch } from './SettingsSearch';
 import { SearchX } from 'lucide-react';
+import { useUIStore } from '../../stores/uiStore';
 
 // Inner card style for settings sections (used inside main GlassPanel)
 const innerCardStyle: React.CSSProperties = {
@@ -32,6 +33,7 @@ const SECTION_SEARCH_DATA = {
     discordWebhook: ['Discord', 'Webhook', 'Logs', 'Channel', 'Events'],
     discordRpc: ['Discord', 'RPC', 'Rich Presence', 'Status', 'Activity'],
     about: ['About', 'System', 'Version', 'Group Guard'],
+    debug: ['Debug', 'Crash', 'Test', 'Internal'],
 };
 
 // Map sections to tabs
@@ -39,6 +41,7 @@ const TAB_SECTIONS: Record<SettingsTab, (keyof typeof SECTION_SEARCH_DATA)[]> = 
     general: ['appearance', 'audio', 'notifications', 'security'],
     integrations: ['osc', 'discordWebhook', 'discordRpc'],
     about: ['about'],
+    debug: ['debug'],
 };
 
 const HueSpectrumPicker: React.FC<{ 
@@ -112,14 +115,29 @@ export const SettingsView: React.FC = () => {
   const { primaryHue, setPrimaryHue, accentHue, setAccentHue, resetTheme } = useTheme();
   const { confirm } = useConfirm();
   const { addNotification } = useNotificationStore();
+  const { debugModeEnabled, setDebugMode } = useUIStore();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [searchQuery, setSearchQuery] = useState('');
   const [shouldCrash, setShouldCrash] = useState(false);
+  const [versionClickCount, setVersionClickCount] = useState(0);
 
   if (shouldCrash) {
     throw new Error("Manual Crash Test via Settings");
   }
+
+  const handleVersionClick = () => {
+    if (debugModeEnabled) return;
+    
+    const newCount = versionClickCount + 1;
+    setVersionClickCount(newCount);
+    
+    if (newCount === 5) {
+        setDebugMode(true);
+        addNotification({ type: 'success', title: 'Developer Mode', message: 'Debug settings unlocked!' });
+        setVersionClickCount(0);
+    }
+  };
 
   const handleClearCredentials = async () => {
     const confirmed = await confirm({
@@ -146,6 +164,7 @@ export const SettingsView: React.FC = () => {
         discordWebhook: false,
         discordRpc: false,
         about: false,
+        debug: false,
     };
     
     for (const [section, keywords] of Object.entries(SECTION_SEARCH_DATA)) {
@@ -159,7 +178,7 @@ export const SettingsView: React.FC = () => {
   const tabCounts = useMemo(() => {
     if (!searchQuery.trim()) return undefined;
     
-    const counts: Record<SettingsTab, number> = { general: 0, integrations: 0, about: 0 };
+    const counts: Record<SettingsTab, number> = { general: 0, integrations: 0, about: 0, debug: 0 };
     
     for (const [tab, sections] of Object.entries(TAB_SECTIONS)) {
         counts[tab as SettingsTab] = sections.filter(s => visibleSections[s]).length;
@@ -181,7 +200,7 @@ export const SettingsView: React.FC = () => {
     if (visibleInCurrentTab.length > 0) return;
     
     // Find the first tab that has results
-    const tabOrder: SettingsTab[] = ['general', 'integrations', 'about'];
+    const tabOrder: SettingsTab[] = ['general', 'integrations', 'about', 'debug'];
     for (const tab of tabOrder) {
       const sections = TAB_SECTIONS[tab];
       const hasResults = sections.some(s => visibleSections[s]);
@@ -230,6 +249,7 @@ export const SettingsView: React.FC = () => {
           activeTab={activeTab} 
           onTabChange={handleTabChange}
           tabCounts={tabCounts}
+          showDebug={debugModeEnabled}
         />
       </div>
 
@@ -322,7 +342,7 @@ export const SettingsView: React.FC = () => {
                        </div>
                        <NeonButton 
                           variant="primary"
-                          onClick={() => window.electron.automod.testNotification()}
+                          onClick={() => window.electron.automod.testNotification('TEST_GROUP')}
                        >
                           Test Notification
                        </NeonButton>
@@ -400,20 +420,75 @@ export const SettingsView: React.FC = () => {
                    <div style={{ fontSize: '2.5rem', filter: 'drop-shadow(0 0 10px var(--color-primary))' }}>🛡️</div>
                    <div>
                      <h3 style={{ margin: 0, fontSize: '1.2rem' }}>VRChat Group Guard</h3>
-                     <p style={{ color: 'var(--color-text-dim)', margin: '0.2rem 0' }}>Version 1.0.3 (Beta)</p>
-                     <div style={{ marginTop: '0.5rem' }}>
-                        <NeonButton 
-                          variant="ghost" 
-                          onClick={() => setShouldCrash(true)}
-                          style={{ fontSize: '0.7rem', opacity: 0.5, color: '#ef4444' }}
-                        >
-                          Debug: Crash App
-                        </NeonButton>
-                     </div>
-                     <div style={{ fontSize: '0.8rem', color: 'var(--color-text-dim)', opacity: 0.6 }}>
+                     <p 
+                        style={{ color: 'var(--color-text-dim)', margin: '0.2rem 0', cursor: 'pointer', userSelect: 'none' }}
+                        onClick={handleVersionClick}
+                        title="Click 5 times to unlock debug mode"
+                    >
+                        Version 1.0.3 (Beta)
+                    </p>
+                     <div style={{ fontSize: '0.8rem', color: 'var(--color-text-dim)', opacity: 0.6, marginTop: '0.5rem' }}>
                        Developed by <a href="https://vrchat.com/home/user/usr_ef7c23be-3c3c-40b4-a01c-82f59b2a8229" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)', textDecoration: 'underline', cursor: 'pointer' }}>AppleExpl01t</a> • Electron • React • Vite
                      </div>
                    </div>
+                 </div>
+               </div>
+            </section>
+          )}
+          
+          {/* === DEBUG TAB === */}
+          {activeTab === 'debug' && visibleSections.debug && debugModeEnabled && (
+            <section>
+               <h2 style={{ color: '#f87171', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>Debug & Testing</h2>
+               <div style={innerCardStyle}>
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    
+                    {/* Crash Test */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                       <div>
+                          <div style={{ color: 'white', fontWeight: 600 }}>Crash Application</div>
+                          <div style={{ color: 'var(--color-text-dim)', fontSize: '0.9rem' }}>Force a renderer crash to test the error boundary.</div>
+                       </div>
+                       <NeonButton 
+                          variant="danger" 
+                          onClick={() => setShouldCrash(true)}
+                       >
+                          Crash App
+                       </NeonButton>
+                    </div>
+
+                    {/* Test Notification (Copied here for convenience) */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0' }}>
+                       <div>
+                          <div style={{ color: 'white', fontWeight: 600 }}>Test Notification</div>
+                          <div style={{ color: 'var(--color-text-dim)', fontSize: '0.9rem' }}>Trigger a test notification.</div>
+                       </div>
+                       <NeonButton 
+                          variant="secondary"
+                          onClick={() => window.electron.automod.testNotification('TEST_GROUP')}
+                       >
+                          Test
+                       </NeonButton>
+                    </div>
+
+                    {/* Show Setup Screen */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0' }}>
+                       <div>
+                          <div style={{ color: 'white', fontWeight: 600 }}>Show Setup</div>
+                          <div style={{ color: 'var(--color-text-dim)', fontSize: '0.9rem' }}>Go back to the initial setup screen.</div>
+                       </div>
+                       <NeonButton 
+                          variant="secondary"
+                          onClick={async () => {
+                             if (await confirm('Show setup screen? Your current storage will be preserved.')) {
+                                await window.electron.storage.reconfigure();
+                                window.location.reload();
+                             }
+                          }}
+                       >
+                          Show Setup
+                       </NeonButton>
+                    </div>
                  </div>
                </div>
             </section>

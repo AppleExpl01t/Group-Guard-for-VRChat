@@ -5,7 +5,7 @@ import { useGroupStore } from '../stores/groupStore';
 
 export function useInstanceMonitorInit(isAuthenticated: boolean) {
   const { addPlayer, removePlayer, setWorldId, setInstanceInfo, setWorldName, setInstanceImage, clearInstance, clearLiveScan, setCurrentGroupId } = useInstanceMonitorStore();
-  const { isRoamingMode } = useGroupStore();
+  const { isRoamingMode, exitRoamingMode } = useGroupStore();
 
   // Clear live scan history when exiting roaming mode
   const prevRoamingRef = useRef(isRoamingMode);
@@ -84,10 +84,10 @@ export function useInstanceMonitorInit(isAuthenticated: boolean) {
     });
 
     const cleanupGameClosed = window.electron.logWatcher.onGameClosed(() => {
-
         clearInstance();
         clearLiveScan();
         setCurrentGroupId(null);
+        exitRoamingMode();
     });
 
     return () => {
@@ -100,5 +100,5 @@ export function useInstanceMonitorInit(isAuthenticated: boolean) {
       window.electron.logWatcher.stop();
     };
 
-  }, [isAuthenticated, addPlayer, removePlayer, setWorldId, setWorldName, clearInstance, setInstanceInfo, setInstanceImage, setCurrentGroupId, clearLiveScan]);
+  }, [isAuthenticated, addPlayer, removePlayer, setWorldId, setWorldName, clearInstance, setInstanceInfo, setInstanceImage, setCurrentGroupId, clearLiveScan, exitRoamingMode]);
 }

@@ -1,7 +1,6 @@
 import React, { type ReactNode } from 'react';
 import styles from './AppLayout.module.css';
 import { ParticleBackground } from './ParticleBackground';
-import { CustomCursor } from '../ui/CustomCursor';
 import { useUIStore } from '../../stores/uiStore';
 
 interface AppLayoutProps {
@@ -13,8 +12,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
   return (
     <div className={styles.container}>
-      {/* Custom Crosshair Cursor */}
-      <CustomCursor />
+
 
       {/* Animated Particle Background - remains clear */}
       <ParticleBackground particleCount={15} />

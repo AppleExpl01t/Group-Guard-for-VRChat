@@ -31,6 +31,7 @@ const ConfigModal: React.FC<{
                 <>
                     {/* Backdrop */}
                     <motion.div
+                        key="backdrop"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
@@ -49,6 +50,7 @@ const ConfigModal: React.FC<{
                     >
                         {/* Modal Content */}
                         <motion.div
+                            key="modal"
                             initial={{ scale: 0.95, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
                             exit={{ scale: 0.95, opacity: 0 }}

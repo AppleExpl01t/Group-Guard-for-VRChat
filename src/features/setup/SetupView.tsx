@@ -16,18 +16,29 @@ export const SetupView: React.FC<SetupViewProps> = ({ onComplete }) => {
 
     useEffect(() => {
         const checkStatus = async () => {
-             const status = await window.electron.storage.getStatus();
-             setDefaultPath(status.defaultPath);
-             // If already configured (shouldn't happen if we are here), just complete
-             if (status.configured) {
-                 onComplete();
-             } else {
-                 setPath(status.defaultPath);
-             }
-             setIsLoading(false);
+            try {
+                const status = await window.electron.storage.getStatus();
+                setDefaultPath(status.defaultPath);
+                
+                if (status.configured) {
+                    onComplete();
+                } else {
+                    setPath(status.lastPath || status.defaultPath);
+                }
+            } catch (error) {
+                console.error('Failed to check status:', error);
+                addNotification({
+                    type: 'error',
+                    title: 'Initialization Error',
+                    message: 'Failed to load storage settings.'
+                });
+            } finally {
+                setIsLoading(false);
+            }
         };
+        
         checkStatus();
-    }, [onComplete]);
+    }, [onComplete, addNotification]);
 
     const handleSelectFolder = async () => {
         const selected = await window.electron.storage.selectFolder();
@@ -37,8 +48,19 @@ export const SetupView: React.FC<SetupViewProps> = ({ onComplete }) => {
     };
 
     const handleContinue = async () => {
+        // If path hasn't changed from what was effectively the default/initial, 
+        // we can just proceed. However, the backend needs to know it's configured.
+        // We always call setPath to ensure the config file is written/marked.
+        // But the user asked not to show a "dialogue". Since we don't show a dialogue
+        // on success internally here (just onComplete), maybe the backend was showing something?
+        // Or maybe the user meant "don't ask for confirmation"?
+        
+        // Actually, setPath returns boolean. 
+        // If user changed nothing, we proceed silently.
+        
         setIsLoading(true);
         const success = await window.electron.storage.setPath(path);
+        
         if (success) {
             onComplete();
         } else {

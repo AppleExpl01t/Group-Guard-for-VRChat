@@ -10,10 +10,24 @@ interface KeywordConfigModalProps {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     config: any;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    onUpdate: (newConfig: any) => void;
+    onSave: (newConfig: any) => void;
 }
 
-export const KeywordConfigModal: React.FC<KeywordConfigModalProps> = ({ isOpen, onClose, config, onUpdate }) => {
+export const KeywordConfigModal: React.FC<KeywordConfigModalProps> = ({ isOpen, onClose, config, onSave }) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [internalConfig, setInternalConfig] = React.useState<any>(config);
+
+    React.useEffect(() => {
+        if (isOpen) {
+            setInternalConfig(config);
+        }
+    }, [isOpen, config]);
+
+    const handleSave = () => {
+        onSave(internalConfig);
+        onClose();
+    };
+
     return createPortal(
         <AnimatePresence>
             {isOpen && (
@@ -97,9 +111,9 @@ export const KeywordConfigModal: React.FC<KeywordConfigModalProps> = ({ isOpen, 
                                             <ChipInput 
                                                 label="Blocked Keywords"
                                                 placeholder="Add word to ban..."
-                                                value={config.keywords || []}
+                                                value={internalConfig.keywords || []}
                                                 color="red"
-                                                onChange={(newVal) => onUpdate({ ...config, keywords: newVal })}
+                                                onChange={(newVal) => setInternalConfig({ ...internalConfig, keywords: newVal })}
                                             />
                                             <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginTop: '-8px', paddingLeft: '4px' }}>
                                                 <span style={{ color: '#fca5a5' }}>Pro Tip:</span> To block an acronym (like "D.I.D") without banning the word "did", enter it with periods: <strong>d.i.d</strong>
@@ -107,12 +121,34 @@ export const KeywordConfigModal: React.FC<KeywordConfigModalProps> = ({ isOpen, 
                                         </div>
 
                                         <ChipInput 
-                                            label="Safelist (Exceptions)"
+                                            label="Safelist (Keyword Exceptions)"
                                             placeholder="Add allowed word..."
-                                            value={config.whitelist || []}
+                                            value={internalConfig.whitelist || []}
                                             color="green"
-                                            onChange={(newVal) => onUpdate({ ...config, whitelist: newVal })}
+                                            onChange={(newVal) => setInternalConfig({ ...internalConfig, whitelist: newVal })}
                                         />
+
+                                        <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--color-text-dim)', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Exemptions</div>
+                                            
+                                            <div style={{ marginBottom: '1.5rem' }}>
+                                                <ChipInput 
+                                                    label="Whitelisted Users (IDs)"
+                                                    placeholder="usr_..."
+                                                    value={internalConfig.whitelistedUserIds || []}
+                                                    color="blue"
+                                                    onChange={(newVal) => setInternalConfig({ ...internalConfig, whitelistedUserIds: newVal })}
+                                                />
+                                            </div>
+
+                                            <ChipInput 
+                                                label="Whitelisted Groups (IDs)"
+                                                placeholder="grp_..."
+                                                value={internalConfig.whitelistedGroupIds || []}
+                                                color="purple"
+                                                onChange={(newVal) => setInternalConfig({ ...internalConfig, whitelistedGroupIds: newVal })}
+                                            />
+                                        </div>
                                     </div>
 
                                     {/* Right Column: Configuration & Strategy */}
@@ -125,24 +161,25 @@ export const KeywordConfigModal: React.FC<KeywordConfigModalProps> = ({ isOpen, 
                                                 {[
                                                     { k: 'scanBio', l: 'Bio' }, 
                                                     { k: 'scanStatus', l: 'Status' },
-                                                    { k: 'scanPronouns', l: 'Pronouns' }
+                                                    { k: 'scanPronouns', l: 'Pronouns' },
+                                                    { k: 'scanGroups', l: 'Groups' }
                                                 ].map(opt => (
                                                     <div 
                                                         key={opt.k}
-                                                        onClick={() => onUpdate({ ...config, [opt.k]: !config[opt.k] })}
+                                                        onClick={() => setInternalConfig({ ...internalConfig, [opt.k]: !internalConfig[opt.k] })}
                                                         style={{ 
                                                             padding: '6px 12px', 
                                                             borderRadius: '6px', 
-                                                            background: config[opt.k] ? 'rgba(74, 222, 128, 0.1)' : 'rgba(255,255,255,0.05)',
-                                                            border: config[opt.k] ? '1px solid #4ade80' : '1px solid rgba(255,255,255,0.1)',
-                                                            color: config[opt.k] ? 'white' : 'var(--color-text-dim)',
+                                                            background: internalConfig[opt.k] ? 'rgba(74, 222, 128, 0.1)' : 'rgba(255,255,255,0.05)',
+                                                            border: internalConfig[opt.k] ? '1px solid #4ade80' : '1px solid rgba(255,255,255,0.1)',
+                                                            color: internalConfig[opt.k] ? 'white' : 'var(--color-text-dim)',
                                                             fontSize: '0.8rem',
                                                             cursor: 'pointer',
                                                             display: 'flex', alignItems: 'center', gap: '8px',
                                                             transition: 'all 0.2s'
                                                         }}
                                                     >
-                                                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: config[opt.k] ? '#4ade80' : 'rgba(255,255,255,0.2)' }} />
+                                                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: internalConfig[opt.k] ? '#4ade80' : 'rgba(255,255,255,0.2)' }} />
                                                         {opt.l}
                                                     </div>
                                                 ))}
@@ -159,21 +196,21 @@ export const KeywordConfigModal: React.FC<KeywordConfigModalProps> = ({ isOpen, 
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                                                 {/* Strict Card */}
                                                 <div 
-                                                    onClick={() => onUpdate({ ...config, matchMode: 'WHOLE_WORD' })}
+                                                    onClick={() => setInternalConfig({ ...internalConfig, matchMode: 'WHOLE_WORD' })}
                                                     style={{ 
                                                         padding: '1rem', 
                                                         borderRadius: '8px', 
-                                                        background: config.matchMode !== 'PARTIAL' ? 'rgba(74, 222, 128, 0.1)' : 'rgba(255,255,255,0.02)',
-                                                        border: config.matchMode !== 'PARTIAL' ? '1px solid #4ade80' : '1px solid rgba(255,255,255,0.05)',
+                                                        background: internalConfig.matchMode !== 'PARTIAL' ? 'rgba(74, 222, 128, 0.1)' : 'rgba(255,255,255,0.02)',
+                                                        border: internalConfig.matchMode !== 'PARTIAL' ? '1px solid #4ade80' : '1px solid rgba(255,255,255,0.05)',
                                                         cursor: 'pointer',
                                                         transition: 'all 0.2s',
-                                                        opacity: config.matchMode !== 'PARTIAL' ? 1 : 0.6,
+                                                        opacity: internalConfig.matchMode !== 'PARTIAL' ? 1 : 0.6,
                                                         display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '1rem', alignItems: 'center'
                                                     }}
                                                 >
                                                     <div>
-                                                        <div style={{ fontWeight: 'bold', color: config.matchMode !== 'PARTIAL' ? '#4ade80' : 'white', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                            <div style={{ width: '10px', height: '10px', borderRadius: '50%', border: '2px solid currentColor', background: config.matchMode !== 'PARTIAL' ? 'currentColor' : 'transparent' }}></div>
+                                                        <div style={{ fontWeight: 'bold', color: internalConfig.matchMode !== 'PARTIAL' ? '#4ade80' : 'white', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                            <div style={{ width: '10px', height: '10px', borderRadius: '50%', border: '2px solid currentColor', background: internalConfig.matchMode !== 'PARTIAL' ? 'currentColor' : 'transparent' }}></div>
                                                             Strict (Whole Word)
                                                         </div>
                                                         <div style={{ fontSize: '0.75rem', color: 'var(--color-text-dim)' }}>
@@ -195,21 +232,21 @@ export const KeywordConfigModal: React.FC<KeywordConfigModalProps> = ({ isOpen, 
 
                                                 {/* Loose Card */}
                                                 <div 
-                                                    onClick={() => onUpdate({ ...config, matchMode: 'PARTIAL' })}
+                                                    onClick={() => setInternalConfig({ ...internalConfig, matchMode: 'PARTIAL' })}
                                                     style={{ 
                                                         padding: '1rem', 
                                                         borderRadius: '8px', 
-                                                        background: config.matchMode === 'PARTIAL' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(255,255,255,0.02)',
-                                                        border: config.matchMode === 'PARTIAL' ? '1px solid #ef4444' : '1px solid rgba(255,255,255,0.05)',
+                                                        background: internalConfig.matchMode === 'PARTIAL' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(255,255,255,0.02)',
+                                                        border: internalConfig.matchMode === 'PARTIAL' ? '1px solid #ef4444' : '1px solid rgba(255,255,255,0.05)',
                                                         cursor: 'pointer',
                                                         transition: 'all 0.2s',
-                                                        opacity: config.matchMode === 'PARTIAL' ? 1 : 0.6,
+                                                        opacity: internalConfig.matchMode === 'PARTIAL' ? 1 : 0.6,
                                                         display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '1rem', alignItems: 'center'
                                                     }}
                                                 >
                                                     <div>
-                                                        <div style={{ fontWeight: 'bold', color: config.matchMode === 'PARTIAL' ? '#f87171' : 'white', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                            <div style={{ width: '10px', height: '10px', borderRadius: '50%', border: '2px solid currentColor', background: config.matchMode === 'PARTIAL' ? 'currentColor' : 'transparent' }}></div>
+                                                        <div style={{ fontWeight: 'bold', color: internalConfig.matchMode === 'PARTIAL' ? '#f87171' : 'white', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                            <div style={{ width: '10px', height: '10px', borderRadius: '50%', border: '2px solid currentColor', background: internalConfig.matchMode === 'PARTIAL' ? 'currentColor' : 'transparent' }}></div>
                                                             Loose (Partial)
                                                         </div>
                                                         <div style={{ fontSize: '0.75rem', color: 'var(--color-text-dim)' }}>
@@ -236,7 +273,7 @@ export const KeywordConfigModal: React.FC<KeywordConfigModalProps> = ({ isOpen, 
                                 {/* Sticky Footer */}
                                 <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'flex-end', background: 'rgba(0,0,0,0.2)', flexShrink: 0 }}>
                                     <button 
-                                        onClick={onClose}
+                                        onClick={handleSave}
                                         style={{ 
                                             padding: '10px 24px', 
                                             background: '#f87171', 
@@ -255,7 +292,7 @@ export const KeywordConfigModal: React.FC<KeywordConfigModalProps> = ({ isOpen, 
                             </GlassPanel>
                         </motion.div>
                     </motion.div>
-                )}
+            )}
         </AnimatePresence>,
         document.body
     );

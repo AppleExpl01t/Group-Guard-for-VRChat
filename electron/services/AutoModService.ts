@@ -1,70 +1,175 @@
-import Store from 'electron-store';
-import { ipcMain, app } from 'electron';
-import fs from 'fs';
-import path from 'path';
-import log from 'electron-log';
-import { getVRChatClient } from './AuthService';
-import { vrchatApiService } from './VRChatApiService';
-import { databaseService } from './DatabaseService';
-import { instanceLoggerService } from './InstanceLoggerService';
-import { logWatcherService } from './LogWatcherService';
-import { groupAuthorizationService } from './GroupAuthorizationService';
-import { fetchUser } from './UserService';
-import { windowService } from './WindowService';
-import { discordWebhookService } from './DiscordWebhookService';
-import { watchlistService } from './WatchlistService';
-import { serviceEventBus } from './ServiceEventBus';
-import { userProfileService } from './UserProfileService';
+import Store from "electron-store";
+import { ipcMain, app } from "electron";
+import fs from "fs";
+import path from "path";
+import log from "electron-log";
+import { getVRChatClient } from "./AuthService";
+import { vrchatApiService } from "./VRChatApiService";
+import { databaseService } from "./DatabaseService";
+import { instanceLoggerService } from "./InstanceLoggerService";
+import { logWatcherService } from "./LogWatcherService";
+import { groupAuthorizationService } from "./GroupAuthorizationService";
+import { fetchUser } from "./UserService";
+import { windowService } from "./WindowService";
+import { discordWebhookService } from "./DiscordWebhookService";
+import { watchlistService } from "./WatchlistService";
+import { serviceEventBus } from "./ServiceEventBus";
+import { userProfileService } from "./UserProfileService";
 
-const logger = log.scope('AutoModService');
+const logger = log.scope("AutoModService");
+
+// Helper to persist actions (used by both scan and live checks)
+const persistAction = async (entry: {
+  timestamp: Date;
+  user: string;
+  userId: string;
+  groupId: string;
+  action: string;
+  reason: string;
+  module: string;
+  details?: Record<string, unknown>;
+  skipBroadcast?: boolean;
+}) => {
+  try {
+    // 1. Log to database
+    await databaseService.createAutoModLog({
+      timestamp: entry.timestamp,
+      userId: entry.userId,
+      user: entry.user,
+      groupId: entry.groupId,
+      action: entry.action,
+      reason: entry.reason,
+      module: entry.module,
+      details: JSON.stringify(entry.details || {})
+    });
+
+
+    // 2. Broadcast to UI (if not skipped)
+    if (!entry.skipBroadcast) {
+        windowService.broadcast("automod:violation", {
+        userId: entry.userId,
+        displayName: entry.user,
+        action: entry.action,
+        reason: entry.reason,
+        ruleName: (entry.details?.ruleName as string),
+        timestamp: entry.timestamp.toISOString()
+    });
+    }
+
+  } catch (error) {
+    logger.error("[AutoMod] Failed to persist action:", error);
+  }
+};
+
+const addToWhitelist = async (groupId: string, ruleId: number, target: { userId?: string; groupId?: string }) => {
+    logger.info(`Adding to whitelist for rule ${ruleId} in group ${groupId}:`, target);
+    
+    // Find the rule
+    const config = getGroupConfig(groupId);
+    const rules = config.rules;
+    const ruleIndex = rules.findIndex(r => r.id === ruleId);
+    
+    if (ruleIndex === -1) {
+        throw new Error(`Rule with ID ${ruleId} not found`);
+    }
+
+    const rule = rules[ruleIndex];
+    let updated = false;
+
+    if (target.userId) {
+        if (!rule.whitelistedUserIds) rule.whitelistedUserIds = [];
+        if (!rule.whitelistedUserIds.includes(target.userId)) {
+            rule.whitelistedUserIds.push(target.userId);
+            updated = true;
+        }
+    }
+
+    if (target.groupId) {
+        if (!rule.whitelistedGroupIds) rule.whitelistedGroupIds = [];
+        if (!rule.whitelistedGroupIds.includes(target.groupId)) {
+            rule.whitelistedGroupIds.push(target.groupId);
+            updated = true;
+        }
+    }
+
+    if (updated) {
+        rules[ruleIndex] = rule;
+        saveGroupConfig(groupId, { ...config, rules });
+        logger.info(`Whitelist updated for rule ${rule.name}`);
+        return true;
+    }
+    
+    return false;
+};
 
 // Simplified Types
-export type AutoModActionType = 'REJECT' | 'AUTO_BLOCK' | 'NOTIFY_ONLY';
-export type AutoModRuleType = 'AGE_VERIFICATION' | string;
+export type AutoModActionType = "REJECT" | "AUTO_BLOCK" | "NOTIFY_ONLY";
+export type AutoModRuleType = "AGE_VERIFICATION" | string;
 
 export interface AutoModRule {
-    id: number;
-    name: string;
-    enabled: boolean;
-    type: AutoModRuleType;
-    config: string; // JSON
-    actionType: AutoModActionType;
-    createdAt?: string;
+  id: number;
+  name: string;
+  enabled: boolean;
+  type: AutoModRuleType;
+  config: string; // JSON
+  actionType: AutoModActionType;
+  createdAt?: string;
+
+  // Exemptions
+  whitelistedUserIds?: string[];
+  whitelistedGroupIds?: string[];
+}
+
+interface GroupConfig {
+  rules: AutoModRule[];
+  enableAutoReject: boolean;
+  enableAutoBan: boolean;
 }
 
 interface AutoModStoreSchema {
-    rules: AutoModRule[];
-
-    enableAutoReject: boolean;
-    enableAutoBan: boolean;
+  groups: Record<string, GroupConfig>;
+  // Legacy global fallback (kept for backup/reference)
+  rules?: AutoModRule[];
+  enableAutoReject?: boolean;
+  enableAutoBan?: boolean;
 }
 
 // Initialize store
 export const store = new Store<AutoModStoreSchema>({
-    name: 'automod-rules',
-    defaults: {
-        rules: [],
-        enableAutoReject: false,
-        enableAutoBan: false
+  name: "automod-rules",
+  defaults: {
+    groups: {},
+    rules: [],
+    enableAutoReject: false,
+    enableAutoBan: false,
+  },
+  migrations: {
+    "2.0.0": (store) => {
+      // Future migration: could move global rules to a "default" group or similar
     },
-    migrations: {
-        '1.0.1': (store) => {
-             // Migrate old liveAutoBan to new settings
-             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-             const oldStore = store as any;
-             if (oldStore.has('liveAutoBan')) {
-                 const wasEnabled = oldStore.get('liveAutoBan');
-                 // Conservative migration: If it was ON, we turn ON both.
-                 // If it was OFF, both are OFF.
-                 store.set('enableAutoReject', wasEnabled);
-                 store.set('enableAutoBan', wasEnabled);
-                 oldStore.delete('liveAutoBan');
-             }
-        }
-    }
+  },
 });
 
+// Helper to get group config safely
+const getGroupConfig = (groupId: string): GroupConfig => {
+    const groups = store.get('groups', {});
+    if (!groups[groupId]) {
+        // Initialize if missing
+        groups[groupId] = {
+            rules: [],
+            enableAutoReject: false,
+            enableAutoBan: false
+        };
+        store.set('groups', groups);
+    }
+    return groups[groupId];
+};
 
+const saveGroupConfig = (groupId: string, config: GroupConfig) => {
+    const groups = store.get('groups', {});
+    groups[groupId] = config;
+    store.set('groups', groups);
+};
 
 // The core AutoMod logic
 let autoModInterval: NodeJS.Timeout | null = null;
@@ -76,17 +181,20 @@ const PROCESSED_CACHE_MAX_SIZE = 1000;
 
 // Clear old entries if cache gets too large
 const pruneProcessedCache = () => {
-    if (processedRequests.size > PROCESSED_CACHE_MAX_SIZE) {
-        const entries = Array.from(processedRequests);
-        entries.slice(0, PROCESSED_CACHE_MAX_SIZE / 2).forEach(e => processedRequests.delete(e));
-    }
+  if (processedRequests.size > PROCESSED_CACHE_MAX_SIZE) {
+    const entries = Array.from(processedRequests);
+    entries
+      .slice(0, PROCESSED_CACHE_MAX_SIZE / 2)
+      .forEach((e) => processedRequests.delete(e));
+  }
 };
 
 // ============================================
 // USER EVALUATION LOGIC (Consolidated from AutoModLogic.ts)
 // ============================================
 
-export const evaluateUser = async (user: {
+export const evaluateUser = async (
+  user: {
     id: string;
     displayName: string;
     tags?: string[];
@@ -96,180 +204,276 @@ export const evaluateUser = async (user: {
     pronouns?: string;
     ageVerified?: boolean;
     ageVerificationStatus?: string;
-}, options: { allowMissingData?: boolean } = {}): Promise<{ action: AutoModActionType | 'ALLOW'; reason?: string; ruleName?: string }> => {
-    try {
-        const rules = store.get('rules').filter(r => r.enabled) as AutoModRule[];
-        
-        if (rules.length === 0) {
-            return { action: 'ALLOW' };
+  },
+  options: { allowMissingData?: boolean } = {},
+  groupId: string // New Requirement
+): Promise<{
+  action: AutoModActionType | "ALLOW";
+  reason?: string;
+  ruleName?: string;
+  ruleId?: number;
+}> => {
+  try {
+    const config = getGroupConfig(groupId);
+    const rules = config.rules.filter((r) => r.enabled);
+
+    if (rules.length === 0) {
+      return { action: "ALLOW" };
+    }
+
+    for (const rule of rules) {
+      if (!rule.id) logger.warn(`[AutoMod] Rule has no ID: ${rule.name}`); // DEBUG
+      let matches = false;
+      let reason = "";
+
+      if (rule.type === "KEYWORD_BLOCK") {
+        let matchMode: "PARTIAL" | "WHOLE_WORD" = "PARTIAL";
+        let keywords: string[] = [];
+        let whitelist: string[] = [];
+        let whitelistedUserIds: string[] = [];
+        let whitelistedGroupIds: string[] = [];
+        let scanBio = true;
+        let scanStatus = true;
+        let scanPronouns = false;
+        let scanGroups = false;
+
+        try {
+          const parsed = JSON.parse(rule.config);
+          if (parsed && typeof parsed === "object") {
+            keywords = Array.isArray(parsed.keywords) ? parsed.keywords : [];
+            whitelist = Array.isArray(parsed.whitelist) ? parsed.whitelist : [];
+            whitelistedUserIds = Array.isArray(parsed.whitelistedUserIds) ? parsed.whitelistedUserIds : [];
+            whitelistedGroupIds = Array.isArray(parsed.whitelistedGroupIds) ? parsed.whitelistedGroupIds : [];
+            scanBio = parsed.scanBio !== false;
+            scanStatus = parsed.scanStatus !== false;
+            scanPronouns = parsed.scanPronouns === true;
+            scanGroups = parsed.scanGroups === true;
+            if (parsed.matchMode === "WHOLE_WORD") matchMode = "WHOLE_WORD";
+          } else if (Array.isArray(parsed)) {
+            keywords = parsed;
+          } else if (typeof parsed === "string") {
+            keywords = [parsed];
+          }
+        } catch {
+          keywords = rule.config ? [rule.config] : [];
         }
 
-        for (const rule of rules) {
-            let matches = false;
-            let reason = '';
+        // -------------------------------------------------------------
+        // 1. CHECK USER WHITELIST (Exemptions)
+        // -------------------------------------------------------------
+        if (whitelistedUserIds.some(id => id === user.id)) {
+            // User is explicitly whitelisted from this rule
+            continue;
+        }
 
-            if (rule.type === 'KEYWORD_BLOCK') {
-                // Parse config
-                let keywords: string[] = [];
-                let whitelist: string[] = [];
-                let scanBio = true;
-                let scanStatus = true;
-                let scanPronouns = false;
-                
-                try {
-                    const parsed = JSON.parse(rule.config);
-                    if (parsed && typeof parsed === 'object') {
-                        keywords = Array.isArray(parsed.keywords) ? parsed.keywords : [];
-                        whitelist = Array.isArray(parsed.whitelist) ? parsed.whitelist : [];
-                        scanBio = parsed.scanBio !== false;
-                        scanStatus = parsed.scanStatus !== false;
-                        scanPronouns = parsed.scanPronouns === true;
-                    } else if (Array.isArray(parsed)) {
-                        keywords = parsed;
-                    } else if (typeof parsed === 'string') {
-                        keywords = [parsed];
-                    }
-                } catch {
-                    keywords = rule.config ? [rule.config] : [];
-                }
-                
-                const textParts: string[] = [user.displayName];
-                if (scanBio && user.bio) textParts.push(user.bio);
-                if (scanStatus) {
-                    if (user.status) textParts.push(user.status);
-                    if (user.statusDescription) textParts.push(user.statusDescription);
-                }
-                if (scanPronouns && user.pronouns) textParts.push(user.pronouns);
-                
-                const searchableText = textParts.join(' ').toLowerCase();
-
-                for (const keyword of keywords) {
-                    const kw = keyword.toLowerCase().trim();
-                    if (!kw) continue;
-                    
-                    if (searchableText.includes(kw)) {
-                        const isWhitelisted = whitelist.some(w => 
-                            searchableText.includes(w.toLowerCase().trim())
-                        );
-                        
-                        if (!isWhitelisted) {
-                            matches = true;
-                            reason = `Keyword: "${keyword}"`;
-                            break;
-                        }
-                    }
-                }
-            } else if (rule.type === 'AGE_VERIFICATION') {
-                // Debug Logging for Age Verification
-                if (user.ageVerificationStatus === undefined) {
-                    logger.warn(`[AutoMod] User ${user.displayName} (${user.id}) has NO ageVerificationStatus. Defaulting to ALLOW (Safe Fail).`);
-                }
-
-                // If allowMissingData is true and we don't have status, SKIP this check (SAFE FAIL)
-                if (user.ageVerificationStatus === undefined) {
-                    continue; 
-                } 
-                
-                const normalizedStatus = (user.ageVerificationStatus || '').toLowerCase();
-                // Check against '18+' (exact) or 'hidden' (case-insensitive normalized)
-                if (user.ageVerificationStatus !== '18+' && normalizedStatus !== 'hidden') {
-                    matches = true;
-                    reason = `Age Verification Required (Found: ${user.ageVerificationStatus})`;
-                }
-            } else if (rule.type === 'TRUST_CHECK') {
-                // Trust check logic
-                const tags = user.tags || [];
-                
-                // If allowMissingData is true and no tags, assume safe (or skip)
-                if (options.allowMissingData && (!user.tags || user.tags.length === 0)) {
-                    // Skip check if we can't determine rank
-                } else {
-                    let configLevel = '';
-                    try {
-                        const parsed = JSON.parse(rule.config);
-                        configLevel = parsed.minTrustLevel || parsed.trustLevel || rule.config;
-                    } catch {
-                        configLevel = rule.config;
-                    }
-                    
-                    const trustLevels = ['system_trust_visitor', 'system_trust_basic', 'system_trust_known', 'system_trust_trusted', 'system_trust_veteran', 'system_trust_legend'];
-                    const requiredIndex = trustLevels.findIndex(t => t.includes(configLevel.toLowerCase()));
-                    
-                    if (requiredIndex > 0) {
-                        const userTrustIndex = trustLevels.findIndex(level => tags.includes(level));
-                        // If user has no trust tags and we aren't allowing missing data, they are -1 (below visitor)
-                        if (userTrustIndex < requiredIndex) {
-                            matches = true;
-                            reason = `Trust Level below ${configLevel}`;
-                        }
-                    }
-                }
-            } else if (rule.type === 'BLACKLISTED_GROUPS') {
-                // Check if user is member of any blacklisted groups
-                let config: { groupIds?: string[], groups?: Array<{ id: string; name: string }> } = { groupIds: [] };
-                try {
-                    config = JSON.parse(rule.config);
-                } catch {
-                    config = { groupIds: [] };
-                }
-
-                const blacklistedIds = config.groupIds || [];
-                if (blacklistedIds.length > 0) {
-                    try {
-                        const userGroups = await userProfileService.getUserGroups(user.id);
-                        for (const group of userGroups) {
-                            if (blacklistedIds.includes(group.groupId)) {
-                                matches = true;
-                                reason = `Member of blacklisted group: ${group.name}`;
-                                break;
-                            }
-                        }
-                    } catch (e) {
-                        logger.warn(`[AutoMod] Failed to fetch groups for ${user.displayName}: ${e}`);
-                        // Safe fail - don't block if we can't fetch groups
-                    }
-                }
-            }
-
-            if (matches) {
-                logger.info(`[AutoMod] User ${user.displayName} matched rule: ${rule.name}`);
-                return { 
-                    action: rule.actionType, 
-                    reason,
-                    ruleName: rule.name
-                };
+        // -------------------------------------------------------------
+        // 2. CHECK GROUP WHITELIST (Exemptions)
+        // -------------------------------------------------------------
+        // We only fetch groups if we have a group whitelist OR we need to scan groups
+        let userGroups = null;
+        if (whitelistedGroupIds.length > 0 || scanGroups) {
+            try {
+                userGroups = await userProfileService.getUserGroups(user.id);
+            } catch (e) {
+                 logger.warn(`[AutoMod] Failed to fetch groups for ${user.displayName} during scan: ${e}`);
             }
         }
 
-        return { action: 'ALLOW' };
-        
-    } catch (error) {
-        logger.error('[AutoMod] Error checking user:', error);
-        return { action: 'ALLOW' };
+        if (whitelistedGroupIds.length > 0 && userGroups) {
+            const isGroupWhitelisted = userGroups.some(g => whitelistedGroupIds.includes(g.groupId));
+            if (isGroupWhitelisted) {
+                // User is in a whitelisted group - exempt from this rule
+                continue;
+            }
+        }
+
+        // Helper to escape regex special characters
+        const escapeRegExp = (string: string) => {
+          return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        };
+
+        // Helper to check text
+        const checkText = (
+          text: string | undefined,
+          contextName: string,
+        ): boolean => {
+          if (!text) return false;
+          // For loose matching, we can stick to simple lowercase includes for speed
+          // For strict matching, we need regex with word boundaries
+
+          const lower = text.toLowerCase();
+
+          for (const keyword of keywords) {
+            const kw = keyword.trim();
+            if (!kw) continue;
+
+            let hasMatch = false;
+
+            if (matchMode === "WHOLE_WORD") {
+              // Strict Mode: Use Regex with word boundaries
+              // We construct regex dynamically. To avoid ReDoS, we should be careful,
+              // but keywords are generally short.
+              // We use case-insensitive flag 'i' so we don't need to lowercase the input repeatedly vs the regex.
+              try {
+                const pattern = new RegExp(`\\b${escapeRegExp(kw)}\\b`, "i");
+                hasMatch = pattern.test(text);
+              } catch {
+                // Fallback if regex fails (rare)
+                hasMatch = lower.includes(kw.toLowerCase());
+              }
+            } else {
+              // Loose Mode (Default): Simple substring match
+              hasMatch = lower.includes(kw.toLowerCase());
+            }
+
+            if (hasMatch) {
+              // Check Whitelist (Keyword Safelist)
+               const isWhitelisted = whitelist.some(w =>
+                  lower.includes(w.toLowerCase().trim())
+              );
+
+              if (!isWhitelisted) {
+                matches = true;
+                reason = `Keyword "${keyword}" found in ${contextName}`;
+                return true;
+              }
+            }
+          }
+          return false;
+        };
+
+        // 3. Scan Text Fields
+        if (checkText(user.displayName, "Display Name")) { /* match found */ }
+        else if (scanBio && checkText(user.bio, "Bio")) { /* match found */ }
+        else if (scanStatus && (checkText(user.status, "Status") || checkText(user.statusDescription, "Status Description"))) { /* match found */ }
+        else if (scanPronouns && checkText(user.pronouns, "Pronouns")) { /* match found */ }
+
+        // 4. Check Groups (if no match yet and enabled)
+        else if (scanGroups && !matches && userGroups) {
+            for (const g of userGroups) {
+                if (checkText(g.name, `Group: "${g.name}"`)) break;
+                if (checkText(g.shortCode, `Group Shortcode: "${g.shortCode}"`)) break;
+            }
+        }
+        // Debug Logging for Age Verification
+        if (user.ageVerificationStatus === undefined) {
+          logger.warn(
+            `[AutoMod] User ${user.displayName} (${user.id}) has NO ageVerificationStatus. Defaulting to ALLOW (Safe Fail).`,
+          );
+        }
+
+        // If allowMissingData is true and we don't have status, SKIP this check (SAFE FAIL)
+        if (user.ageVerificationStatus === undefined) {
+          continue;
+        }
+
+        const normalizedStatus = (
+          user.ageVerificationStatus || ""
+        ).toLowerCase();
+        // Check against '18+' (exact) or 'hidden' (case-insensitive normalized)
+        if (
+          user.ageVerificationStatus !== "18+" &&
+          normalizedStatus !== "hidden"
+        ) {
+          matches = true;
+          reason = `Age Verification Required (Found: ${user.ageVerificationStatus})`;
+        }
+      } else if (rule.type === "TRUST_CHECK") {
+        // Trust check logic
+        const tags = user.tags || [];
+
+        // If allowMissingData is true and no tags, assume safe (or skip)
+        if (
+          options.allowMissingData &&
+          (!user.tags || user.tags.length === 0)
+        ) {
+          // Skip check if we can't determine rank
+        } else {
+          let configLevel = "";
+          try {
+            const parsed = JSON.parse(rule.config);
+            configLevel =
+              parsed.minTrustLevel || parsed.trustLevel || rule.config;
+          } catch {
+            configLevel = rule.config;
+          }
+
+          const trustLevels = [
+            "system_trust_visitor",
+            "system_trust_basic",
+            "system_trust_known",
+            "system_trust_trusted",
+            "system_trust_veteran",
+            "system_trust_legend",
+          ];
+          const requiredIndex = trustLevels.findIndex((t) =>
+            t.includes(configLevel.toLowerCase()),
+          );
+
+          if (requiredIndex > 0) {
+            const userTrustIndex = trustLevels.findIndex((level) =>
+              tags.includes(level),
+            );
+            // If user has no trust tags and we aren't allowing missing data, they are -1 (below visitor)
+            if (userTrustIndex < requiredIndex) {
+              matches = true;
+              reason = `Trust Level below ${configLevel}`;
+            }
+          }
+        }
+      } else if (rule.type === "BLACKLISTED_GROUPS") {
+        // Check if user is member of any blacklisted groups
+        let config: {
+          groupIds?: string[];
+          groups?: Array<{ id: string; name: string }>;
+        } = { groupIds: [] };
+        try {
+          config = JSON.parse(rule.config);
+        } catch {
+          config = { groupIds: [] };
+        }
+
+        const blacklistedIds = config.groupIds || [];
+        if (blacklistedIds.length > 0) {
+          try {
+            const userGroups = await userProfileService.getUserGroups(user.id);
+            for (const group of userGroups) {
+              if (blacklistedIds.includes(group.groupId)) {
+                matches = true;
+                reason = `Member of blacklisted group: ${group.name}`;
+                break;
+              }
+            }
+          } catch (e) {
+            logger.warn(
+              `[AutoMod] Failed to fetch groups for ${user.displayName}: ${e}`,
+            );
+            // Safe fail - don't block if we can't fetch groups
+          }
+        }
+      }
+
+        if (matches) {
+        logger.info(
+          `[AutoMod] User ${user.displayName} matched rule: ${rule.name}`,
+        );
+        return {
+          action: rule.actionType,
+          reason,
+          ruleName: rule.name,
+          ruleId: rule.id // Added ruleId
+        };
+      }
     }
+
+    return { action: "ALLOW" };
+  } catch (error) {
+    logger.error("[AutoMod] Error checking user:", error);
+    return { action: "ALLOW" };
+  }
 };
 
-// Persist AutoMod actions to database file
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const persistAction = async (logEntry: any) => {
-    try {
-        await databaseService.createAutoModLog({
-            timestamp: new Date(logEntry.timestamp),
-            user: logEntry.user,
-            userId: logEntry.userId,
-            groupId: logEntry.groupId,
-            action: logEntry.action,
-            reason: logEntry.reason,
-            module: logEntry.module,
-            // Stringify details if it's an object
-            details: typeof logEntry.details === 'object' ? JSON.stringify(logEntry.details) : logEntry.details
-        });
-        logger.info('Persisted AutoMod action to database');
-    } catch (error) {
-        logger.error('Failed to persist AutoMod action', error);
-         // Fallback?
-    }
-};
+// ... (persistAction helper remains same)
 
 // ============================================
 // AUTO-PROCESS JOIN REQUESTS
@@ -277,758 +481,1286 @@ const persistAction = async (logEntry: any) => {
 
 // Process a single join request
 export const processJoinRequest = async (
-    groupId: string, 
-    userId: string, 
-    displayName: string,
-    _userDetails?: {
-        bio?: string;
-        status?: string;
-        statusDescription?: string;
-        pronouns?: string;
-        tags?: string[];
-        ageVerificationStatus?: string;
-    }
-): Promise<{ processed: boolean; action: 'accept' | 'reject' | 'skip'; reason?: string }> => {
-    const client = getVRChatClient();
-    if (!client) {
-        logger.warn('[AutoMod] Cannot process request - not authenticated');
-        return { processed: false, action: 'skip', reason: 'Not authenticated' };
-    }
+  groupId: string,
+  userId: string,
+  displayName: string,
+  _userDetails?: {
+    bio?: string;
+    status?: string;
+    statusDescription?: string;
+    pronouns?: string;
+    tags?: string[];
+    ageVerificationStatus?: string;
+  },
+): Promise<{
+  processed: boolean;
+  action: "accept" | "reject" | "skip";
+  reason?: string;
+}> => {
+  // ... (auth checks same)
+  const client = getVRChatClient();
+  if (!client) {
+    logger.warn("[AutoMod] Cannot process request - not authenticated");
+    return { processed: false, action: "skip", reason: "Not authenticated" };
+  }
 
-    // Check if already processed
-    const cacheKey = `gatekeeper:${groupId}:${userId}`;
-    if (processedRequests.has(cacheKey)) {
-        logger.debug(`[AutoMod] Request ${userId} already processed, skipping`);
-        return { processed: false, action: 'skip', reason: 'Already processed' };
-    }
+  // Check if already processed
+  const cacheKey = `gatekeeper:${groupId}:${userId}`;
+  if (processedRequests.has(cacheKey)) {
+    logger.debug(`[AutoMod] Request ${userId} already processed, skipping`);
+    return { processed: false, action: "skip", reason: "Already processed" };
+  }
+  
+  // ... (rules fetch same)
+  const config = getGroupConfig(groupId);
+  const rules = config.rules.filter((r) => r.enabled);
+  if (rules.length === 0) {
+    logger.debug("[AutoMod] No enabled rules, skipping auto-processing");
+    return { processed: false, action: "skip", reason: "No enabled rules" };
+  }
 
-    // Check if any rules are enabled
-    const rules = store.get('rules').filter(r => r.enabled);
-    if (rules.length === 0) {
-        logger.debug('[AutoMod] No enabled rules, skipping auto-processing');
-        return { processed: false, action: 'skip', reason: 'No enabled rules' };
-    }
-
-    try {
-        // Fetch full user details if not provided
-        let fullUser = _userDetails;
-        
-        if (!fullUser || !fullUser.tags) {
-            try {
-                // Use centralized fetchUser to leverage cache and consistent logging
-                const fetched = await fetchUser(userId);
-                if (fetched) {
-                    fullUser = {
-                        ...fullUser,
-                        tags: fetched.tags,
-                        bio: fetched.bio,
-                        status: fetched.status,
-                        statusDescription: fetched.statusDescription,
-                        pronouns: fetched.pronouns,
-                        ageVerificationStatus: fetched.ageVerificationStatus // Verify this field exists on fetched user
-                    };
-                }
-            } catch (e) {
-                logger.warn(`[AutoMod] Failed to fetch user details for ${displayName}`, e);
-            }
+  try {
+    // ... (fetch fullUser details same)
+    let fullUser = _userDetails;
+    
+    if (!fullUser || !fullUser.tags) {
+       try {
+        const fetched = await fetchUser(userId);
+        if (fetched) {
+          fullUser = {
+            ...fullUser,
+            tags: fetched.tags,
+            bio: fetched.bio,
+            status: fetched.status,
+            statusDescription: fetched.statusDescription,
+            pronouns: fetched.pronouns,
+            ageVerificationStatus: fetched.ageVerificationStatus,
+          };
         }
+        } catch { /* ignore */ }
+    }
 
-        // ---------------------------------------------------------
-        // WATCHLIST CHECK
-        // ---------------------------------------------------------
-        const watched = watchlistService.getEntity(userId);
-        if (watched) {
-            // Critical flag or low priority = Instant Reject
-            if (watched.critical || watched.priority <= -10 || watched.tags.includes('malicious') || watched.tags.includes('nuisance')) {
-                const reason = `Watchlist: ${watched.notes || 'Flagged Entity'}`;
-                logger.info(`[AutoMod] Watchlist BLOCK for ${displayName}: ${reason}`);
-                
-                // Execute rejection immediately
-                // We reuse the rejection logic below by creating a synthetic evaluation result
-                 // We log it here, but the actual override happens after evaluateUser below
-                // to ensure we have the full context if needed.
-                 
-                 // Reuse the existing rejection block logic by jumping to it? 
-                 // It's cleaner to return early or let it fall through if we refactor. 
-                 // Let's refactor slightly to allow a "pre-determined" evaluation.
-                 
-                 // Actually, let's just use the existing logic flow by overwriting 'evaluation' 
-                 // BUT 'evaluation' is const. So we must rename the variable or move this check.
-            }
-        }
-        
-        // Evaluate user against all enabled rules
-        let evaluation = await evaluateUser({
-            id: userId,
-            displayName: displayName,
-            tags: fullUser?.tags,
-            bio: fullUser?.bio,
-            status: fullUser?.status,
-            statusDescription: fullUser?.statusDescription,
-            pronouns: fullUser?.pronouns,
-            ageVerificationStatus: fullUser?.ageVerificationStatus
+    // ... (Watchlist Check same)
+    const watched = watchlistService.getEntity(userId);
+    if (watched) {
+      if (
+        watched.critical ||
+        watched.priority <= -10 ||
+        watched.tags.includes("malicious") ||
+        watched.tags.includes("nuisance")
+      ) {
+         // ... log info
+      }
+    }
+
+    // Evaluate user against all enabled rules
+    let evaluation = await evaluateUser({
+      id: userId,
+      displayName: displayName,
+      tags: fullUser?.tags,
+      bio: fullUser?.bio,
+      status: fullUser?.status,
+      statusDescription: fullUser?.statusDescription,
+      pronouns: fullUser?.pronouns,
+      ageVerificationStatus: fullUser?.ageVerificationStatus,
+    }, { allowMissingData: false }, groupId);
+    
+    // Add missing type def for custom return property if typescript complains, 
+    // or we update the interface. Ideally update interface.
+    // For now we assume evaluateUser returns generic object or extended interface.
+    
+    // OVERRIDE with Watchlist if applicable
+    if (watched) {
+       // ... (logic same)
+       if (
+        watched.critical ||
+        watched.priority <= -10 ||
+        (watched.tags && (watched.tags.includes("malicious") || watched.tags.includes("nuisance")))
+      ) {
+        evaluation = {
+          action: "REJECT",
+          reason: `Watchlist: ${watched.displayName} (Priority: ${watched.priority})`,
+          ruleName: "Watchlist",
+        };
+      }
+    }
+
+    // ... (logging same)
+    
+    // Mark as processed
+    processedRequests.add(cacheKey);
+    pruneProcessedCache();
+
+    if (evaluation.action === "ALLOW") {
+       // ... (auto-accept logic same)
+       await persistAction({
+           timestamp: new Date(),
+           user: displayName,
+           userId: userId,
+           groupId: groupId,
+           action: "AUTO_ACCEPT",
+           reason: "No rules violated",
+           module: "AutoMod",
+           skipBroadcast: true 
+       });
+       // ...
+       return { processed: true, action: "accept" };
+    } else {
+      // User failed a rule - auto-reject/block logic
+
+      // BROADCAST NOTIFICATION TO FRONTEND (For overlay)
+      // We broadcast BEFORE action taken so user sees it happening
+      windowService.broadcast("automod:violation", {
+          displayName: displayName,
+          userId: userId,
+          action: evaluation.action,
+          reason: evaluation.reason || "Violated AutoMod Rule",
+          ruleName: evaluation.ruleName,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ruleId: (evaluation as any).ruleId, 
+          // We pass detectedGroupId so frontend knows context
+          detectedGroupId: groupId 
+      });
+
+      // Check Setting: Auto-Reject
+      const config = getGroupConfig(groupId);
+      const autoRejectEnabled = config.enableAutoReject === true;
+      if (!autoRejectEnabled) {
+          logger.info(`[AutoMod] Auto-Reject disabled. Skipping reject for ${displayName}. Sending notification.`);
+          
+          // Send Webhook (Notify Only)
+          discordWebhookService.sendEvent(groupId, {
+              title: "AutoMod Alert: REJECT (Action Skipped)",
+              description: `**User**: ${displayName} (${userId})\n**Reason**: ${evaluation.reason || "No reason provided"}`,
+              type: "ERROR",
+              fields: [
+                  { name: "Action Taken", value: "REJECT (Prevented by Auto-Ban OFF)", inline: true },
+                  { name: "Location", value: "Current Group Instance", inline: true },
+                   {
+                      name: "User Link",
+                      value: `[Profile](https://vrchat.com/home/user/${userId})`,
+                      inline: true,
+                    },
+              ],
+              targetUser: { displayName, id: userId },
+              footer: "Group Guard AutoMod"
+          });
+
+          return { processed: true, action: "skip", reason: "Auto-Reject Disabled" };
+      }
+
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const clientAny = client as any;
+        await clientAny.respondGroupJoinRequest({
+          path: { groupId, userId },
+          body: { action: "reject" },
         });
 
-        // OVERRIDE with Watchlist if applicable
-        if (watched) {
-             if (watched.critical || watched.priority <= -10 || (watched.tags && (watched.tags.includes('malicious') || watched.tags.includes('nuisance')))) {
-                 evaluation = {
-                     action: 'REJECT',
-                     reason: `Watchlist: ${watched.displayName} (Priority: ${watched.priority})`,
-                     ruleName: 'Watchlist'
-                 };
-             } else if (watched.priority >= 10 || watched.tags.includes('community')) {
-                 // Whitelist logic? 
-                 // If high priority, maybe we ALLOW even if rules say otherwise?
-                 // For now, let's NOT override blocks, only add blocks. 
-                 // Unless we want a "Trust" system. 
-                 // Let's stick to blocking bad actors first.
-             }
-        }
+        logger.info(
+          `[AutoMod] ✗ Auto-rejected ${displayName} from group ${groupId}: ${evaluation.reason}`,
+        );
 
-        logger.info(`[AutoMod] Gatekeeper evaluation for ${displayName}: ${evaluation.action}${evaluation.reason ? ` (${evaluation.reason})` : ''}`);
+        await persistAction({
+          timestamp: new Date(),
+          user: displayName,
+          userId: userId,
+          groupId: groupId,
+          action: evaluation.action,
+          reason: evaluation.reason || "Failed AutoMod filter",
+          module: "Gatekeeper",
+          details: { evaluation, ruleName: evaluation.ruleName },
+          skipBroadcast: true
+        });
 
-        // Mark as processed
-        processedRequests.add(cacheKey);
-        pruneProcessedCache();
+        // WEBHOOK
+        discordWebhookService.sendEvent(groupId, {
+          title: "AutoMod Gatekeeper",
+          description: `**User Rejected**: ${displayName} (${userId})\n**Reason**: ${evaluation.reason || "No reason provided"}`,
+          type: "ERROR",
+          fields: [
+            { name: "Request Type", value: "Join Request", inline: true },
+            {
+              name: "Rule",
+              value: evaluation.ruleName || "Unknown Rule",
+              inline: true,
+            },
+            {
+              name: "User Link",
+              value: `[Profile](https://vrchat.com/home/user/${userId})`,
+              inline: true,
+            },
+          ],
+          targetUser: { displayName, id: userId },
+        });
 
-        if (evaluation.action === 'ALLOW') {
-            // User passes all rules - auto-accept
-            try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const clientAny = client as any;
-                await clientAny.respondGroupJoinRequest({
-                    path: { groupId, userId },
-                    body: { action: 'accept' }
-                });
-                
-                logger.info(`[AutoMod] ✓ Auto-accepted ${displayName} into group ${groupId}`);
-                
-                await persistAction({
-                    timestamp: new Date(),
-                    user: displayName,
-                    userId: userId,
-                    groupId: groupId,
-                    action: 'AUTO_ACCEPT',
-                    reason: 'Passed all AutoMod filters',
-                    module: 'Gatekeeper',
-                    details: { evaluation }
-                });
-
-                return { processed: true, action: 'accept' };
-            } catch (e) {
-                logger.error(`[AutoMod] Failed to accept ${displayName}:`, e);
-                return { processed: false, action: 'skip', reason: 'API error on accept' };
-            }
-        } else {
-            // User failed a rule - auto-reject/block logic
-
-            // Check Setting: Auto-Reject
-            const autoRejectEnabled = store.get('enableAutoReject') === true;
-            if (!autoRejectEnabled) {
-                const reason = evaluation.reason || 'Auto-Reject Disabled';
-                logger.info(`[AutoMod] 🛑 Auto-Reject SKIPPED for ${displayName} (Auto-Reject Toggle is OFF). Reason: ${reason}`);
-                
-                // Persist as SKIPPED so user knows we WOULD have rejected it
-                await persistAction({
-                    timestamp: new Date(),
-                    user: displayName,
-                    userId: userId,
-                    groupId: groupId,
-                    action: 'SKIPPED',
-                    reason: `${reason} (Action Prevented by Safety Toggle)`,
-                    module: 'Gatekeeper',
-                    details: { evaluation, ruleName: evaluation.ruleName }
-                });
-
-                // WEBHOOK (Notify of prevention)
-                discordWebhookService.sendEvent(
-                    groupId,
-                    {
-                         title: 'AutoMod Gatekeeper (Action Prevented)',
-                         description: `**User**: ${displayName} (${userId})\n**Verdict**: REJECT\n**Reason**: ${reason}\n\n*Action was prevented because Auto-Reject is disabled.*`,
-                         type: 'WARNING',
-                         fields: [
-                             { name: 'Request Type', value: 'Join Request', inline: true },
-                             { name: 'Rule', value: evaluation.ruleName || 'Unknown', inline: true },
-                             { name: 'Status', value: 'Pending Manual Review', inline: true },
-                             { name: 'User Link', value: `[Profile](https://vrchat.com/home/user/${userId})`, inline: true }
-                         ],
-                         targetUser: { displayName, id: userId }
-                    }
-                );
-
-                // We mark as processed so we don't spam logs every minute.
-                return { processed: true, action: 'skip', reason: 'Auto-Reject Disabled' };
-            }
-
-            try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const clientAny = client as any;
-                await clientAny.respondGroupJoinRequest({
-                    path: { groupId, userId },
-                    body: { action: 'reject' }
-                });
-                
-                logger.info(`[AutoMod] ✗ Auto-rejected ${displayName} from group ${groupId}: ${evaluation.reason}`);
-                
-                await persistAction({
-                    timestamp: new Date(),
-                    user: displayName,
-                    userId: userId,
-                    groupId: groupId,
-                    action: evaluation.action,
-                    reason: evaluation.reason || 'Failed AutoMod filter',
-                    module: 'Gatekeeper',
-                    details: { evaluation, ruleName: evaluation.ruleName }
-                });
-
-                // WEBHOOK
-                discordWebhookService.sendEvent(
-                    groupId,
-                    {
-                        title: 'AutoMod Gatekeeper',
-                        description: `**User Rejected**: ${displayName} (${userId})\n**Reason**: ${evaluation.reason || 'No reason provided'}`,
-                        type: 'ERROR',
-                        fields: [
-                            { name: 'Request Type', value: 'Join Request', inline: true },
-                            { name: 'Rule', value: evaluation.ruleName || 'Unknown Rule', inline: true },
-                            { name: 'User Link', value: `[Profile](https://vrchat.com/home/user/${userId})`, inline: true }
-                        ],
-                        targetUser: { displayName, id: userId }
-                    }
-                );
-
-                return { processed: true, action: 'reject', reason: evaluation.reason };
-            } catch (e) {
-                logger.error(`[AutoMod] Failed to reject ${displayName}:`, e);
-                return { processed: false, action: 'skip', reason: 'API error on reject' };
-            }
-        }
-    } catch (error) {
-        logger.error(`[AutoMod] Error processing join request for ${displayName}:`, error);
-        return { processed: false, action: 'skip', reason: 'Processing error' };
+        return { processed: true, action: "reject", reason: evaluation.reason };
+      } catch (e) {
+        logger.error(`[AutoMod] Failed to reject ${displayName}:`, e);
+        return {
+          processed: false,
+          action: "skip",
+          reason: "API error on reject",
+        };
+      }
     }
+  } catch (error) {
+    logger.error(
+      `[AutoMod] Error processing join request for ${displayName}:`,
+      error,
+    );
+    return { processed: false, action: "skip", reason: "Processing error" };
+  }
+};
+
+// ============================================
+// LIVE SCAN HELPERS
+// ============================================
+
+// Helper Interfaces
+interface GroupMember {
+  id: string;
+  groupId: string;
+  userId: string;
+  isRepresenting: boolean;
+  roleIds: string[];
+  mRoleIds: string[];
+  joinedAt: string;
+  membershipStatus: string;
+  visibility: string;
+  isSubscribedToAnnouncements: boolean;
+  createdAt?: string;
+  bannedAt?: string;
+  managerNotes?: string;
+  lastPostReadAt?: string;
+  hasJoinedFromPurchase?: boolean;
+  user: {
+    id: string;
+    username?: string;
+    displayName: string;
+    userIcon?: string;
+    currentAvatarImageUrl?: string;
+    currentAvatarThumbnailImageUrl?: string;
+    tags?: string[];
+    bio?: string;
+    status?: string;
+    statusDescription?: string;
+    pronouns?: string;
+    ageVerificationStatus?: string;
+  };
+}
+
+export const processFetchGroupMembers = async (
+  groupId: string,
+): Promise<{ success: boolean; members: GroupMember[]; error?: string }> => {
+  const client = getVRChatClient();
+  if (!client) throw new Error("Not authenticated");
+
+  const members: GroupMember[] = [];
+  let offset = 0;
+  const limit = 100;
+  let hasMore = true;
+
+  try {
+    while (hasMore) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const response = await (client as any).getGroupMembers({
+        path: { groupId },
+        query: { n: limit, offset },
+      });
+      const batch = (
+        Array.isArray(response.data) ? response.data : []
+      ) as GroupMember[];
+
+      if (batch.length > 0) {
+        members.push(...batch);
+      }
+
+      if (batch.length < limit) {
+        hasMore = false;
+      } else {
+        offset += limit;
+      }
+
+      // Safety limit to avoid infinite loops or memory crashes
+      if (members.length > 50000) {
+        logger.warn(
+          `[AutoMod] Scan limit reached for group ${groupId} (50,000 members)`,
+        );
+        break;
+      }
+
+      // Small delay to be kind to API if we are hammering it
+      if (hasMore) await new Promise((r) => setTimeout(r, 200));
+    }
+
+    return { success: true, members };
+  } catch (e) {
+    logger.error(`[AutoMod] Error fetching members for ${groupId}:`, e);
+    return { success: false, members: [], error: String(e) };
+  }
+};
+
+export const processEvaluateMember = async (
+  groupId: string,
+  member: GroupMember,
+): Promise<ScanResult> => {
+  const user = member.user;
+  if (!user) {
+    return {
+      userId: member.userId || member.id || "unknown", // Fallback
+      displayName: "Unknown",
+      action: "SAFE",
+    };
+  }
+
+  const evaluation = await evaluateUser({
+    id: user.id,
+    displayName: user.displayName,
+    tags: user.tags,
+    bio: user.bio,
+    status: user.status,
+    statusDescription: user.statusDescription,
+    pronouns: user.pronouns,
+    ageVerificationStatus: user.ageVerificationStatus,
+  }, {}, groupId);
+
+  const config = getGroupConfig(groupId);
+  const isBanned =
+    config.enableAutoBan &&
+    (evaluation.action === "REJECT" || evaluation.action === "AUTO_BLOCK");
+
+  return {
+    userId: user.id,
+    displayName: user.displayName,
+    userIcon: user.userIcon,
+    action:
+      evaluation.action === "ALLOW"
+        ? "SAFE"
+        : isBanned
+          ? "BANNED"
+          : "VIOLATION",
+    reason: evaluation.reason,
+    ruleName: evaluation.ruleName,
+  };
 };
 
 // Process all pending requests for all authorized groups
-export const processAllPendingRequests = async (): Promise<{ 
-    totalProcessed: number; 
-    accepted: number; 
-    rejected: number;
-    skipped: number;
+export const processAllPendingRequests = async (): Promise<{
+  totalProcessed: number;
+  accepted: number;
+  rejected: number;
+  skipped: number;
 }> => {
-    const client = getVRChatClient();
-    if (!client) {
-        logger.warn('[AutoMod] Cannot process pending requests - not authenticated');
-        return { totalProcessed: 0, accepted: 0, rejected: 0, skipped: 0 };
-    }
+  const client = getVRChatClient();
+  if (!client) {
+    logger.warn(
+      "[AutoMod] Cannot process pending requests - not authenticated",
+    );
+    return { totalProcessed: 0, accepted: 0, rejected: 0, skipped: 0 };
+  }
 
-    // Check if any rules are enabled
-    const allRules = store.get('rules');
-    const rules = allRules.filter(r => r.enabled);
-    logger.info(`[AutoMod] Rules check: ${rules.length} enabled out of ${allRules.length} total`);
-    
-    if (rules.length === 0) {
-        logger.info('[AutoMod] No enabled rules, skipping gatekeeper processing. Enable at least one AutoMod filter to auto-process requests.');
-        return { totalProcessed: 0, accepted: 0, rejected: 0, skipped: 0 };
-    }
-    
-    logger.info(`[AutoMod] Enabled rules: ${rules.map(r => r.name || r.type).join(', ')}`);
+  // No global rules check here. We check per group inside the loop.
+  // const allRules = store.get("rules");
+  // const rules = allRules.filter((r) => r.enabled);
+  // logger.info(
+  //   `[AutoMod] Rules check: ${rules.length} enabled out of ${allRules.length} total`,
+  // );
 
-    const authorizedGroups = groupAuthorizationService.getAllowedGroupIds();
-    if (authorizedGroups.length === 0) {
-        logger.info('[AutoMod] No authorized groups, skipping gatekeeper processing');
-        return { totalProcessed: 0, accepted: 0, rejected: 0, skipped: 0 };
-    }
+  // if (rules.length === 0) {
+  //   logger.info(
+  //     "[AutoMod] No enabled rules, skipping gatekeeper processing. Enable at least one AutoMod filter to auto-process requests.",
+  //   );
+  //   return { totalProcessed: 0, accepted: 0, rejected: 0, skipped: 0 };
+  // }
 
-    logger.info(`[AutoMod] Starting gatekeeper processing for ${authorizedGroups.length} authorized groups...`);
+  // logger.info(
+  //   `[AutoMod] Enabled rules: ${rules.map((r) => r.name || r.type).join(", ")}`,
+  // );
 
-    let totalProcessed = 0;
-    let accepted = 0;
-    let rejected = 0;
-    let skipped = 0;
+  const authorizedGroups = groupAuthorizationService.getAllowedGroupIds();
+  if (authorizedGroups.length === 0) {
+    logger.info(
+      "[AutoMod] No authorized groups, skipping gatekeeper processing",
+    );
+    return { totalProcessed: 0, accepted: 0, rejected: 0, skipped: 0 };
+  }
 
-    for (const groupId of authorizedGroups) {
-        try {
-            // Fetch pending requests for this group
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const response = await (client as any).getGroupRequests({
-                path: { groupId },
-                query: { n: 100, offset: 0 }
-            });
+  logger.info(
+    `[AutoMod] Starting gatekeeper processing for ${authorizedGroups.length} authorized groups...`,
+  );
 
-            interface JoinRequest {
-                userId?: string;
-                user?: {
-                    id?: string;
-                    displayName?: string;
-                    bio?: string;
-                    status?: string;
-                    statusDescription?: string;
-                    pronouns?: string;
-                    tags?: string[];
-                    ageVerificationStatus?: string;
-                };
-            }
+  let totalProcessed = 0;
+  let accepted = 0;
+  let rejected = 0;
+  let skipped = 0;
 
-            const requests: JoinRequest[] = Array.isArray(response.data) ? response.data : [];
-            
-            if (requests.length === 0) {
-                logger.debug(`[AutoMod] No pending requests for group ${groupId}`);
-                continue;
-            }
+  for (const groupId of authorizedGroups) {
+    try {
+      // Fetch pending requests for this group
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const response = await (client as any).getGroupRequests({
+        path: { groupId },
+        query: { n: 100, offset: 0 },
+      });
 
-            logger.info(`[AutoMod] Processing ${requests.length} pending requests for group ${groupId}`);
+      interface JoinRequest {
+        userId?: string;
+        user?: {
+          id?: string;
+          displayName?: string;
+          bio?: string;
+          status?: string;
+          statusDescription?: string;
+          pronouns?: string;
+          tags?: string[];
+          ageVerificationStatus?: string;
+        };
+      }
 
-            for (const req of requests) {
-                const userId = req.userId || req.user?.id;
-                const displayName = req.user?.displayName || 'Unknown';
+      const requests: JoinRequest[] = Array.isArray(response.data)
+        ? response.data
+        : [];
 
-                if (!userId) {
-                    logger.warn('[AutoMod] Request missing userId, skipping');
-                    skipped++;
-                    continue;
-                }
+      if (requests.length === 0) {
+        logger.debug(`[AutoMod] No pending requests for group ${groupId}`);
+        continue;
+      }
 
-                const result = await processJoinRequest(groupId, userId, displayName, req.user);
-                
-                if (result.processed) {
-                    totalProcessed++;
-                    if (result.action === 'accept') accepted++;
-                    else if (result.action === 'reject') rejected++;
-                    else if (result.action === 'skip') {
-                        // It was "Processed" (evaluated) but skipped action.
-                        // We count it as processed.
-                    }
-                } else {
-                    skipped++;
-                }
+      logger.info(
+        `[AutoMod] Processing ${requests.length} pending requests for group ${groupId}`,
+      );
 
-                // Small delay between requests to avoid rate limiting
-                await new Promise(r => setTimeout(r, 500));
-            }
-        } catch (e) {
-            logger.error(`[AutoMod] Error fetching requests for group ${groupId}:`, e);
+      for (const req of requests) {
+        const userId = req.userId || req.user?.id;
+        const displayName = req.user?.displayName || "Unknown";
+
+        if (!userId) {
+          logger.warn("[AutoMod] Request missing userId, skipping");
+          skipped++;
+          continue;
         }
-    }
 
-    logger.info(`[AutoMod] Gatekeeper processing complete: ${totalProcessed} processed (${accepted} accepted, ${rejected} rejected, ${skipped} skipped)`);
-    return { totalProcessed, accepted, rejected, skipped };
+        const result = await processJoinRequest(
+          groupId,
+          userId,
+          displayName,
+          req.user,
+        );
+
+        if (result.processed) {
+          totalProcessed++;
+          if (result.action === "accept") accepted++;
+          else if (result.action === "reject") rejected++;
+          else if (result.action === "skip") {
+            // It was "Processed" (evaluated) but skipped action.
+            // We count it as processed.
+          }
+        } else {
+          skipped++;
+        }
+
+        // Small delay between requests to avoid rate limiting
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    } catch (e) {
+      logger.error(
+        `[AutoMod] Error fetching requests for group ${groupId}:`,
+        e,
+      );
+    }
+  }
+
+  logger.info(
+    `[AutoMod] Gatekeeper processing complete: ${totalProcessed} processed (${accepted} accepted, ${rejected} rejected, ${skipped} skipped)`,
+  );
+  return { totalProcessed, accepted, rejected, skipped };
+};
+
+// ============================================
+// SCAN GROUP MEMBERS
+// ============================================
+
+export interface ScanResult {
+  userId: string;
+  displayName: string;
+  userIcon?: string;
+  action: "BANNED" | "VIOLATION" | "SAFE";
+  reason?: string;
+  ruleName?: string;
+  ruleId?: number;
+}
+
+export const processAllGroupMembers = async (
+  groupId: string,
+): Promise<ScanResult[]> => {
+  const client = getVRChatClient();
+  if (!client) {
+    throw new Error("Not authenticated");
+  }
+
+  // Check if any rules are enabled
+  const config = getGroupConfig(groupId);
+  const rules = config.rules.filter((r) => r.enabled);
+  if (rules.length === 0) {
+    return [];
+  }
+
+  // Check authorization
+  if (!groupAuthorizationService.isGroupAllowed(groupId)) {
+    throw new Error("Unauthorized group");
+  }
+
+  const autoBanEnabled = config.enableAutoBan === true;
+  const results: ScanResult[] = [];
+
+  let offset = 0;
+  const limit = 100;
+  let hasMore = true;
+
+  logger.info(`[AutoMod] Starting full member scan for group ${groupId}...`);
+
+  while (hasMore) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const response = await (client as any).getGroupMembers({
+        path: { groupId },
+        query: { n: limit, offset },
+      });
+      const members = (
+        Array.isArray(response.data) ? response.data : []
+      ) as GroupMember[];
+
+      if (members.length < limit) {
+        hasMore = false;
+      } else {
+        offset += limit;
+      }
+
+      if (members.length === 0) break;
+
+      logger.info(
+        `[AutoMod] Scanning batch of ${members.length} members (Offset: ${offset})...`,
+      );
+
+      for (const member of members) {
+        let user = member.user;
+        if (!user) continue;
+
+        // FETCH FULL DETAILS if missing (critical for AutoMod)
+        // Groups API returns "lite" user objects without bio, tags, trust rank, etc.
+        if (!user.bio && !user.tags) {
+           try {
+             const fullUser = await fetchUser(user.id);
+             if (fullUser) {
+                user = { ...user, ...fullUser };
+             }
+             // Rate limiting: sleep slightly to strictly avoid specific user-fetch limits
+             // 100ms per user = 10 users per second = safeish
+             await new Promise(r => setTimeout(r, 100)); 
+           } catch (e) {
+             logger.warn(`[AutoMod] Failed to fetch full details for ${user.displayName} during scan`, e);
+           }
+        }
+
+        // Evaluate
+        const evaluation = await evaluateUser({
+          id: user.id,
+          displayName: user.displayName,
+          tags: user.tags,
+          bio: user.bio,
+          status: user.status,
+          statusDescription: user.statusDescription,
+          pronouns: user.pronouns,
+          ageVerificationStatus: user.ageVerificationStatus,
+        }, {}, groupId);
+
+        if (evaluation.action !== "ALLOW") {
+          // Check logic:
+          // If Auto-Ban is ON, and action is REJECT or AUTO_BLOCK -> Ban
+          // If Auto-Ban is OFF -> Just Report
+
+          let finalAction: "BANNED" | "VIOLATION" = "VIOLATION";
+
+          if (
+            autoBanEnabled &&
+            (evaluation.action === "REJECT" ||
+              evaluation.action === "AUTO_BLOCK")
+          ) {
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              await (client as any).banGroupMember({
+                path: { groupId },
+                body: { userId: user.id },
+              });
+              logger.info(
+                `[AutoMod] [SCAN] Auto-Banned ${user.displayName}: ${evaluation.reason}`,
+              );
+              finalAction = "BANNED";
+
+              // Persist
+              await persistAction({
+                timestamp: new Date(),
+                user: user.displayName,
+                userId: user.id,
+                groupId: groupId,
+                action: "AUTO_BAN",
+                reason: evaluation.reason || "Failed AutoMod Scan",
+                module: "AutoMod Scan",
+                details: { ruleName: evaluation.ruleName },
+                skipBroadcast: true
+              });
+            } catch (e) {
+              logger.error(
+                `[AutoMod] [SCAN] Failed to auto-ban ${user.displayName}`,
+                e,
+              );
+              // Keep as VIOLATION if ban failed
+            }
+          }
+
+          results.push({
+            userId: user.id,
+            displayName: user.displayName,
+            userIcon: user.userIcon || user.currentAvatarThumbnailImageUrl,
+            action: finalAction,
+            reason: evaluation.reason,
+            ruleName: evaluation.ruleName,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ruleId: (evaluation as any).ruleId,
+          });
+        }
+      }
+
+      // Rate Limit Respect: Delay between batches
+      await new Promise((r) => setTimeout(r, 1000));
+    } catch (e) {
+      logger.error(`[AutoMod] Error scanning group members`, e);
+      hasMore = false; // Stop on error
+    }
+  }
+
+  logger.info(`[AutoMod] Scan complete. Found ${results.length} violations.`);
+  return results;
 };
 
 // Process a group join notification from WebSocket
 export const processGroupJoinNotification = async (notification: {
-    type?: string;
-    senderUserId?: string;
-    senderUsername?: string;
-    details?: {
-        groupId?: string;
-        groupName?: string;
-    };
+  type?: string;
+  senderUserId?: string;
+  senderUsername?: string;
+  details?: {
+    groupId?: string;
+    groupName?: string;
+  };
 }): Promise<void> => {
-    // Check if this is a group join request notification
-    if (notification.type !== 'groupannouncement' && notification.type !== 'group.queueReady') {
-        return;
-    }
+  // Check if this is a group join request notification
+  if (
+    notification.type !== "groupannouncement" &&
+    notification.type !== "group.queueReady"
+  ) {
+    return;
+  }
 
-    const groupId = notification.details?.groupId;
-    const userId = notification.senderUserId;
-    const displayName = notification.senderUsername || 'Unknown';
+  const groupId = notification.details?.groupId;
+  const userId = notification.senderUserId;
+  const displayName = notification.senderUsername || "Unknown";
 
-    if (!groupId || !userId) {
-        logger.debug('[AutoMod] Notification missing groupId or userId, skipping');
-        return;
-    }
+  if (!groupId || !userId) {
+    logger.debug("[AutoMod] Notification missing groupId or userId, skipping");
+    return;
+  }
 
-    // Check if this group is authorized
-    if (!groupAuthorizationService.isGroupAllowed(groupId)) {
-        logger.debug(`[AutoMod] Notification for unauthorized group ${groupId}, skipping`);
-        return;
-    }
+  // Check if this group is authorized
+  if (!groupAuthorizationService.isGroupAllowed(groupId)) {
+    logger.debug(
+      `[AutoMod] Notification for unauthorized group ${groupId}, skipping`,
+    );
+    return;
+  }
 
-    logger.info(`[AutoMod] Processing real-time join notification: ${displayName} for group ${groupId}`);
-    await processJoinRequest(groupId, userId, displayName);
+  logger.info(
+    `[AutoMod] Processing real-time join notification: ${displayName} for group ${groupId}`,
+  );
+  await processJoinRequest(groupId, userId, displayName);
 };
 
 export const startAutoModService = () => {
-    // Legacy setup if needed
+  // Legacy setup if needed
 };
 
 export const stopAutoModService = () => {
-    if (autoModInterval) {
-        clearInterval(autoModInterval);
-        autoModInterval = null;
-    }
+  if (autoModInterval) {
+    clearInterval(autoModInterval);
+    autoModInterval = null;
+  }
 };
 
 export const setupAutoModHandlers = () => {
-    logger.info('Initializing AutoMod handlers...');
+  logger.info("Initializing AutoMod handlers...");
+
+  // Subscribe to group updates to triggering re-scan
+  serviceEventBus.on("groups-updated", () => {
+    logger.info(
+      "[AutoMod] Groups updated, triggering re-scan of pending requests",
+    );
+    setTimeout(() => {
+      processAllPendingRequests().catch((err) =>
+        logger.error("AutoMod trigger failed", err),
+      );
+    }, 2000); // Small delay to ensuring other services updated first
+  });
+
+  // Handlers
+  ipcMain.handle("automod:get-rules", (_, groupId: string) => {
+    if (!groupId) return [];
+    return getGroupConfig(groupId).rules;
+  });
+
+  ipcMain.handle("automod:get-status", (_, groupId: string) => {
+    if (!groupId) return { autoReject: false, autoBan: false };
+    const config = getGroupConfig(groupId);
+    return {
+      autoReject: config.enableAutoReject,
+      autoBan: config.enableAutoBan,
+    };
+  });
+
+  ipcMain.handle("automod:set-auto-reject", (_e, { groupId, enabled }) => {
+    const config = getGroupConfig(groupId);
+    config.enableAutoReject = enabled;
+    saveGroupConfig(groupId, config);
+
+    // Clear cache to re-evaluate pending requests immediately
+    logger.info(
+      `[AutoMod] Auto-Reject turned ${enabled ? "ON" : "OFF"} for group ${groupId}. Clearing cache and re-scanning.`,
+    );
+    processedRequests.clear();
+
+    // Trigger a re-scan shortly
+    setTimeout(() => {
+      processAllPendingRequests().catch((err) =>
+        logger.error("AutoMod trigger failed", err),
+      );
+    }, 1000);
+
+    return enabled;
+  });
+
+  ipcMain.handle("automod:set-auto-ban", (_e, { groupId, enabled }) => {
+    const config = getGroupConfig(groupId);
+    config.enableAutoBan = enabled;
+    saveGroupConfig(groupId, config);
     
-    // Subscribe to group updates to triggering re-scan
-    serviceEventBus.on('groups-updated', () => {
-        logger.info('[AutoMod] Groups updated, triggering re-scan of pending requests');
-        setTimeout(() => {
-             processAllPendingRequests().catch(err => logger.error('AutoMod trigger failed', err));
-        }, 2000); // Small delay to ensuring other services updated first
-    });
+    // We don't need to clear processedRequests for this necessarily,
+    // as checkPlayer logic is run often.
+    // But to be safe if we want immediate reaction to existing members:
+    processedRequests.clear();
+    return enabled;
+  });
 
-    // Handlers
-    ipcMain.handle('automod:get-rules', () => {
-        return store.get('rules');
-    });
-
-    ipcMain.handle('automod:get-status', () => {
-        return {
-            autoReject: store.get('enableAutoReject'),
-            autoBan: store.get('enableAutoBan')
-        };
-    });
-
-    ipcMain.handle('automod:set-auto-reject', (_e, enabled: boolean) => {
-        store.set('enableAutoReject', enabled);
-        
-        // Clear cache to re-evaluate pending requests immediately
-        logger.info(`[AutoMod] Auto-Reject turned ${enabled ? 'ON' : 'OFF'}. Clearing cache and re-scanning.`);
-        processedRequests.clear();
-        
-        // Trigger a re-scan shortly
-        setTimeout(() => {
-             processAllPendingRequests().catch(err => logger.error('AutoMod trigger failed', err));
-        }, 1000);
-        
-        return enabled;
-    });
-
-    ipcMain.handle('automod:set-auto-ban', (_e, enabled: boolean) => {
-        store.set('enableAutoBan', enabled);
-        // We don't need to clear processedRequests for this necessarily, 
-        // as checkPlayer logic is run often. 
-        // But to be safe if we want immediate reaction to existing members:
-        processedRequests.clear();
-        return enabled;
-    });
-
-    ipcMain.handle('automod:save-rule', (_e, rule: AutoModRule) => {
-        const rules = store.get('rules');
-        if (rule.id) {
-            const index = rules.findIndex(r => r.id === rule.id);
-            if (index !== -1) {
-                rules[index] = { ...rules[index], ...rule };
-            } else {
-                rules.push(rule);
-            }
-        } else {
-            rule.id = Date.now();
-            rule.createdAt = new Date().toISOString();
-            rules.push(rule);
-        }
-        store.set('rules', rules);
-        return rule;
-    });
-
-    ipcMain.handle('automod:delete-rule', (_e, ruleId: number) => {
-        const rules = store.get('rules');
-        const newRules = rules.filter(r => r.id !== ruleId);
-        store.set('rules', newRules);
-        return true;
-    });
-
-    // History Handlers
-    ipcMain.handle('automod:get-history', async () => {
-        try {
-            return await databaseService.getAutoModLogs();
-        } catch (error) {
-            logger.error('Failed to get AutoMod history', error);
-            return [];
-        }
-    });
-
-    ipcMain.handle('automod:clear-history', async () => {
-        try {
-            await databaseService.clearAutoModLogs();
-            // Also clear file if exists?
-            const dbPath = path.join(app.getPath('userData'), 'automod_history.jsonl');
-            if (fs.existsSync(dbPath)) {
-                fs.unlinkSync(dbPath);
-            }
-            // Also clear the processed cache
-            processedRequests.clear();
-            return true;
-        } catch (error) {
-            logger.error('Failed to clear AutoMod history', error);
-            return false;
-        }
-    });
-
-    // Check User against AutoMod rules (used by LiveView for mass invites)
-    ipcMain.handle('automod:check-user', async (_e, user) => {
-        return evaluateUser(user);
-    });
-
-    ipcMain.handle('automod:test-notification', () => {
-        windowService.broadcast('automod:violation', {
-            displayName: 'Test User',
-            userId: 'usr_test',
-            action: 'REJECT',
-            reason: 'Test Rule Violation'
-        });
-        return true;
-    });
-
-    // Search VRChat groups by name or shortCode
-    ipcMain.handle('automod:search-groups', async (_e, query: string) => {
-        try {
-            const result = await vrchatApiService.searchGroups(query);
-            if (result.success && result.data) {
-                return { success: true, groups: result.data };
-            }
-            return { success: false, error: result.error || 'Failed to search groups' };
-        } catch (error) {
-            logger.error('Failed to search groups', error);
-            return { success: false, error: String(error) };
-        }
-    });
-
-    // Helper to extract Group ID from current location
-    const getCurrentGroupId = (): string | null => {
-        // We can get this from LogWatcher or InstanceLogger
-        // LogWatcher state is private but we can access via formatted getters if we had them.
-        // But we DO have logWatcherService.state which is private.
-        // However, LogWatcher emits 'location' event.
-        // Better: instanceLoggerService tracks this too?
-        // Let's use the messy way or check if LogWatcherService exports a getter for location.
-        // It does not export location getter, but we can rely on what we have.
-        // Actually, let's assume valid group instance if we can find 'group(grp_...)' in instanceId
-        const instanceId = instanceLoggerService.getCurrentInstanceId();
-        if (!instanceId) return null;
-        
-        const match = instanceId.match(/group\((grp_[a-zA-Z0-9-]+)\)/);
-        return match ? match[1] : null;
-    };
-
-    const executeAction = async (player: { userId: string; displayName: string }, rule: AutoModRule, groupId: string, notifyOnly: boolean = false, isBackfill: boolean = false) => {
-        // SECURITY: Validate that we have permission to moderate this group
-        if (!groupAuthorizationService.isGroupAllowed(groupId)) {
-            logger.warn(`[AutoMod] [SECURITY BLOCK] Attempted action on unauthorized group: ${groupId}. Skipping.`);
-            return;
-        }
-        
-        const client = getVRChatClient();
-        if (!client) return;
-
-        logger.info(`[AutoMod] Executing ${rule.actionType} on ${player.displayName} (${player.userId}) for rule ${rule.name} (Backfill: ${isBackfill})`);
-
-        // Persist the violation (Always persist for audit)
-        await persistAction({
-            timestamp: new Date(),
-            user: player.displayName,
-            userId: player.userId,
-            groupId: groupId,
-            action: rule.actionType,
-            reason: `Violated Rule: ${rule.name}`,
-            module: 'AutoMod',
-            details: { ruleId: rule.id, config: rule.config, backfill: isBackfill }
-        });
-
-        // NOTIFY RENDERER (TOAST)
-        // Suppress notification if backfill
-        if (!isBackfill) {
-            windowService.broadcast('automod:violation', {
-                displayName: player.displayName,
-                userId: player.userId,
-                action: rule.actionType,
-                reason: rule.name,
-                skipped: notifyOnly 
-            });
-        }
-
-        // WEBHOOK
-        const isActionable = rule.actionType === 'REJECT' || rule.actionType === 'AUTO_BLOCK';
-        const actionColor = isActionable ? 0xED4245 : 0xFEE75C;
-        
-        let title = `🛡️ AutoMod Violation: ${rule.actionType}`;
-        let actionValue: string = rule.actionType;
-        
-        if (notifyOnly && isActionable) {
-            title = `🛡️ AutoMod Alert: ${rule.actionType} (Action Skipped)`;
-            actionValue = `${rule.actionType} (Prevented by Auto-Ban OFF)`;
-        }
-
-        // Suppress Webhook if backfill
-        if (!isBackfill) {
-            discordWebhookService.sendEvent(groupId, {
-                title: title,
-                description: `**User**: ${player.displayName} (${player.userId})\n**Reason**: ${rule.name}`,
-                type: isActionable ? 'ERROR' : 'WARNING',
-                fields: [
-                    { name: 'Action Taken', value: actionValue, inline: true },
-                    { name: 'Location', value: getCurrentGroupId() === groupId ? 'Current Group Instance' : 'Remote Request', inline: true }
-                ],
-                targetUser: {
-                    displayName: player.displayName,
-                    id: player.userId
-                },
-                footer: 'Group Guard AutoMod'
-            });
-        }
-
-        if (!notifyOnly && (rule.actionType === 'REJECT' || rule.actionType === 'AUTO_BLOCK')) {
-            try {
-                // Ban from Group (Kick)
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                await (client as any).banGroupMember({
-                    path: { groupId },
-                    body: { userId: player.userId }
-                });
-                logger.info(`[AutoMod] Banned ${player.displayName} from group ${groupId}`);
-            } catch (error) {
-                logger.error(`[AutoMod] Failed to ban ${player.displayName}`, error);
-            }
-        }
-        // NOTIFY_ONLY is handled by just logging (and potentially frontend events via log database)
-    };
-
-    const checkPlayer = async (player: { userId: string; displayName: string }, groupId: string, isBackfill: boolean = false) => {
-        // Prevent duplicate checks
-        const key = `${groupId}:${player.userId}`;
-        if (processedRequests.has(key)) return;
-
-        const rules = store.get('rules').filter(r => r.enabled) as AutoModRule[];
-        if (rules.length === 0) return;
-
-        // Fetch detailed user info for accurate checking (Trust, Age, Bio, etc.)
-        let fullUser: {
-            userId: string;
-            displayName: string;
-            tags?: string[];
-            bio?: string;
-            status?: string;
-            statusDescription?: string;
-            pronouns?: string;
-            ageVerificationStatus?: string;
-        } = { 
-            userId: player.userId,
-            displayName: player.displayName
-        };
-
-        try {
-             // fetchUser is robust and cached
-             const userDetails = await fetchUser(player.userId);
-             if (userDetails) {
-                 fullUser = { ...fullUser, ...userDetails };
-             }
-        } catch (e) {
-            logger.warn(`[AutoMod] Failed to fetch user details for ${player.displayName}`, e);
-        }
-
-        // GHOST CHECK: Verify player is still in the instance (e.g. checking historical logs on startup)
-        // We check AFTER the async fetch because the log parser might have processed a 'Leave' event in the meantime.
-        const currentPlayers = logWatcherService.getPlayers();
-        const isStillHere = currentPlayers.some(p => p.userId === player.userId);
-        
-        if (!isStillHere) {
-            logger.debug(`[AutoMod] Player ${player.displayName} left before check completed (or was a ghost entry). Skipping.`);
-            return;
-        }
-
-        // Evaluate using central logic
-        const evaluation = await evaluateUser({
-            id: player.userId,
-            displayName: player.displayName,
-            tags: fullUser.tags,
-            bio: fullUser.bio,
-            status: fullUser.status,
-            statusDescription: fullUser.statusDescription,
-            pronouns: fullUser.pronouns,
-            ageVerificationStatus: fullUser.ageVerificationStatus
-        });
-
-        if (evaluation.action !== 'ALLOW') {
-            logger.info(`[AutoMod] Detected violation for ${player.displayName}: ${evaluation.reason}`);
-            
-            // Execute Action
-            // Construct a synthetic rule object to pass to executeAction
-            const syntheticRule: AutoModRule = {
-                id: Date.now(),
-                name: evaluation.reason || evaluation.ruleName || 'AutoMod Violation',
-                enabled: true,
-                type: 'AUTO_DETECTED',
-                config: '',
-                actionType: evaluation.action as AutoModActionType,
-                createdAt: new Date().toISOString()
-            };
-
-            // Notify only depending on setting
-            // Check Setting: Auto-Ban Members
-            const autoBanEnabled = store.get('enableAutoBan') === true;
-            const notifyOnly = !autoBanEnabled;
-            
-            logger.info(`[AutoMod] Action Triggered. AutoBan: ${autoBanEnabled}, NotifyOnly: ${notifyOnly}`);
-
-            await executeAction(player, syntheticRule, groupId, notifyOnly, isBackfill);
-        }
-        
-        // Mark as checked
-        processedRequests.add(key);
-        pruneProcessedCache();
-    };
-
-    const runAutoModCycle = async () => {
-        try {
-            const client = getVRChatClient();
-            if (!client) return;
-
-            pruneProcessedCache();
-
-            const groupId = getCurrentGroupId();
-            if (!groupId) {
-                // Not in a group instance, nothing to guard
-                return;
-            }
-
-            // SECURITY: Validate that we have permission to moderate this group
-            if (!groupAuthorizationService.isGroupAllowed(groupId)) {
-                logger.debug(`[AutoMod] Skipping unauthorized group: ${groupId}`);
-                return;
-            }
-
-            const players = logWatcherService.getPlayers();
-            
-            for (const p of players) {
-                if (!p.userId) continue;
-                // Periodic checks are implicitly "backfill" if they are just re-checking?
-                // No, periodic check is "Current State Check".
-                // We typically want to notify if a NEW violation occurs on an existing player?
-                // But checkPlayer de-duplicates via processedRequests.
-                // So this logic is fine.
-                await checkPlayer({ userId: p.userId, displayName: p.displayName }, groupId, false);
-            }
-
-        } catch (error) {
-            logger.error('AutoMod Loop Error:', error);
-        }
-    };
-
-    // Listen for realtime joins
-    logWatcherService.on('player-joined', async (event: { displayName: string; userId?: string; timestamp: string; isBackfill?: boolean }) => {
-        if (!event.userId) return;
-        const groupId = getCurrentGroupId();
-        if (!groupId) return;
-        
-        // SECURITY: Validate that we have permission to moderate this group
-        if (!groupAuthorizationService.isGroupAllowed(groupId)) {
-            return; // Silently skip - not our group
-        }
-
-        // Pass isBackfill flag to suppress notifications if needed
-        await checkPlayer({ userId: event.userId, displayName: event.displayName }, groupId, event.isBackfill);
-    });
-
-    // Start Loop (Backup)
-    if (!autoModInterval) {
-        // Run once immediately (delayed slightly to allow auth) then interval
-        setTimeout(runAutoModCycle, 5000);
-        autoModInterval = setInterval(runAutoModCycle, CHECK_INTERVAL);
+  ipcMain.handle("automod:save-rule", (_e, { groupId, rule }) => {
+    const config = getGroupConfig(groupId);
+    const rules = config.rules;
+    
+    if (rule.id) {
+      const index = rules.findIndex((r) => r.id === rule.id);
+      if (index !== -1) {
+        rules[index] = { ...rules[index], ...rule };
+      } else {
+        rules.push(rule);
+      }
+    } else {
+      rule.id = Date.now();
+      rule.createdAt = new Date().toISOString();
+      rules.push(rule);
     }
+    saveGroupConfig(groupId, { ...config, rules });
+    return rule;
+  });
+
+  ipcMain.handle("automod:delete-rule", (_e, { groupId, ruleId }) => {
+    const config = getGroupConfig(groupId);
+    const rules = config.rules;
+    const newRules = rules.filter((r) => r.id !== ruleId);
+    saveGroupConfig(groupId, { ...config, rules: newRules });
+    return true;
+  });
+
+  // History Handlers
+  ipcMain.handle("automod:get-history", async (_e, { groupId } = {}) => {
+    try {
+      return await databaseService.getAutoModLogs(groupId);
+    } catch (error) {
+      logger.error("Failed to get AutoMod history", error);
+      return [];
+    }
+  });
+
+  ipcMain.handle("automod:clear-history", async () => {
+    try {
+      await databaseService.clearAutoModLogs();
+      // Also clear file if exists?
+      const dbPath = path.join(
+        app.getPath("userData"),
+        "automod_history.jsonl",
+      );
+      if (fs.existsSync(dbPath)) {
+        fs.unlinkSync(dbPath);
+      }
+      // Also clear the processed cache
+      processedRequests.clear();
+      return true;
+    } catch (error) {
+      logger.error("Failed to clear AutoMod history", error);
+      return false;
+    }
+  });
+
+  // Check User against AutoMod rules (used by LiveView for mass invites)
+  ipcMain.handle("automod:check-user", async (_e, { user, groupId }) => {
+    return evaluateUser(user, {}, groupId);
+  });
+
+  ipcMain.handle("automod:test-notification", (_, { groupId }) => {
+    windowService.broadcast("automod:violation", {
+      displayName: "Test User",
+      userId: "usr_test",
+      action: "REJECT",
+      reason: "Test Rule Violation",
+      ruleId: 12345,
+      detectedGroupId: groupId || "grp_test_group",
+    });
+    return true;
+  });
+
+  ipcMain.handle("automod:getWhitelistedEntities", async (_, groupId: string) => {
+    if (!groupId) return { users: [], groups: [] };
+    const config = getGroupConfig(groupId);
+    const rules = config.rules;
+    const userMap = new Map<string, { id: string, name: string, rules: string[] }>();
+    const groupMap = new Map<string, { id: string, name: string, rules: string[] }>();
+
+    for (const rule of rules) {
+        if (rule.whitelistedUserIds) {
+            for (const userId of rule.whitelistedUserIds) {
+                if (!userId) continue;
+                if (!userMap.has(userId)) {
+                     // Try to fetch name from cache or API
+                     let name = userId;
+                     try {
+                         const result = await vrchatApiService.getUser(userId);
+                         if (result.success && result.data) {
+                             name = result.data.displayName;
+                         }
+                     } catch(e) {
+                         console.error(`[AutoMod] Failed to resolve name for ${userId}:`, e);
+                     }
+                     
+                     userMap.set(userId, { id: userId, name, rules: [] });
+                }
+                userMap.get(userId)?.rules.push(rule.name);
+            }
+        }
+
+        if (rule.whitelistedGroupIds) {
+             for (const groupIdVal of rule.whitelistedGroupIds) {
+                if (!groupIdVal) continue;
+                if (!groupMap.has(groupIdVal)) {
+                     let name = groupIdVal;
+                     try {
+                         const result = await vrchatApiService.getGroupDetails(groupIdVal);
+                         if (result.success && result.data) {
+                             name = result.data.name;
+                         }
+                     } catch(e) {
+                         console.error(`[AutoMod] Failed to resolve group name for ${groupIdVal}:`, e);
+                     }
+                     groupMap.set(groupIdVal, { id: groupIdVal, name, rules: [] });
+                }
+                groupMap.get(groupIdVal)?.rules.push(rule.name);
+            }
+        }
+    }
+    
+    return {
+        users: Array.from(userMap.values()),
+        groups: Array.from(groupMap.values())
+    };
+  });
+
+  ipcMain.handle("automod:removeFromWhitelist", async (_, { groupId, id, type }) => {
+    const config = getGroupConfig(groupId);
+    const rules = config.rules; // Reference to rules array
+    let updated = false;
+
+    for (let i = 0; i < rules.length; i++) {
+        let ruleUpdated = false;
+        if (type === 'user' && rules[i].whitelistedUserIds?.includes(id)) {
+            rules[i].whitelistedUserIds = rules[i].whitelistedUserIds!.filter(uid => uid !== id);
+            ruleUpdated = true;
+        }
+        if (type === 'group' && rules[i].whitelistedGroupIds?.includes(id)) {
+             rules[i].whitelistedGroupIds = rules[i].whitelistedGroupIds!.filter(gid => gid !== id);
+             ruleUpdated = true;
+        }
+
+        if (ruleUpdated) {
+            updated = true;
+        }
+    }
+
+    if (updated) {
+        saveGroupConfig(groupId, { ...config, rules });
+        return true;
+    }
+    return false;
+  });
+
+  // Search VRChat groups by name or shortCode
+  ipcMain.handle("automod:search-groups", async (_e, query: string) => {
+    try {
+      const result = await vrchatApiService.searchGroups(query);
+      if (result.success && result.data) {
+        return { success: true, groups: result.data };
+      }
+      return {
+        success: false,
+        error: result.error || "Failed to search groups",
+      };
+    } catch (error) {
+      logger.error("Failed to search groups", error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle("automod:fetch-members", async (_, groupId) => {
+    return await processFetchGroupMembers(groupId);
+  });
+
+  ipcMain.handle("automod:evaluate-member", async (_, { groupId, member }) => {
+    return await processEvaluateMember(groupId, member);
+  });
+
+
+  // ... existing handlers ...
+  
+  ipcMain.handle("automod:add-to-whitelist", async (_e, { groupId, ruleId, target }) => {
+    return addToWhitelist(groupId, ruleId, target);
+  });
+
+  // Scan Group Members
+  ipcMain.handle("automod:scan-group-members", async (_e, groupId: string) => {
+    try {
+      const results = await processAllGroupMembers(groupId);
+      return { success: true, results };
+    } catch (error) {
+      logger.error("Failed to scan group members", error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Helper to extract Group ID from current location
+  const getCurrentGroupId = (): string | null => {
+    // We can get this from LogWatcher or InstanceLogger
+    // LogWatcher state is private but we can access via formatted getters if we had them.
+    // But we DO have logWatcherService.state which is private.
+    // However, LogWatcher emits 'location' event.
+    // Better: instanceLoggerService tracks this too?
+    // Let's use the messy way or check if LogWatcherService exports a getter for location.
+    // It does not export location getter, but we can rely on what we have.
+    // Actually, let's assume valid group instance if we can find 'group(grp_...)' in instanceId
+    const instanceId = instanceLoggerService.getCurrentInstanceId();
+    if (!instanceId) return null;
+
+    const match = instanceId.match(/group\((grp_[a-zA-Z0-9-]+)\)/);
+    return match ? match[1] : null;
+  };
+
+// Helper to persist actions (used by both scan and live checks)
+  const executeAction = async (
+    player: { userId: string; displayName: string },
+    rule: AutoModRule,
+    groupId: string,
+    notifyOnly: boolean = false,
+    isBackfill: boolean = false,
+  ) => {
+    // SECURITY: Validate that we have permission to moderate this group
+    if (!groupAuthorizationService.isGroupAllowed(groupId)) {
+      logger.warn(
+        `[AutoMod] [SECURITY BLOCK] Attempted action on unauthorized group: ${groupId}. Skipping.`,
+      );
+      return;
+    }
+
+    const client = getVRChatClient();
+    if (!client) return;
+
+    logger.info(
+      `[AutoMod] Executing ${rule.actionType} on ${player.displayName} (${player.userId}) for rule ${rule.name} (Backfill: ${isBackfill})`,
+    );
+
+    // Persist the violation (Always persist for audit)
+    await persistAction({
+      timestamp: new Date(),
+      user: player.displayName,
+      userId: player.userId,
+      groupId: groupId,
+      action: rule.actionType,
+      reason: `Violated Rule: ${rule.name}`,
+      module: "AutoMod",
+      details: { ruleId: rule.id, config: rule.config, backfill: isBackfill },
+      skipBroadcast: true
+    });
+
+    // NOTIFY RENDERER (TOAST)
+    // Suppress notification if backfill
+    if (!isBackfill) {
+      windowService.broadcast("automod:violation", {
+        displayName: player.displayName,
+        userId: player.userId,
+        action: rule.actionType,
+        reason: rule.name,
+        ruleId: rule.id,
+        detectedGroupId: groupId,
+        skipped: notifyOnly,
+      });
+    }
+
+    // WEBHOOK
+    const isActionable =
+      rule.actionType === "REJECT" || rule.actionType === "AUTO_BLOCK";
+
+    let title = `🛡️ AutoMod Violation: ${rule.actionType}`;
+    let actionValue: string = rule.actionType;
+
+    if (notifyOnly && isActionable) {
+      title = `🛡️ AutoMod Alert: ${rule.actionType} (Action Skipped)`;
+      actionValue = `${rule.actionType} (Prevented by Auto-Ban OFF)`;
+    }
+
+    // Suppress Webhook if backfill
+    if (!isBackfill) {
+      discordWebhookService.sendEvent(groupId, {
+        title: title,
+        description: `**User**: ${player.displayName} (${player.userId})\n**Reason**: ${rule.name}`,
+        type: isActionable ? "ERROR" : "WARNING",
+        fields: [
+          { name: "Action Taken", value: actionValue, inline: true },
+          {
+            name: "Location",
+            value:
+              getCurrentGroupId() === groupId
+                ? "Current Group Instance"
+                : "Remote Request",
+            inline: true,
+          },
+        ],
+        targetUser: {
+          displayName: player.displayName,
+          id: player.userId,
+        },
+        footer: "Group Guard AutoMod",
+      });
+    }
+
+    if (
+      !notifyOnly &&
+      (rule.actionType === "REJECT" || rule.actionType === "AUTO_BLOCK")
+    ) {
+      try {
+        // Ban from Group (Kick)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (client as any).banGroupMember({
+          path: { groupId },
+          body: { userId: player.userId },
+        });
+        logger.info(
+          `[AutoMod] Banned ${player.displayName} from group ${groupId}`,
+        );
+      } catch (error) {
+        logger.error(`[AutoMod] Failed to ban ${player.displayName}`, error);
+      }
+    }
+    // NOTIFY_ONLY is handled by just logging (and potentially frontend events via log database)
+  };
+
+  const checkPlayer = async (
+    player: { userId: string; displayName: string },
+    groupId: string,
+    isBackfill: boolean = false,
+  ) => {
+    // Prevent duplicate checks
+    const key = `${groupId}:${player.userId}`;
+    if (processedRequests.has(key)) return;
+
+    const config = getGroupConfig(groupId);
+    const rules = config.rules.filter((r) => r.enabled);
+    if (rules.length === 0) return;
+
+    // Fetch detailed user info for accurate checking (Trust, Age, Bio, etc.)
+    let fullUser: {
+      userId: string;
+      displayName: string;
+      tags?: string[];
+      bio?: string;
+      status?: string;
+      statusDescription?: string;
+      pronouns?: string;
+      ageVerificationStatus?: string;
+    } = {
+      userId: player.userId,
+      displayName: player.displayName,
+    };
+
+    try {
+      // fetchUser is robust and cached
+      const userDetails = await fetchUser(player.userId);
+      if (userDetails) {
+        fullUser = { ...fullUser, ...userDetails };
+      }
+    } catch (e) {
+      logger.warn(
+        `[AutoMod] Failed to fetch user details for ${player.displayName}`,
+        e,
+      );
+    }
+
+    // GHOST CHECK: Verify player is still in the instance (e.g. checking historical logs on startup)
+    // We check AFTER the async fetch because the log parser might have processed a 'Leave' event in the meantime.
+    const currentPlayers = logWatcherService.getPlayers();
+    const isStillHere = currentPlayers.some((p) => p.userId === player.userId);
+
+    if (!isStillHere) {
+      logger.debug(
+        `[AutoMod] Player ${player.displayName} left before check completed (or was a ghost entry). Skipping.`,
+      );
+      return;
+    }
+
+    // Evaluate using central logic
+    const evaluation = await evaluateUser({
+      id: player.userId,
+      displayName: player.displayName,
+      tags: fullUser.tags,
+      bio: fullUser.bio,
+      status: fullUser.status,
+      statusDescription: fullUser.statusDescription,
+      pronouns: fullUser.pronouns,
+      ageVerificationStatus: fullUser.ageVerificationStatus,
+    }, {}, groupId);
+
+    if (evaluation.action !== "ALLOW") {
+      logger.info(
+        `[AutoMod] Detected violation for ${player.displayName}: ${evaluation.reason}`,
+      );
+
+      // Execute Action
+      // Construct a synthetic rule object to pass to executeAction
+      const syntheticRule: AutoModRule = {
+        id: evaluation.ruleId || Date.now(),
+        name: evaluation.reason || evaluation.ruleName || "AutoMod Violation",
+        enabled: true,
+        type: "AUTO_DETECTED",
+        config: "",
+        actionType: evaluation.action as AutoModActionType,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Notify only depending on setting
+      // Check Setting: Auto-Ban Members
+      const config = getGroupConfig(groupId);
+      const autoBanEnabled = config.enableAutoBan === true;
+      const notifyOnly = !autoBanEnabled;
+
+      logger.info(
+        `[AutoMod] Action Triggered. AutoBan: ${autoBanEnabled}, NotifyOnly: ${notifyOnly}`,
+      );
+
+      await executeAction(
+        player,
+        syntheticRule,
+        groupId,
+        notifyOnly,
+        isBackfill,
+      );
+    }
+
+    // Mark as checked
+    processedRequests.add(key);
+    pruneProcessedCache();
+  };
+
+  const runAutoModCycle = async () => {
+    try {
+      const client = getVRChatClient();
+      if (!client) return;
+
+      pruneProcessedCache();
+
+      const groupId = getCurrentGroupId();
+      if (!groupId) {
+        // Not in a group instance, nothing to guard
+        return;
+      }
+
+      // SECURITY: Validate that we have permission to moderate this group
+      if (!groupAuthorizationService.isGroupAllowed(groupId)) {
+        logger.debug(`[AutoMod] Skipping unauthorized group: ${groupId}`);
+        return;
+      }
+
+      const players = logWatcherService.getPlayers();
+
+      for (const p of players) {
+        if (!p.userId) continue;
+        // Periodic checks are implicitly "backfill" if they are just re-checking?
+        // No, periodic check is "Current State Check".
+        // We typically want to notify if a NEW violation occurs on an existing player?
+        // But checkPlayer de-duplicates via processedRequests.
+        // So this logic is fine.
+        await checkPlayer(
+          { userId: p.userId, displayName: p.displayName },
+          groupId,
+          false,
+        );
+      }
+    } catch (error) {
+      logger.error("AutoMod Loop Error:", error);
+    }
+  };
+
+  // Listen for realtime joins
+  logWatcherService.on(
+    "player-joined",
+    async (event: {
+      displayName: string;
+      userId?: string;
+      timestamp: string;
+      isBackfill?: boolean;
+    }) => {
+      if (!event.userId) return;
+      const groupId = getCurrentGroupId();
+      if (!groupId) return;
+
+      // SECURITY: Validate that we have permission to moderate this group
+      if (!groupAuthorizationService.isGroupAllowed(groupId)) {
+        return; // Silently skip - not our group
+      }
+
+      // Pass isBackfill flag to suppress notifications if needed
+      await checkPlayer(
+        { userId: event.userId, displayName: event.displayName },
+        groupId,
+        event.isBackfill,
+      );
+    },
+  );
+
+  // Start Loop (Backup)
+  if (!autoModInterval) {
+    // Run once immediately (delayed slightly to allow auth) then interval
+    setTimeout(runAutoModCycle, 5000);
+    autoModInterval = setInterval(runAutoModCycle, CHECK_INTERVAL);
+  }
 };

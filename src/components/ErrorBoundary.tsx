@@ -39,7 +39,8 @@ export class ErrorBoundary extends Component<Props, State> {
           position: 'fixed',
           top: 0,
           left: 0,
-          zIndex: 9999
+          zIndex: 9999,
+          cursor: 'default' // Force system cursor
         }}>
           <div className="glass-panel" style={{ 
             padding: '2.5rem', 

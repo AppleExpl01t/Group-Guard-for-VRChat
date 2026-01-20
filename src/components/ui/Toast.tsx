@@ -71,7 +71,11 @@ export const Toast: React.FC<ToastProps> = ({ notification }) => {
                     )}
                 </div>
                 <button 
-                    onClick={() => removeNotification(id)}
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        removeNotification(id);
+                    }}
                     style={{
                         background: 'transparent',
                         border: 'none',

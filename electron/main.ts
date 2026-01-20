@@ -170,7 +170,8 @@ ipcMain.handle('storage:get-status', () => {
   return {
     configured: storageService.isConfigured(),
     path: storageService.getDataDir(),
-    defaultPath: storageService.getUnconfiguredDefaultPath()
+    defaultPath: storageService.getUnconfiguredDefaultPath(),
+    lastPath: storageService.getLastConfiguredPath()
   };
 });
 
@@ -180,6 +181,10 @@ ipcMain.handle('storage:select-folder', () => {
 
 ipcMain.handle('storage:set-path', (_event, path) => {
   return storageService.setLocation(path);
+});
+
+ipcMain.handle('storage:reconfigure', () => {
+  return storageService.reconfigure();
 });
 
 // Initialize storage service

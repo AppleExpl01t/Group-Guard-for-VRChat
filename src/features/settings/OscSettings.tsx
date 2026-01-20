@@ -14,6 +14,7 @@ interface OscConfig {
     senderIp: string;
     senderPort: number;
     receiverPort: number;
+    suppressChatboxSounds: boolean;
 }
 
 export const OscSettings: React.FC = () => {
@@ -21,7 +22,8 @@ export const OscSettings: React.FC = () => {
         enabled: false,
         senderIp: '127.0.0.1',
         senderPort: 9000,
-        receiverPort: 9001
+        receiverPort: 9001,
+        suppressChatboxSounds: true
     });
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState<string>('');
@@ -159,6 +161,39 @@ export const OscSettings: React.FC = () => {
                                     outline: 'none'
                                 }}
                             />
+                        </div>
+                    </div>
+
+                    {/* Suppress Sounds Toggle */}
+                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
+                        <div>
+                            <div style={{ color: 'white', fontWeight: 600 }}>Suppress Chatbox Sounds</div>
+                            <div style={{ color: 'var(--color-text-dim)', fontSize: '0.9rem' }}>Prevents the "notification sound" when sending messages</div>
+                        </div>
+                        <div 
+                            onClick={() => setConfig({...config, suppressChatboxSounds: !config.suppressChatboxSounds})}
+                            style={{
+                                width: '50px',
+                                height: '26px',
+                                background: config.suppressChatboxSounds ? 'var(--color-success)' : 'rgba(255,255,255,0.1)',
+                                borderRadius: '13px',
+                                position: 'relative',
+                                cursor: 'pointer',
+                                transition: 'background 0.3s ease',
+                                border: '1px solid rgba(255,255,255,0.1)'
+                            }}
+                        >
+                            <div style={{
+                                width: '20px',
+                                height: '20px',
+                                background: 'white',
+                                borderRadius: '50%',
+                                position: 'absolute',
+                                top: '2px',
+                                left: config.suppressChatboxSounds ? '26px' : '2px',
+                                transition: 'left 0.3s ease',
+                                boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
+                            }} />
                         </div>
                     </div>
 

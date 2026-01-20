@@ -8,13 +8,18 @@ export interface AutoModViolation {
   reason: string;
   timestamp: number;
   skipped?: boolean;
+  ruleId?: number;
+  detectedGroupId?: string;
 }
 
 interface AutoModAlertStore {
   alerts: AutoModViolation[];
+  history: AutoModViolation[];
   isEnabled: boolean;
   addAlert: (violation: Omit<AutoModViolation, 'id' | 'timestamp'>) => void;
-  removeAlert: (id: string) => void;
+  removeAlert: (id: string) => void; 
+  dismissAlert: (id: string) => void; // Removes from active alerts, keeps in history
+  clearHistory: () => void;
   clearAll: () => void;
   toggleEnabled: () => void;
   setEnabled: (enabled: boolean) => void;
@@ -22,34 +27,41 @@ interface AutoModAlertStore {
 
 export const useAutoModAlertStore = create<AutoModAlertStore>((set) => ({
   alerts: [],
-  isEnabled: true, // Default to true? User asked for toggle.
+  history: [],
+  isEnabled: true, 
   
   addAlert: (violation) => set((state) => {
-    if (!state.isEnabled) return {}; // Don't add if disabled
+    if (!state.isEnabled) return {}; 
     
-    // Play sound here? Ideally UI component handles sound to avoid side effects in store
-    
-    // Prevent duplicate alerts for same user within short time?
-    // User asked: "popup needs to be able to update if multiple people have failed automod at once"
-    // So we stack them.
-    
+    // Create new violation object
+    const newViolation = {
+        ...violation,
+        id: window.crypto.randomUUID(),
+        timestamp: Date.now()
+    };
+
     return {
-      alerts: [
-        ...state.alerts,
-        {
-          ...violation,
-          id: Math.random().toString(36).substr(2, 9),
-          timestamp: Date.now()
-        }
-      ]
+      alerts: [...state.alerts, newViolation],
+      history: [newViolation, ...state.history].slice(0, 50) // Keep last 50
     };
   }),
 
+  // Completely remove (e.g. after action taken)
   removeAlert: (id) => set((state) => ({
+    alerts: state.alerts.filter((a) => a.id !== id)
+    // We keep it in history even if actioned? Yes, as a log.
+    // If we want to mark it as 'actioned' in history, we'd need to update history item.
+    // For now, simple.
+  })),
+
+  // Dismiss from popup but keep in history
+  dismissAlert: (id) => set((state) => ({
     alerts: state.alerts.filter((a) => a.id !== id)
   })),
 
-  clearAll: () => set({ alerts: [] }),
+  clearHistory: () => set({ history: [] }),
+  
+  clearAll: () => set({ alerts: [] }), // Clears active popups
   
   toggleEnabled: () => set((state) => ({ isEnabled: !state.isEnabled })),
   setEnabled: (enabled) => set({ isEnabled: enabled })

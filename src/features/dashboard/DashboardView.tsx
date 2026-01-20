@@ -171,6 +171,9 @@ export const DashboardView: React.FC = memo(() => {
       if (actor !== 'UNKNOWN') {
          cleanDesc = cleanDesc.replace(actor, '');
       }
+
+      // Fix: Remove redundant "User" text that often follows the name in VRChat logs
+      cleanDesc = cleanDesc.replace(/^\s*User\s+/, ' ');
       
       cleanDesc = cleanDesc.replace(/by \s*$/, '').trim();
       

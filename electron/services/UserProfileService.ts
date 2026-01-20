@@ -7,11 +7,21 @@
 
 import { ipcMain } from 'electron';
 import log from 'electron-log';
-import { getVRChatClient, getAuthCookieStringAsync } from './AuthService';
+import { getAuthCookieStringAsync } from './AuthService';
+import { vrchatApiService } from './VRChatApiService';
 import { networkService } from './NetworkService';
 import { getTrustRank, type TrustRank } from './EntityEnrichmentService';
 
+import { LRUCache } from 'lru-cache';
+
 const logger = log.scope('UserProfileService');
+
+// Cache configuration
+const CACHE_TTL_MS = 1000 * 60 * 5; // 5 minutes
+const userGroupsCache = new LRUCache<string, UserGroup[]>({
+    max: 500,
+    ttl: CACHE_TTL_MS
+});
 
 // ============================================
 // TYPES - Complete VRChat User Profile
@@ -198,23 +208,20 @@ class UserProfileService {
      * Get comprehensive user profile with computed fields
      */
     async getFullProfile(userId: string): Promise<EnrichedUserProfile | null> {
-        const client = getVRChatClient();
-        if (!client) {
-            throw new Error('Not authenticated');
-        }
-
-        const result = await networkService.execute(async () => {
-            logger.info(`Fetching full profile for user: ${userId}`);
-            const response = await client.getUser({ path: { userId } });
-            return response.data as VRChatUserProfile;
-        }, `getFullProfile:${userId}`);
+        // Use centralized service (with caching)
+        const result = await vrchatApiService.getUser(userId);
 
         if (!result.success || !result.data) {
             logger.error(`Failed to fetch profile for ${userId}:`, result.error);
             return null;
         }
 
-        return this.enrichProfile(result.data);
+        // VRCUser needs to be cast to VRChatUserProfile because VRCUser is a subset/variant 
+        // effectively compatible for our enrichment needs, but let's be safe.
+        // In reality, VRChatApiService returns the full object from the API.
+        const profileData = result.data as unknown as VRChatUserProfile;
+
+        return this.enrichProfile(profileData);
     }
 
     /**
@@ -357,6 +364,13 @@ class UserProfileService {
             throw new Error('Not authenticated');
         }
 
+        // Check cache first
+        const cached = userGroupsCache.get(userId);
+        if (cached) {
+            logger.debug(`Returning cached user groups for: ${userId}`);
+            return cached;
+        }
+
         const result = await networkService.execute(async () => {
             logger.debug(`Fetching user groups for: ${userId}`);
             const response = await fetch(`https://api.vrchat.cloud/api/1/users/${userId}/groups`, {
@@ -371,6 +385,11 @@ class UserProfileService {
             }
             return await response.json() as UserGroup[];
         }, `getUserGroups:${userId}`);
+
+        // Cache successful results
+        if (result.success && result.data && Array.isArray(result.data)) {
+            userGroupsCache.set(userId, result.data);
+        }
 
         if (!result.success || !result.data) {
             logger.warn(`Failed to fetch user groups for ${userId}`);

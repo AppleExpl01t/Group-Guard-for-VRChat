@@ -19,7 +19,7 @@ interface NotificationStore {
 export const useNotificationStore = create<NotificationStore>((set) => ({
   notifications: [],
   addNotification: (notification) => {
-    const id = Math.random().toString(36).substring(2, 9);
+    const id = window.crypto.randomUUID();
     set((state) => ({
       notifications: [...state.notifications, { ...notification, id }],
     }));

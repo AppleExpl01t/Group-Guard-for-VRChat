@@ -17,11 +17,15 @@ class StorageService {
     try {
       if (fs.existsSync(this.configPath)) {
         const config = JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
-        if (config.dataDir && fs.existsSync(config.dataDir)) {
+        if (config.dataDir && fs.existsSync(config.dataDir) && !config.setupRequired) {
           this.dataDir = config.dataDir;
           logger.info(`Loaded data directory: ${this.dataDir}`);
         } else {
-            logger.warn(`Configured data dir not found: ${config.dataDir}`);
+            if (config.setupRequired) {
+                 logger.info('Setup required flag detected.');
+            } else {
+                 logger.warn(`Configured data dir not found: ${config.dataDir}`);
+            }
             this.dataDir = null; // Force re-setup
         }
       } else {
@@ -64,11 +68,45 @@ class StorageService {
           fs.mkdirSync(dirPath, { recursive: true });
       }
 
-      const config = { dataDir: dirPath };
+      const config = { dataDir: dirPath, setupRequired: false };
       fs.writeFileSync(this.configPath, JSON.stringify(config));
       this.dataDir = dirPath;
       logger.info(`Storage location set to: ${dirPath}`);
       return true;
+  }
+
+  public reconfigure(): boolean {
+      try {
+          let currentConfig: Record<string, unknown> = {};
+          if (fs.existsSync(this.configPath)) {
+            currentConfig = JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
+          }
+          
+          // Keep the existing path but mark setup as required
+          const newConfig = { ...currentConfig, setupRequired: true };
+          fs.writeFileSync(this.configPath, JSON.stringify(newConfig));
+          
+          this.dataDir = null;
+          logger.info('Storage configuration set to reconfigure mode.');
+          return true;
+      } catch (error) {
+          logger.error('Failed to set reconfigure mode:', error);
+          // Fallback to old reset behavior if file write fails?
+          return false;
+      }
+  }
+
+  // Helper to get the path stored in config even if unconfigured/setupRequired
+  public getLastConfiguredPath(): string | null {
+      try {
+          if (fs.existsSync(this.configPath)) {
+              const config = JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
+              return config.dataDir || null;
+          }
+      } catch {
+        // Warning suppressed: Config might be currupt or missing, return null is safe fallback
+      }
+      return null;
   }
 }
 

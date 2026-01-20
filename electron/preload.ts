@@ -139,6 +139,8 @@ contextBridge.exposeInMainWorld('electron', {
         getStatus: () => ipcRenderer.invoke('storage:get-status'),
         selectFolder: () => ipcRenderer.invoke('storage:select-folder'),
         setPath: (path: string) => ipcRenderer.invoke('storage:set-path', path),
+        reset: () => ipcRenderer.invoke('storage:reconfigure'), // Alias reset to reconfigure for compatibility
+        reconfigure: () => ipcRenderer.invoke('storage:reconfigure'),
     },
 
     // Instance Presence API
@@ -201,22 +203,28 @@ contextBridge.exposeInMainWorld('electron', {
     
     // AutoMod API
     automod: {
-        getRules: () => ipcRenderer.invoke('automod:get-rules'),
-        saveRule: (rule: unknown) => ipcRenderer.invoke('automod:save-rule', rule),
-        deleteRule: (ruleId: number) => ipcRenderer.invoke('automod:delete-rule', ruleId),
-        checkUser: (user: unknown) => ipcRenderer.invoke('automod:check-user', user),
-        getHistory: () => ipcRenderer.invoke('automod:get-history'),
+        getRules: (groupId: string) => ipcRenderer.invoke('automod:get-rules', groupId),
+        saveRule: (rule: unknown, groupId: string) => ipcRenderer.invoke('automod:save-rule', { rule, groupId }),
+        deleteRule: (ruleId: number, groupId: string) => ipcRenderer.invoke('automod:delete-rule', { ruleId, groupId }),
+        checkUser: (user: unknown, groupId: string) => ipcRenderer.invoke('automod:check-user', { user, groupId }),
+        getHistory: (groupId?: string) => ipcRenderer.invoke('automod:get-history', { groupId }),
         clearHistory: () => ipcRenderer.invoke('automod:clear-history'),
-        onViolation: (callback: (data: { displayName: string; userId: string; action: string; reason: string }) => void) => {
-            const handler = (_event: Electron.IpcRendererEvent, data: { displayName: string; userId: string; action: string; reason: string }) => callback(data);
+        addToWhitelist: (groupId: string, ruleId: number, target: { userId?: string; groupId?: string }) => ipcRenderer.invoke('automod:add-to-whitelist', { groupId, ruleId, target }),
+        onViolation: (callback: (data: { displayName: string; userId: string; action: string; reason: string; ruleId?: number; detectedGroupId?: string }) => void) => {
+            const handler = (_event: Electron.IpcRendererEvent, data: { displayName: string; userId: string; action: string; reason: string; ruleId?: number; detectedGroupId?: string }) => callback(data);
             ipcRenderer.on('automod:violation', handler);
             return () => ipcRenderer.removeListener('automod:violation', handler);
         },
-        testNotification: () => ipcRenderer.invoke('automod:test-notification'),
-        getStatus: () => ipcRenderer.invoke('automod:get-status'),
-        setAutoReject: (enabled: boolean) => ipcRenderer.invoke('automod:set-auto-reject', enabled),
-        setAutoBan: (enabled: boolean) => ipcRenderer.invoke('automod:set-auto-ban', enabled),
+        testNotification: (groupId: string) => ipcRenderer.invoke('automod:test-notification', { groupId }),
+        getWhitelistedEntities: (groupId: string) => ipcRenderer.invoke('automod:getWhitelistedEntities', groupId),
+        removeFromWhitelist: (groupId: string, id: string, type: 'user' | 'group') => ipcRenderer.invoke('automod:removeFromWhitelist', { groupId, id, type }),
+        getStatus: (groupId: string) => ipcRenderer.invoke('automod:get-status', groupId),
+        setAutoReject: (enabled: boolean, groupId: string) => ipcRenderer.invoke('automod:set-auto-reject', { enabled, groupId }),
+        setAutoBan: (enabled: boolean, groupId: string) => ipcRenderer.invoke('automod:set-auto-ban', { enabled, groupId }),
         searchGroups: (query: string) => ipcRenderer.invoke('automod:search-groups', query),
+        fetchMembers: (groupId: string) => ipcRenderer.invoke('automod:fetch-members', groupId),
+        evaluateMember: (args: { groupId: string; member: any }) => ipcRenderer.invoke('automod:evaluate-member', args),
+        scanGroupMembers: (groupId: string) => ipcRenderer.invoke('automod:scan-group-members', groupId),
     },
 
     // OSC API

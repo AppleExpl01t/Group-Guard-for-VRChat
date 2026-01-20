@@ -13,6 +13,7 @@ import { usePipelineInit } from './hooks/usePipelineInit';
 import { useInstanceMonitorInit } from './hooks/useInstanceMonitorInit';
 import { useAutoModNotifications } from './hooks/useAutoModNotifications';
 import { SetupView } from './features/setup/SetupView';
+import { CustomCursor } from './components/ui/CustomCursor'; // Import CustomCursor
 
 
 import { PageTransition } from './components/layout/PageTransition';
@@ -309,6 +310,7 @@ function App() {
 
   return (
     <>
+        <CustomCursor />
         <ToastContainer />
         <AnimatePresence mode="wait">
             <PageTransition key={screenKey}>

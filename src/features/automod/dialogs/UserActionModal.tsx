@@ -87,7 +87,7 @@ export const UserActionModal: React.FC<{
                     result = await electron.instance.kickUser(groupId, logEntry.userId);
                     break;
                 case 'ban':
-                    result = await electron.banUser(groupId, logEntry.userId);
+                    result = await electron.instance.banUser(groupId, logEntry.userId);
                     break;
             }
             

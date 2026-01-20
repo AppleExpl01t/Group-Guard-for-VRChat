@@ -6,6 +6,8 @@ import { oscService } from './OscService';
 import { vrchatApiService } from './VRChatApiService';
 import { userProfileService } from './UserProfileService';
 
+import { serviceEventBus } from './ServiceEventBus';
+
 const logger = log.scope('OscAnnouncementService');
 
 export interface GroupAnnouncementConfig {
@@ -42,6 +44,9 @@ class OscAnnouncementService {
     private clearMessageTimer: NodeJS.Timeout | null = null;
     private greetedPlayers: Set<string> = new Set();
     private currentPlayers: Set<string> = new Set(); // To track who is actually here if we want to be smart
+    
+    // Local cache for group names (populated via EventBus)
+    private groupNames: Map<string, string> = new Map();
 
     constructor() {
         this.store = new Store<{ announcements: OscAnnouncementStore }>({
@@ -52,6 +57,28 @@ class OscAnnouncementService {
 
     public start() {
         this.setupLogListeners();
+        // Listen for group data updates to populate local name cache
+        serviceEventBus.on('groups-updated', (data: { groups: unknown[] }) => {
+            if (data && Array.isArray(data.groups)) {
+                let updatedCount = 0;
+                data.groups.forEach((g: any) => {
+                    if (g && g.id && g.name) {
+                        this.groupNames.set(g.id, g.name);
+                        updatedCount++;
+                    }
+                });
+                logger.info(`Updated local group name cache with ${updatedCount} entries.`);
+                
+                // If we are currently active in a group and just learned its name, update immediately
+                if (this.activeGroupId && this.groupNames.has(this.activeGroupId)) {
+                    const newName = this.groupNames.get(this.activeGroupId)!;
+                    if (this.activeGroupName !== newName) {
+                        this.activeGroupName = newName;
+                        logger.info(`Passively updated active group name to: ${this.activeGroupName}`);
+                    }
+                }
+            }
+        });
         logger.info('OscAnnouncementService started');
     }
 
@@ -104,17 +131,35 @@ class OscAnnouncementService {
         }
     }
 
+    private groupNamePromise: Promise<void> | null = null;
+
     private async updateGroupName(groupId: string) {
-        try {
-            const result = await vrchatApiService.getGroupDetails(groupId);
-            if (result.success && result.data) {
-                this.activeGroupName = result.data.name;
-                logger.info(`Updated active group name to: ${this.activeGroupName}`);
-            }
-        } catch (e) {
-            logger.warn(`Failed to fetch group name for ${groupId}`, e);
-            this.activeGroupName = 'Group';
+        // 1. Fast Path: Local Cache
+        if (this.groupNames.has(groupId)) {
+            this.activeGroupName = this.groupNames.get(groupId)!;
+            logger.info(`Resolved group name from local cache: ${this.activeGroupName}`);
+            return;
         }
+
+        // 2. Slow Path: API (via Promise to avoid race conditions)
+        this.groupNamePromise = (async () => {
+            try {
+                // Now utilizes the VRChatApiService which checks its own cache first too!
+                const result = await vrchatApiService.getGroupDetails(groupId, false, { includeRoles: false });
+                if (result.success && result.data) {
+                    this.activeGroupName = result.data.name;
+                    this.groupNames.set(groupId, result.data.name); // Update local cache
+                    logger.info(`Updated active group name from API to: ${this.activeGroupName}`);
+                } else {
+                     this.activeGroupName = 'Group'; // Fallback
+                }
+            } catch (e) {
+                logger.warn(`Failed to fetch group name for ${groupId}`, e);
+                this.activeGroupName = 'Group';
+            }
+        })();
+        
+        return this.groupNamePromise;
     }
 
     private handlePlayerJoined(event: PlayerJoinedEvent) {
@@ -145,64 +190,99 @@ class OscAnnouncementService {
 
         this.greetedPlayers.add(trackingId);
 
-        // Schedule greeting
-        logger.info(`Scheduling greeting for ${event.displayName} in 10s`);
-        setTimeout(async () => {
-            // Verify player is still here/we are still in the group
-            if (!this.activeGroupId) return;
-            
-            const currentConfig = this.getGroupConfig(this.activeGroupId);
-            if (!currentConfig?.greetingEnabled) return;
+        // Add to queue instead of immediate timeout
+        this.addToGreetingQueue(event);
+    }
 
-            // Determine which message to use (Priority: Rep > Member > Default)
-            let message = currentConfig.greetingMessage;
-            let messageType = 'default';
-            
-            try {
-                const client = vrchatApiService.getClient();
-                if (client && event.userId && this.activeGroupId) {
-                    // 1. First check if user is REPRESENTING the group
-                    if (currentConfig.greetingMessageRep && currentConfig.greetingMessageRep.trim() !== '') {
-                        try {
-                            const userGroups = await userProfileService.getUserGroups(event.userId);
-                            const representingGroup = userGroups.find(g => g.groupId === this.activeGroupId && g.isRepresenting);
-                            
-                            if (representingGroup) {
-                                message = currentConfig.greetingMessageRep;
-                                messageType = 'rep';
-                                logger.info(`${event.displayName} is representing the group! Using rep message.`);
-                            }
-                        } catch (repErr) {
-                            // User may not be representing any group, that's fine
-                            logger.debug(`Rep check for ${event.displayName}:`, repErr);
-                        }
-                    }
-                    
-                    // 2. If not rep, check if they are a MEMBER
-                    if (messageType === 'default' && currentConfig.greetingMessageMembers && currentConfig.greetingMessageMembers.trim() !== '') {
-                        try {
-                            const memResponse = await client.getGroupMember({ path: { groupId: this.activeGroupId, userId: event.userId } });
-                            if (memResponse && !memResponse.error) {
-                                message = currentConfig.greetingMessageMembers;
-                                messageType = 'member';
-                            }
-                        } catch (memErr) {
-                            logger.debug(`Member check for ${event.displayName}:`, memErr);
-                        }
-                    }
+    private greetingQueue: PlayerJoinedEvent[] = [];
+    private isProcessingQueue = false;
+
+    private addToGreetingQueue(event: PlayerJoinedEvent) {
+        this.greetingQueue.push(event);
+        this.processGreetingQueue();
+    }
+
+    private async processGreetingQueue() {
+        if (this.isProcessingQueue || this.greetingQueue.length === 0) return;
+
+        this.isProcessingQueue = true;
+
+        try {
+            while (this.greetingQueue.length > 0) {
+                // Peek at first item
+                const event = this.greetingQueue[0];
+                
+                // Wait 5 seconds before processing (throttle)
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                
+                // Verify we are still in the group and user is relevant
+                if (!this.activeGroupId) {
+                    this.greetingQueue.shift(); // discard
+                    continue;
                 }
-            } catch (e) {
-                logger.warn('Failed to check rep/membership for greeting', e);
+                
+                // Ensure player is still in the instance (if we are tracking current players)
+                if (!this.currentPlayers.has(event.displayName)) {
+                    logger.debug(`Player ${event.displayName} left before greeting, skipping.`);
+                    this.greetingQueue.shift();
+                    continue;
+                }
+
+                await this.performGreeting(event);
+                
+                // Remove processed item
+                this.greetingQueue.shift();
             }
+        } catch (err) {
+            logger.error('Error processing greeting queue', err);
+        } finally {
+            this.isProcessingQueue = false;
+        }
+    }
 
-            // Replace Placeholders
-            const finalMessage = message
-                .replace(/\[User\]/g, event.displayName)
-                .replace(/\[Group\]/g, this.activeGroupName);
+    private async performGreeting(event: PlayerJoinedEvent) {
+        if (!this.activeGroupId) return;
+        
+        // Wait for group name if pending
+        if (this.groupNamePromise) {
+            await this.groupNamePromise;
+        }
 
-            this.sendOscMessage(finalMessage, currentConfig.displayDurationSeconds);
+        const currentConfig = this.getGroupConfig(this.activeGroupId);
+        if (!currentConfig?.greetingEnabled) return;
 
-        }, 10000);
+        let message = currentConfig.greetingMessage;
+        
+        try {
+            const client = vrchatApiService.getClient();
+            if (client && event.userId && this.activeGroupId) {
+                // 1. Check Rep
+                if (currentConfig.greetingMessageRep) {
+                    try {
+                        // This is now CACHED in UserProfileService!
+                        const userGroups = await userProfileService.getUserGroups(event.userId);
+                        const representingGroup = userGroups.find(g => g.groupId === this.activeGroupId && g.isRepresenting);
+                        if (representingGroup) message = currentConfig.greetingMessageRep;
+                    } catch { /* ignore */ }
+                }
+                
+                // 2. Check Membership (only if not already rep)
+                if (message === currentConfig.greetingMessage && currentConfig.greetingMessageMembers) {
+                    try {
+                        const memResponse = await client.getGroupMember({ path: { groupId: this.activeGroupId, userId: event.userId } });
+                        if (memResponse && !memResponse.error) message = currentConfig.greetingMessageMembers;
+                    } catch { /* ignore */ }
+                }
+            }
+        } catch (e) {
+            logger.warn('Failed to check greeting details', e);
+        }
+
+        const finalMessage = message
+            .replace(/\[User\]/gi, event.displayName)
+            .replace(/\[Group\]/gi, this.activeGroupName);
+
+        this.sendOscMessage(finalMessage, currentConfig.displayDurationSeconds);
     }
 
     private startPeriodicTimer() {
@@ -213,12 +293,17 @@ class OscAnnouncementService {
 
         logger.info(`Starting periodic announcement every ${config.periodicIntervalMinutes}m for ${this.activeGroupId}`);
         
-        this.periodicTimer = setInterval(() => {
+        this.periodicTimer = setInterval(async () => {
             if (!this.activeGroupId) {
                 this.stopPeriodicTimer();
                 return;
             }
             
+            // Wait for name if still pending (unlikely after 15m but safe)
+            if (this.groupNamePromise) {
+                await this.groupNamePromise;
+            }
+
             // Re-fetch config in case it changed during interval
             const currentConfig = this.getGroupConfig(this.activeGroupId);
             if (!currentConfig?.periodicEnabled) {
@@ -226,7 +311,7 @@ class OscAnnouncementService {
                 return;
             }
 
-            const message = currentConfig.periodicMessage.replace(/\[Group\]/g, this.activeGroupName);
+            const message = currentConfig.periodicMessage.replace(/\[Group\]/gi, this.activeGroupName);
             this.sendOscMessage(message, currentConfig.displayDurationSeconds);
 
         }, config.periodicIntervalMinutes * 60 * 1000);

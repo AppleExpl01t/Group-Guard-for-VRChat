@@ -2,25 +2,32 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Settings, Plug, Info } from 'lucide-react';
 
-export type SettingsTab = 'general' | 'integrations' | 'about';
+import { Bug } from 'lucide-react';
+
+export type SettingsTab = 'general' | 'integrations' | 'about' | 'debug';
 
 interface SettingsTabBarProps {
     activeTab: SettingsTab;
     onTabChange: (tab: SettingsTab) => void;
     tabCounts?: Record<SettingsTab, number>;
+    showDebug?: boolean;
 }
 
 const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
     { id: 'general', label: 'General', icon: <Settings size={16} /> },
     { id: 'integrations', label: 'Integrations', icon: <Plug size={16} /> },
     { id: 'about', label: 'About', icon: <Info size={16} /> },
+    { id: 'debug', label: 'Debug', icon: <Bug size={16} /> },
 ];
 
 export const SettingsTabBar: React.FC<SettingsTabBarProps> = ({ 
     activeTab, 
     onTabChange,
-    tabCounts 
+    tabCounts,
+    showDebug = false
 }) => {
+    const visibleTabs = tabs.filter(t => t.id !== 'debug' || showDebug);
+
     return (
         <div style={{
             display: 'flex',
@@ -29,7 +36,7 @@ export const SettingsTabBar: React.FC<SettingsTabBarProps> = ({
             borderBottom: '1px solid var(--border-color)',
             paddingBottom: '0',
         }}>
-            {tabs.map((tab) => {
+            {visibleTabs.map((tab) => {
                 const isActive = activeTab === tab.id;
                 const count = tabCounts?.[tab.id];
                 

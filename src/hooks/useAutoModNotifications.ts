@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useNotificationStore } from '../stores/notificationStore';
+import { useAutoModAlertStore } from '../stores/autoModAlertStore';
 
 import notificationSound from '../assets/sounds/notification.mp3';
 
@@ -28,6 +29,14 @@ export const useAutoModNotifications = () => {
                 title: 'AutoMod Triggered',
                 message: `${data.displayName} was ${data.action} due to ${data.reason}`,
                 duration: 8000 // Slightly longer for automod alerts
+            });
+
+            // Add to Notification Panel History
+            useAutoModAlertStore.getState().addAlert({
+                userId: data.userId,
+                displayName: data.displayName,
+                action: data.action as 'REJECT' | 'AUTO_BLOCK',
+                reason: data.reason,
             });
         });
 

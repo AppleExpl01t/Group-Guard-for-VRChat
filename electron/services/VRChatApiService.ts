@@ -21,6 +21,7 @@ const logger = log.scope('VRChatApiService');
 export interface VRCUser {
     id: string;
     displayName: string;
+    userIcon?: string;
     currentAvatarImageUrl?: string;
     currentAvatarThumbnailImageUrl?: string;
     thumbnailUrl?: string;
@@ -342,15 +343,24 @@ export const vrchatApiService = {
             const response = await client.getUserGroups({ path: { userId } });
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const groups = (response.data || response) as any[];
+            const result = groups as VRCGroup[];
+
+            // Populate Cache
+            const now = Date.now();
+            result.forEach(g => {
+                if (g && g.id) {
+                    groupCache.set(g.id, { data: g, timestamp: now });
+                }
+            });
             
-            return groups as VRCGroup[];
+            return result;
         }, 'getMyGroups');
     },
 
     /**
      * Get group details by ID
      */
-    async getGroupDetails(groupId: string, bypassCache = false): Promise<ApiResult<VRCGroup>> {
+    async getGroupDetails(groupId: string, bypassCache = false, options: { includeRoles?: boolean } = { includeRoles: true }): Promise<ApiResult<VRCGroup>> {
         if (!groupId) {
             return { success: false, error: 'Group ID is required' };
         }
@@ -368,7 +378,12 @@ export const vrchatApiService = {
             const client = getVRChatClient();
             if (!client) throw new Error('Not authenticated');
 
-            const response = await client.getGroup({ path: { groupId }, query: { includeRoles: true } });
+            const query: { includeRoles?: boolean } = {};
+            if (options.includeRoles) {
+                query.includeRoles = true;
+            }
+
+            const response = await client.getGroup({ path: { groupId }, query });
             const group = response.data as VRCGroup;
 
             // Cache the result
@@ -431,7 +446,6 @@ export const vrchatApiService = {
             if (!client) throw new Error('Not authenticated');
 
             const response = await client.getGroupRequests({ path: { groupId } });
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const requests = extractArray(response.data || response) as VRCGroupRequest[];
 
             return requests;
@@ -470,7 +484,6 @@ export const vrchatApiService = {
             if (!client) throw new Error('Not authenticated');
 
             const response = await client.getGroupBans({ path: { groupId } });
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const bans = extractArray(response.data || response) as VRCGroupBan[];
 
             return bans;
@@ -516,7 +529,6 @@ export const vrchatApiService = {
             if (!client) throw new Error('Not authenticated');
 
             const response = await client.getGroupRoles({ path: { groupId } });
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const roles = extractArray(response.data || response) as VRCGroupRole[];
 
             return roles;
@@ -565,7 +577,6 @@ export const vrchatApiService = {
                 path: { groupId },
                 query: { n }
             });
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const logs = extractArray(response.data || response) as VRCAuditLogEntry[];
 
             return logs;
@@ -628,7 +639,6 @@ export const vrchatApiService = {
             const response = await client.getGroupInstances({ 
                 path: { groupId }
             });
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const instances = extractArray(response.data || response) as VRCInstance[];
 
             return instances;
@@ -691,7 +701,7 @@ export const vrchatApiService = {
     /**
      * Update invite message slot
      */
-    async updateInviteMessage(_slot: number, _message: string): Promise<ApiResult<void>> {
+    async updateInviteMessage(_slot: number): Promise<ApiResult<void>> {
         return networkService.execute(async () => {
             const client = getVRChatClient();
             if (!client) throw new Error('Not authenticated');
@@ -759,7 +769,6 @@ export const vrchatApiService = {
             const response = await client.getFriends({ 
                 query: { offline, n: 100 }
             });
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const friends = extractArray(response.data || response) as VRCFriend[];
 
             return friends;

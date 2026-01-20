@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { useAuditStore } from '../../stores/auditStore';
 import { useGroupStore } from '../../stores/groupStore';
+import { useScanStore } from '../../stores/scanStore';
 import { motion } from 'framer-motion';
 import styles from './AutoModView.module.css';
+import { ShieldCheck, List, Play, Loader2 } from 'lucide-react';
 
 // Extracted components
 import { KeywordConfigModal } from './dialogs/KeywordConfigModal';
@@ -13,6 +15,11 @@ import { RuleCard } from './components/RuleCard';
 import { InterceptionLog, type LogEntry } from './components/InterceptionLog';
 import { StatTile } from '../dashboard/components/StatTile';
 import type { AutoModRule } from '../../types/electron';
+import { NeonButton } from '../../components/ui/NeonButton';
+import { Button } from '../../components/ui/Button';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
+import { WhitelistViewerModal } from './dialogs/WhitelistViewerModal';
+import { ScanResultsDialog } from './dialogs/ScanResultsDialog';
 
 const containerVariants = {
     hidden: { opacity: 0 },
@@ -32,66 +39,105 @@ export const AutoModView: React.FC = () => {
     // Dialog State
     const [showKeywordConfig, setShowKeywordConfig] = useState(false);
     const [showBlacklistedGroupsConfig, setShowBlacklistedGroupsConfig] = useState(false);
+    const [showWhitelistViewer, setShowWhitelistViewer] = useState(false);
     const [interceptionLog, setInterceptionLog] = useState<LogEntry[]>([]);
     const [selectedLogEntry, setSelectedLogEntry] = useState<LogEntry | null>(null);
 
+    // Scan State Management
+    const [showScanResults, setShowScanResults] = useState(false);
+    const [showScanConfirm, setShowScanConfirm] = useState(false);
+    
+    const { 
+        startScan, 
+        isLoading: scanLoading, 
+        progress: scanProgress, 
+        results: scanResults 
+    } = useScanStore();
+    
+    const { fetchLogs } = useAuditStore();
+    const { selectedGroup, fetchGroupBans, fetchGroupMembers } = useGroupStore();
+
     // Initial Data Fetch
-    const loadHistory = async () => {
+    const loadHistory = React.useCallback(async () => {
+        if (!selectedGroup) {
+            setInterceptionLog([]);
+            return;
+        }
         try {
-            const history = await window.electron.automod.getHistory();
+            const history = await window.electron.automod.getHistory(selectedGroup.id);
             setInterceptionLog(history as LogEntry[] || []);
         } catch (e) {
             console.error("Failed to load AutoMod history", e);
         }
-    };
+    }, [selectedGroup]);
 
-    const loadRules = async () => {
+    const loadRules = React.useCallback(async () => {
+        if (!selectedGroup) {
+            setRules([]);
+            return;
+        }
         try {
-            const fetched = await window.electron.automod.getRules();
+            const fetched = await window.electron.automod.getRules(selectedGroup.id);
             setRules(fetched || []);
         } catch (e) {
             console.error("Failed to load AutoMod rules", e);
         }
-    };
+    }, [selectedGroup]);
 
-    const loadStatus = async () => {
+    const loadStatus = React.useCallback(async () => {
+        if (!selectedGroup) {
+             setStatus({ autoReject: false, autoBan: false });
+             return;
+        }
         try {
-            const s = await window.electron.automod.getStatus();
+            const s = await window.electron.automod.getStatus(selectedGroup.id);
             setStatus(s);
         } catch (e) {
             console.error("Failed to load AutoMod status", e);
         }
-    };
+    }, [selectedGroup]);
     
     React.useEffect(() => {
         loadRules();
-        loadHistory();
         loadStatus();
-        
+        loadHistory();
+    }, [loadRules, loadStatus, loadHistory]);
+
+    React.useEffect(() => {
         // Listen for AutoMod Logs (real-time)
         const handleLog = (_: unknown, log: unknown) => {
-            setInterceptionLog(prev => [log as LogEntry, ...prev].slice(0, 50));
+            // We need to locally filter if the log doesn't match current group, 
+            // OR relying on backend to only send relevant logs (not currently implemented per connection)
+            // Ideally, we check log.groupId matches selectedGroup.id
+            const entry = log as LogEntry;
+            if (selectedGroup && entry.groupId === selectedGroup.id) {
+                 setInterceptionLog(prev => [entry, ...prev].slice(0, 50));
+            }
         };
         
         const removeListener = window.electron.automod.onViolation((data) => {
              handleLog(null, data);
         });
         return () => removeListener();
-    }, []);
+    }, [selectedGroup]);
 
     const toggleAutoReject = async () => {
+        if (!selectedGroup) return;
         const newState = !status.autoReject;
-        await window.electron.automod.setAutoReject(newState);
+        await window.electron.automod.setAutoReject(newState, selectedGroup.id);
         loadStatus();
     };
 
     const toggleAutoBan = async () => {
+        if (!selectedGroup) return;
         const newState = !status.autoBan;
-        await window.electron.automod.setAutoBan(newState);
+        await window.electron.automod.setAutoBan(newState, selectedGroup.id);
         loadStatus();
     };
 
     const toggleRule = async (type: string, config?: Record<string, unknown>) => {
+        if (!selectedGroup) return;
+
         const existing = rules.find(r => r.type === type);
         
         let initialConfig = {};
@@ -125,7 +171,7 @@ export const AutoModView: React.FC = () => {
             config: JSON.stringify(config || (existing ? JSON.parse(existing.config || '{}') : initialConfig))
         };
         
-        await window.electron.automod.saveRule(newRule);
+        await window.electron.automod.saveRule(newRule, selectedGroup.id);
         loadRules();
     };
 
@@ -143,12 +189,16 @@ export const AutoModView: React.FC = () => {
     const blacklistConfig = blacklistRule ? JSON.parse(blacklistRule.config || '{}') : { groupIds: [], groups: [] };
     const isBlacklistConfigured = (blacklistConfig.groupIds && blacklistConfig.groupIds.length > 0);
 
-    const { fetchLogs } = useAuditStore();
-    const { selectedGroup, fetchGroupBans, fetchGroupMembers } = useGroupStore();
+
+
+    const handleScanGroup = async () => {
+        if (!selectedGroup) return;
+        setShowScanResults(true);
+        startScan(selectedGroup.id);
+    };
 
     // Derived Vars
     const activeRulesCount = rules.filter(r => r.enabled).length;
-    const totalInterceptions = interceptionLog.length;
 
     return (
         <>
@@ -159,6 +209,12 @@ export const AutoModView: React.FC = () => {
                 animate="show"
                 style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '1rem', padding: '1rem', paddingBottom: 'var(--dock-height)' }}
             >
+                {!selectedGroup && (
+                     <div style={{ padding: '1rem', background: 'rgba(255,165,0, 0.2)', border: '1px solid orange', borderRadius: '8px', color: '#ffcc00' }}>
+                        ⚠️ No Group Selected. Please select a group in the sidebar to configure AutoMod.
+                     </div>
+                )}
+                
                 {/* Header Section */}
                 <GlassPanel className={styles.headerPanel} style={{ flexShrink: 0 }}>
                     <div className={styles.titleSection}>
@@ -175,11 +231,6 @@ export const AutoModView: React.FC = () => {
                             label="ACTIVE RULES"
                             value={activeRulesCount}
                             color="var(--color-primary)"
-                        />
-                        <StatTile 
-                            label="INTERCEPTIONS"
-                            value={totalInterceptions}
-                            color="var(--color-danger)"
                         />
                          <StatTile 
                             label="STATUS"
@@ -205,8 +256,11 @@ export const AutoModView: React.FC = () => {
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                         
                          {/* Safety Settings */}
-                         <GlassPanel style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1.5rem', flexShrink: 0 }}>
-                            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Safety Settings</h3>
+                         <GlassPanel style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1rem', flexShrink: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Safety Settings</h3>
+                            </div>
+                            
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                 <RuleCard
                                     title="Auto Process Join Requests"
@@ -224,12 +278,74 @@ export const AutoModView: React.FC = () => {
                                     color="var(--color-danger)"
                                     icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"></path></svg>}
                                 />
+
+                                {/* Scan Controls Integration */}
+                                <div style={{ marginTop: '0.5rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', gap: '0.5rem' }}>
+                                    {scanLoading ? (
+                                        <NeonButton 
+                                            variant="primary" 
+                                            size="sm"
+                                            onClick={() => setShowScanResults(true)}
+                                            style={{ height: '36px', padding: '0 1rem', width: '100%', justifyContent: 'center' }}
+                                            glow={true}
+                                            className="animate-pulse"
+                                        >
+                                            <Loader2 size={16} className="animate-spin" style={{ marginRight: '8px' }} />
+                                            Scanning...
+                                        </NeonButton>
+                                    ) : (
+                                        <>
+                                            <NeonButton 
+                                                variant="secondary" 
+                                                size="sm"
+                                                onClick={() => {
+                                                    if (!selectedGroup) return;
+                                                    setShowScanConfirm(true);
+                                                }}
+                                                disabled={!selectedGroup}
+                                                title={!selectedGroup ? "Select a group first" : "Scan all members for violations"}
+                                                style={{ height: '36px', padding: '0 1rem', flex: 1, justifyContent: 'center' }}
+                                                glow={false}
+                                            >
+                                                <Play size={16} style={{ marginRight: '8px' }} />
+                                                Scan Members
+                                            </NeonButton>
+                                            
+                                            {(scanProgress.phase === 'complete' || scanResults.length > 0) && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => setShowScanResults(true)}
+                                                    style={{ height: '36px', width: '36px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                    title="View Results"
+                                                >
+                                                    <List size={16} />
+                                                </Button>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
                             </div>
                          </GlassPanel>
 
-                         <GlassPanel style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1.5rem', overflowY: 'auto' }}>
-                            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Active Rules</h3>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+
+
+                        <GlassPanel style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1rem', overflowY: 'auto' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Active Rules</h3>
+                                <NeonButton 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    onClick={() => setShowWhitelistViewer(true)}
+                                    style={{ padding: '4px 8px', fontSize: '0.75rem', gap: '4px', height: 'auto' }}
+                                    title="Manage Whitelisted Users & Groups"
+                                >
+                                    <ShieldCheck size={14} />
+                                    Whitelist
+                                </NeonButton>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                 {/* Age Verification Rule Card */}
                                 <RuleCard
                                     title="18+ Age Firewall"
@@ -274,7 +390,7 @@ export const AutoModView: React.FC = () => {
                 isOpen={showKeywordConfig} 
                 onClose={() => setShowKeywordConfig(false)}
                 config={keywordConfig} 
-                onUpdate={(newConfig) => toggleRule('KEYWORD_BLOCK', newConfig)}
+                onSave={(newConfig: Record<string, unknown>) => toggleRule('KEYWORD_BLOCK', newConfig)}
             />
 
             <BlacklistedGroupsConfigModal
@@ -296,6 +412,29 @@ export const AutoModView: React.FC = () => {
                         fetchGroupMembers(selectedGroup.id, 0);
                     }
                 }}
+            />
+
+            <ScanResultsDialog 
+                isOpen={showScanResults}
+                onClose={() => setShowScanResults(false)}
+            />
+
+            <ConfirmationModal
+                isOpen={showScanConfirm}
+                onClose={() => setShowScanConfirm(false)}
+                onConfirm={() => {
+                    setShowScanConfirm(false);
+                    handleScanGroup();
+                }}
+                title="Scan Group Members?"
+                message="This will scan all members in the selected group against your active AutoMod rules. For large groups, this process may take some time to respect VRChat API rate limits."
+                confirmLabel="Start Scan"
+                variant="default" // Blue/Info style
+            />
+
+            <WhitelistViewerModal
+                isOpen={showWhitelistViewer}
+                onClose={() => setShowWhitelistViewer(false)}
             />
         </>
     );

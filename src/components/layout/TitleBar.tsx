@@ -3,9 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { UserProfileWidget } from '../../features/auth/UserProfileWidget';
 // AccountSwitcher removed
 import { useAuthStore } from '../../stores/authStore';
+import { useAutoModAlertStore } from '../../stores/autoModAlertStore'; // ADDED
+import { NotificationPanel } from '../../features/notifications/NotificationPanel'; // ADDED
 import styles from './TitleBar.module.css';
 import { WindowControls } from './WindowControls';
-import { Settings, LogOut } from 'lucide-react';
+import { Settings, LogOut, Bell } from 'lucide-react'; // ADDED Bell
 
 interface TitleBarProps {
   onSettingsClick: () => void;
@@ -14,9 +16,27 @@ interface TitleBarProps {
 
 export const TitleBar: React.FC<TitleBarProps> = ({ onSettingsClick, onLogoutClick }) => {
   const { user } = useAuthStore();
+  const { history } = useAutoModAlertStore(); // ADDED
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false); // ADDED
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null); // ADDED
 
+  // Close notifications on click outside
+  useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+          if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+              setIsNotificationsOpen(false);
+          }
+      };
+      
+      if (isNotificationsOpen) {
+          document.addEventListener('mousedown', handleClickOutside);
+      }
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isNotificationsOpen]);
+  
+  // Mouse move logic for auto-closing profile
   useEffect(() => {
     if (!isProfileOpen) return;
 
@@ -48,10 +68,14 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onSettingsClick, onLogoutCli
     document.addEventListener('mousemove', handleMouseMove);
     return () => document.removeEventListener('mousemove', handleMouseMove);
   }, [isProfileOpen]);
+  
+
 
   return (
     <header className={styles.titleBar}>
-      {/* User Profile & Logout (Left Side) */}
+      {/* User Profile & Logout (Left Side) - Adjusted to be Right side in typical layout? No, original was Left. */}
+      {/* Original code shows LeftSection containing Profile. */}
+      
       <div className={styles.leftSection}>
           {/* Profile Dropdown Trigger */}
           <div style={{ position: 'relative' }}>
@@ -115,6 +139,36 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onSettingsClick, onLogoutCli
                       </motion.div>
                   )}
               </AnimatePresence>
+          </div>
+
+          {/* Notification Trigger */}
+          <div style={{ position: 'relative', marginLeft: '12px' }} ref={notifRef}>
+              <motion.button 
+                className={styles.iconButton} // We might need to define this class or use inline
+                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                style={{ 
+                    background: 'none', border: 'none', color: 'var(--color-text-dim)', 
+                    cursor: 'pointer', position: 'relative',
+                    padding: '8px', display: 'flex', alignItems: 'center', opacity: 0.8
+                }}
+              >
+                  <Bell size={20} />
+                  {history.length > 0 && (
+                      <span style={{
+                          position: 'absolute', top: '4px', right: '4px',
+                          background: '#ef4444', borderRadius: '50%',
+                          width: '8px', height: '8px',
+                          border: '2px solid var(--color-background)'
+                      }} />
+                  )}
+              </motion.button>
+              
+              <NotificationPanel 
+                  isOpen={isNotificationsOpen} 
+                  onClose={() => setIsNotificationsOpen(false)}
+              />
           </div>
 
       </div>

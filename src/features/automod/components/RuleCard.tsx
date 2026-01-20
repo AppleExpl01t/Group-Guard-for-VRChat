@@ -27,8 +27,8 @@ export const RuleCard: React.FC<RuleCardProps> = ({
             style={{ 
                 display: 'flex',
                 alignItems: 'center',
-                gap: '1rem',
-                padding: '0.75rem',
+                gap: '0.75rem',
+                padding: '0.5rem 0.75rem',
                 background: isEnabled ? 'rgba(255,255,255,0.03)' : 'transparent',
                 borderRadius: '8px',
                 border: isEnabled ? `1px solid ${color}` : '1px solid rgba(255,255,255,0.05)',
@@ -39,9 +39,9 @@ export const RuleCard: React.FC<RuleCardProps> = ({
             whileHover={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
         >
             <div style={{ 
-                width: '40px', 
-                height: '40px', 
-                borderRadius: '8px', 
+                width: '32px', 
+                height: '32px', 
+                borderRadius: '6px', 
                 background: isEnabled ? color : 'rgba(255,255,255,0.1)',
                 display: 'flex', 
                 alignItems: 'center', 
@@ -53,7 +53,7 @@ export const RuleCard: React.FC<RuleCardProps> = ({
             </div>
 
             <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, color: isEnabled ? 'white' : 'var(--color-text-dim)', fontSize: '0.95rem' }}>
+                <div style={{ fontWeight: 600, color: isEnabled ? 'white' : 'var(--color-text-dim)', fontSize: '0.9rem' }}>
                     {title}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: isEnabled ? color : 'rgba(255,255,255,0.3)', marginTop: '2px' }}>
