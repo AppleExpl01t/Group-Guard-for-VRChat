@@ -4,6 +4,7 @@ import { useInstanceMonitorStore } from '../../stores/instanceMonitorStore';
 import { NeonButton } from '../../components/ui/NeonButton';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMouseGlow } from '../../hooks/useMouseGlow';
+import { ParticleDissolveImage } from '../../components/ui/ParticleDissolveImage';
 import styles from './GroupSelectionView.module.css';
 
 // Memoized animation variants (stable references)
@@ -38,8 +39,9 @@ const GroupCard = memo(({
     
     return (
         <motion.div variants={itemVariants} layout>
+              {/* eslint-disable react-compiler/react-compiler -- useMouseGlow uses refs for DOM event handling, not for render output */}
               <div 
-                 ref={glow.ref}
+                 ref={glow.setRef}
                  className={`${styles.cardPanel} ${isLarge ? styles.cardLarge : styles.cardCompact} ${isLive ? styles.cardLive : ''}`}
                  onClick={onClick}
                  onMouseMove={glow.onMouseMove}
@@ -153,8 +155,9 @@ const RoamingCard = memo(({
 
     return (
         <motion.div variants={itemVariants} layout>
+            {/* eslint-disable react-compiler/react-compiler -- useMouseGlow uses refs for DOM event handling, not for render output */}
             <div 
-                 ref={glow.ref}
+                 ref={glow.setRef}
                  className={`${styles.cardPanel} ${isLarge ? styles.cardLarge : styles.cardCompact}`}
                  onClick={onClick}
                  onMouseMove={glow.onMouseMove}
@@ -169,26 +172,22 @@ const RoamingCard = memo(({
                  role="button"
                  tabIndex={0}
               >
-                  {/* Background Banner */}
-                  <AnimatePresence>
-                    {isLarge && instanceImageUrl && (
-                        <motion.div 
-                            className={styles.banner} 
-                            style={{ backgroundImage: `url(${instanceImageUrl})` }}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }} 
-                        />
-                    )}
-                    {isLarge && !instanceImageUrl && (
-                        <motion.div 
-                            className={styles.bannerFallback}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 0.2 }}
-                            exit={{ opacity: 0 }}
-                        />
-                    )}
-                  </AnimatePresence>
+                  {/* Background Banner with Particle Dissolve Effect */}
+                  {isLarge && (
+                      <ParticleDissolveImage
+                          src={instanceImageUrl}
+                          alt={currentWorldName || 'World'}
+                          className={styles.banner}
+                          particleCount={100}
+                          duration={1000}
+                      />
+                  )}
+                  {!isLarge && instanceImageUrl && (
+                      <div 
+                          className={styles.banner} 
+                          style={{ backgroundImage: `url(${instanceImageUrl})` }}
+                      />
+                  )}
 
                   {/* Roaming Badge */}
                   <motion.div
@@ -370,6 +369,33 @@ export const GroupSelectionView: React.FC = memo(() => {
               );
             })}
       </motion.div>
+          
+          {/* Always show Skip/Roaming Mode button */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            style={{ 
+              display: 'flex', 
+              justifyContent: 'center', 
+              padding: '2rem 1rem',
+              marginTop: '1rem'
+            }}
+          >
+            <NeonButton
+              variant="secondary"
+              onClick={() => enterRoamingMode()}
+              style={{ 
+                padding: '0.8rem 2rem',
+                fontSize: '0.9rem',
+                gap: '8px',
+                opacity: 0.8
+              }}
+            >
+              <span style={{ fontSize: '1.1rem' }}>🔍</span>
+              Skip - Enter Roaming Mode
+            </NeonButton>
+          </motion.div>
       </div>
     </div>
   );

@@ -1,25 +1,48 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { formatCountdown } from '../../hooks/useDataRefresh';
 
 interface RefreshTimerProps {
-  secondsUntilRefresh: number;
+  nextRefreshAt: number;
   isRefreshing: boolean;
   onRefreshClick?: (e?: React.MouseEvent) => void;
   label?: string;
+  forceShowTimer?: boolean;
 }
 
 /**
- * Compact visual countdown timer for data refresh
+ * Compact visual countdown timer for data refresh.
+ * Internalizes the countdown logic to prevent parent re-renders.
  */
 export const RefreshTimer: React.FC<RefreshTimerProps> = ({ 
-  secondsUntilRefresh, 
+  nextRefreshAt, 
   isRefreshing,
   onRefreshClick,
-  label = 'Refresh'
+  label = 'Refresh',
+  forceShowTimer = false
 }) => {
+  // Local state for the tick
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    // Only tick if we have a future date and not currently refreshing
+    if (isRefreshing || !nextRefreshAt) return;
+
+    // Tick every second to update 'now'
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isRefreshing, nextRefreshAt]);
+
+  const secondsUntilRefresh = Math.max(0, Math.ceil((nextRefreshAt - now) / 1000));
   const isOnCooldown = secondsUntilRefresh > 0;
   const isDisabled = isRefreshing || isOnCooldown;
   
+  // Decide if we show the timer
+  // If nextRefreshAt is 0, it means it's ready/unknown, so don't show timer unless forcing
+  const showTimer = (isOnCooldown || isRefreshing || forceShowTimer) && nextRefreshAt > 0;
+
   return (
     <button
       onClick={onRefreshClick}
@@ -66,8 +89,8 @@ export const RefreshTimer: React.FC<RefreshTimerProps> = ({
         <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
       </svg>
       
-      {/* Timer countdown - only show if there's a cooldown */}
-      {(secondsUntilRefresh > 0 || isRefreshing) && (
+      {/* Timer countdown */}
+      {(showTimer) && (
         <span style={{ 
           fontFamily: 'monospace', 
           fontSize: '0.6rem',

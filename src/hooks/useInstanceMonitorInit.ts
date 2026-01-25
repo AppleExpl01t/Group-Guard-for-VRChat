@@ -62,12 +62,15 @@ export function useInstanceMonitorInit(isAuthenticated: boolean) {
       
       // Fetch world details if we can (to fix "Unknown World")
       try {
+        console.log('[InstanceMonitorInit] Fetching world details for:', event.worldId);
         const result = await window.electron.getWorld(event.worldId);
+        console.log('[InstanceMonitorInit] World result:', result);
         if (result.success && result.world) {
             setWorldName(result.world.name);
             // Assuming world object has imageUrl or thumbnailImageUrl
             const worldData = result.world as { id: string; name: string; imageUrl?: string; thumbnailImageUrl?: string };
             const img = worldData.imageUrl || worldData.thumbnailImageUrl;
+            console.log('[InstanceMonitorInit] Setting world image:', img);
             if (img) setInstanceImage(img);
         }
       } catch (e) {

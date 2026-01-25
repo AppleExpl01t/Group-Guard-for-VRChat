@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback, lazy, Suspense } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, lazy, Suspense, startTransition } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
 import { ConfirmationProvider } from './context/ConfirmationContext';
 import { TitleBar } from './components/layout/TitleBar';
@@ -87,13 +87,13 @@ function App() {
   // Monitor Live Log state to toggle Live Mode UI
   // Note: This effect runs the live status check regardless of pipeline connection
   // because the log watcher operates independently of the VRChat API pipeline.
+  // PERF FIX: Removed isLiveMode from deps to prevent re-subscription loops
   useEffect(() => {
     if (isRoamingMode) {
-      if (!isLiveMode) {
-         const t = setTimeout(() => setIsLiveMode(true), 0);
-         return () => clearTimeout(t);
-      }
-      return;
+      // In roaming mode, always enable live mode
+      // Deferred to avoid synchronous setState in effect body
+      queueMicrotask(() => setIsLiveMode(true));
+      return; // Don't set up listeners in roaming mode
     }
 
     // 1. Initial check
@@ -136,7 +136,7 @@ function App() {
         unsubscribeGroupChange?.();
         unsubscribeGameClosed?.();
     };
-  }, [selectedGroup, isRoamingMode, isLiveMode]);
+  }, [selectedGroup, isRoamingMode]); // Removed isLiveMode - it was causing re-subscription loops
 
   // Redirect from Live view when Live mode ends (smooth transition)
   useEffect(() => {
@@ -207,20 +207,21 @@ function App() {
   }, [isRoamingMode, selectedGroup, currentView]);
 
   // Handle View Switching - memoized to prevent re-renders
+  // PERF FIX: Wrap in startTransition to keep UI responsive during navigation
   const handleViewChange = useCallback((view: DockView) => {
     // Exceptions for Live view in Roaming Mode
     if (view === 'live' && (isRoamingMode || selectedGroup)) {
-        setCurrentView('live');
+        startTransition(() => setCurrentView('live'));
         return;
     }
 
     if ((view === 'moderation' || view === 'audit' || view === 'database' || view === 'live' || view === 'watchlist') && !selectedGroup) {
       // If trying to access group features without a group, go to group selection
       selectGroup(null);
-      setCurrentView('main');
+      startTransition(() => setCurrentView('main'));
       return;
     }
-    setCurrentView(view);
+    startTransition(() => setCurrentView(view));
   }, [selectedGroup, selectGroup, isRoamingMode]);
 
   // Memoize content to prevent re-renders during transitions

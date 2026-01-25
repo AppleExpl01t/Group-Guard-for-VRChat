@@ -2,6 +2,20 @@ import { create } from 'zustand';
 import { getErrorMessage } from '../utils/errorUtils';
 import type { GroupRequest, GroupBan, GroupMember, VRChatInstance, PipelineEvent } from '../types/electron';
 
+// Simple debounce utility to prevent rapid API calls from pipeline events
+function debounce<T extends (...args: Parameters<T>) => void>(fn: T, ms: number): T {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  return ((...args: Parameters<T>) => {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), ms);
+  }) as T;
+}
+
+// Debounced fetch functions - created once outside the store
+// These prevent rapid-fire API calls when multiple pipeline events arrive
+let debouncedFetchMembers: ((groupId: string) => void) | null = null;
+let debouncedFetchGroups: (() => void) | null = null;
+
 interface Group {
   id: string;
   name: string;
@@ -239,6 +253,18 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const state = get();
     const selectedGroupId = state.selectedGroup?.id;
     
+    // Initialize debounced functions lazily (need access to store methods)
+    if (!debouncedFetchMembers) {
+      debouncedFetchMembers = debounce((groupId: string) => {
+        get().fetchGroupMembers(groupId);
+      }, 1000); // 1 second debounce
+    }
+    if (!debouncedFetchGroups) {
+      debouncedFetchGroups = debounce(() => {
+        get().fetchMyGroups();
+      }, 1000); // 1 second debounce
+    }
+    
     // Extract groupId from event content if present
     const eventGroupId = (event.content as { groupId?: string; member?: { groupId?: string }; role?: { groupId?: string } })
       .groupId || 
@@ -247,32 +273,32 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
     switch (event.type) {
       case 'group-member-updated':
-        // If this is for our selected group, trigger a members refresh
+        // If this is for our selected group, trigger a debounced members refresh
         if (eventGroupId && eventGroupId === selectedGroupId) {
           set({ hasRealtimeUpdate: true, lastPipelineEvent: event });
-          // Auto-refresh members data
-          get().fetchGroupMembers(selectedGroupId);
+          // Debounced to prevent rapid API calls when multiple events arrive
+          debouncedFetchMembers(selectedGroupId);
         }
         break;
 
       case 'group-role-updated':
-        // Role changes can affect permissions - refresh members
+        // Role changes can affect permissions - refresh members (debounced)
         if (eventGroupId && eventGroupId === selectedGroupId) {
           set({ hasRealtimeUpdate: true, lastPipelineEvent: event });
-          get().fetchGroupMembers(selectedGroupId);
+          debouncedFetchMembers(selectedGroupId);
         }
         break;
 
       case 'group-joined':
-        // User (logged-in user) joined a group - refresh group list
+        // User (logged-in user) joined a group - refresh group list (debounced)
         set({ hasRealtimeUpdate: true, lastPipelineEvent: event });
-        get().fetchMyGroups();
+        debouncedFetchGroups();
         break;
 
       case 'group-left':
-        // User (logged-in user) left a group - refresh group list
+        // User (logged-in user) left a group - refresh group list (debounced)
         set({ hasRealtimeUpdate: true, lastPipelineEvent: event });
-        get().fetchMyGroups();
+        debouncedFetchGroups();
         // If we left the currently selected group, deselect it
         if (eventGroupId && eventGroupId === selectedGroupId) {
           set({ selectedGroup: null });

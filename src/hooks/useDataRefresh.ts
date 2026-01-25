@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useGroupStore, REFRESH_INTERVALS } from '../stores/groupStore';
 import { usePoller } from './usePoller';
+import { useShallow } from 'zustand/react/shallow';
 
 type DataType = keyof typeof REFRESH_INTERVALS;
 
@@ -9,46 +10,36 @@ interface UseDataRefreshOptions {
   enabled?: boolean;
 }
 
-interface UseDataRefreshResult {
-  secondsUntilRefresh: number;
-  isRefreshing: boolean;
-  refreshNow: () => void;
-  lastFetchedAt: number;
-}
-
 /**
  * Hook to automatically refresh data at configured intervals
  * Provides a countdown timer synced with the refresh cycle
  */
-export function useDataRefresh({ type, enabled = true }: UseDataRefreshOptions): UseDataRefreshResult {
-  const { 
-    selectedGroup, 
-    fetchGroupRequests, 
-    fetchGroupBans, 
-    fetchGroupMembers, 
-    fetchGroupInstances,
-    isRequestsLoading,
-    isBansLoading,
-    isMembersLoading,
-    isInstancesLoading,
-    getLastFetchedAt,
-  } = useGroupStore();
+export function useDataRefresh({ type, enabled = true }: UseDataRefreshOptions) {
+  // PERF FIX: Use shallow selectors to prevent re-renders on unrelated state changes
+  const selectedGroup = useGroupStore(state => state.selectedGroup);
+  const getLastFetchedAt = useGroupStore(state => state.getLastFetchedAt);
+  
+  // Select only the fetch function we need based on type
+  const fetchGroupRequests = useGroupStore(state => state.fetchGroupRequests);
+  const fetchGroupBans = useGroupStore(state => state.fetchGroupBans);
+  const fetchGroupMembers = useGroupStore(state => state.fetchGroupMembers);
+  const fetchGroupInstances = useGroupStore(state => state.fetchGroupInstances);
+  
+  // Select only the loading state we need
+  const loadingStates = useGroupStore(useShallow(state => ({
+    isRequestsLoading: state.isRequestsLoading,
+    isBansLoading: state.isBansLoading,
+    isMembersLoading: state.isMembersLoading,
+    isInstancesLoading: state.isInstancesLoading,
+  })));
 
   const intervalMs = REFRESH_INTERVALS[type];
-  
-  // Use useState initializer to compute initial value (runs once, not during render)
-  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(() => {
-    const lastFetched = getLastFetchedAt(type);
-    if (lastFetched === 0) return Math.floor(intervalMs / 1000);
-    const remaining = intervalMs - (Date.now() - lastFetched);
-    return Math.max(1, Math.ceil(remaining / 1000));
-  });
+  const lastFetchedAt = getLastFetchedAt(type);
 
-
-  const isRefreshing = type === 'requests' ? isRequestsLoading :
-                       type === 'bans' ? isBansLoading :
-                       type === 'members' ? isMembersLoading :
-                       isInstancesLoading;
+  const isRefreshing = type === 'requests' ? loadingStates.isRequestsLoading :
+                       type === 'bans' ? loadingStates.isBansLoading :
+                       type === 'members' ? loadingStates.isMembersLoading :
+                       loadingStates.isInstancesLoading;
 
   const fetchData = useCallback(async () => {
     if (!selectedGroup) return;
@@ -71,39 +62,25 @@ export function useDataRefresh({ type, enabled = true }: UseDataRefreshOptions):
 
   const refreshNow = useCallback(() => {
     fetchData();
-    setSecondsUntilRefresh(Math.floor(intervalMs / 1000));
-  }, [fetchData, intervalMs]);
+  }, [fetchData]);
 
-  // 1. Initial Fetch Logic (replaces the first useEffect)
-  // We use usePoller with immediate=true IF we are stale
-  // Actually, usePoller repeats. We just want a "check on mount" maybe?
-  // Let's keep a simplified useEffect for the "Initial check" to respect stale time,
-  // OR just let the poller handle it if we set immediate=true.
-  // But strictly, we only want to fetch immediately if STALE.
-  
-  // Let's use usePoller for the REPEATED fetching.
+  // Use usePoller for the REPEATED fetching.
   usePoller(() => {
       fetchData();
-      setSecondsUntilRefresh(Math.floor(intervalMs / 1000));
   }, (enabled && selectedGroup) ? intervalMs : null);
 
-  // 2. Countdown Logic
-  usePoller(() => {
-      setSecondsUntilRefresh(prev => {
-        if (prev <= 1) return Math.floor(intervalMs / 1000);
-        return prev - 1;
-      });
-  }, (enabled && selectedGroup) ? 1000 : null);
+  // If never fetched (0), next refresh is effectively now/pending. 
+  // We'll just say "now" by effectively returning a timestamp in the past or close to it.
+  // Ideally downstream handles "0" as "Refresh Pending".
+  const nextRefreshAt = lastFetchedAt > 0 ? lastFetchedAt + intervalMs : 0;
 
   return {
-    secondsUntilRefresh,
+    nextRefreshAt,
     isRefreshing,
     refreshNow,
-    lastFetchedAt: getLastFetchedAt(type),
+    lastFetchedAt,
   };
 }
-
-
 
 /**
  * Format seconds into a human-readable countdown

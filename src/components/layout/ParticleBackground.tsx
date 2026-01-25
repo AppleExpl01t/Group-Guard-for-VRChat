@@ -11,6 +11,7 @@ interface Particle {
   layer: 'back' | 'mid' | 'front'; // Depth layer
   baseX: number; // Original position for mouse reactivity
   baseY: number;
+  colorShiftDuration: number; // Pre-computed for performance (avoid Math.random in render)
 }
 
 interface LightOrb {
@@ -59,6 +60,7 @@ const generateParticles = (count: number): Particle[] => {
       duration: (Math.random() * 8 + 8) / config.speedMult,
       delay: Math.random() * 8,
       layer,
+      colorShiftDuration: Math.random() * 5 + 5, // Pre-computed for render performance
     };
   });
 };
@@ -99,7 +101,7 @@ const ParticleElement = memo<{
         boxShadow: `0 0 ${particle.size * 3}px ${particle.isPrimary ? 'var(--color-primary)' : 'var(--color-accent)'}`,
         opacity: 0,
         willChange: 'transform, opacity',
-        animation: `particleFloat ${particle.duration}s linear ${particle.delay}s infinite${colorShift ? `, colorShift ${Math.random() * 5 + 5}s ease-in-out infinite` : ''}`,
+        animation: `particleFloat ${particle.duration}s linear ${particle.delay}s infinite${colorShift ? `, colorShift ${particle.colorShiftDuration}s ease-in-out infinite` : ''}`,
         transform: `translateX(${offsetX}px) translateY(${offsetY}px)`,
         transition: 'transform 0.3s ease-out',
       }}
@@ -134,12 +136,12 @@ LightOrbElement.displayName = 'LightOrbElement';
  * Features: depth layers, mouse reactivity, constellation lines, ambient orbs
  */
 export const ParticleBackground: React.FC<ParticleBackgroundProps> = memo(({ 
-  particleCount = 25,
+  particleCount = 12, // Reduced from 25 for healthcare performance
   className,
-  mouseReactive = true,
-  showConstellation = true,
+  mouseReactive = false, // Disabled by default - reduces CPU usage and visual distraction
+  showConstellation = false, // Disabled by default - expensive SVG calculations
   showOrbs = true,
-  colorShift = true,
+  colorShift = false, // Disabled by default - reduces animation complexity
 }) => {
   // Generate stable particles and orbs once
   const [particles] = useState<Particle[]>(() => generateParticles(particleCount));

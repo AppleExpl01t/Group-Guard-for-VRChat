@@ -1,4 +1,4 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useState, useCallback, useMemo } from 'react';
 import styles from './NeonDock.module.css';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -22,6 +22,9 @@ interface NeonDockProps {
   isLiveMode?: boolean;
 }
 
+// Static empty function to avoid creating new function on each render
+const noop = () => {};
+
 export const NeonDock: React.FC<NeonDockProps> = memo(({ 
   currentView, 
   onViewChange, 
@@ -31,12 +34,37 @@ export const NeonDock: React.FC<NeonDockProps> = memo(({
 }) => {
   const [isVisible, setIsVisible] = useState(false);
 
+  // PERF FIX: Memoize handlers to prevent re-renders
+  const handleShowDock = useCallback(() => setIsVisible(true), []);
+  const handleHideDock = useCallback(() => setIsVisible(false), []);
+  
+  // Use provided handler or fallback to noop (not inline function)
+  const handleGroupClick = onGroupClick ?? noop;
+  
+  // Memoize view change handlers
+  const handleMainClick = useCallback(() => onViewChange('main'), [onViewChange]);
+  const handleLiveClick = useCallback(() => onViewChange('live'), [onViewChange]);
+  const handleModerationClick = useCallback(() => onViewChange('moderation'), [onViewChange]);
+  const handleWatchlistClick = useCallback(() => onViewChange('watchlist'), [onViewChange]);
+  const handleAuditClick = useCallback(() => onViewChange('audit'), [onViewChange]);
+  const handleDatabaseClick = useCallback(() => onViewChange('database'), [onViewChange]);
+
+  // Memoize static style objects
+  const groupSectionStyle = useMemo(() => ({ overflow: 'hidden' as const }), []);
+  const innerFlexStyle = useMemo(() => ({ 
+    display: 'flex', 
+    alignItems: 'center', 
+    gap: '0.25rem', 
+    paddingRight: '0.25rem' 
+  }), []);
+  const liveOpsPadding = useMemo(() => ({ padding: '0 12px' }), []);
+
   return (
     <>
       {/* Visual indicator pill when dock is hidden */}
       <motion.div 
         className={styles.dockIndicator}
-        onMouseEnter={() => setIsVisible(true)}
+        onMouseEnter={handleShowDock}
         animate={{ 
           opacity: isVisible ? 0 : 1,
           scale: isVisible ? 0.8 : 1
@@ -58,13 +86,13 @@ export const NeonDock: React.FC<NeonDockProps> = memo(({
           stiffness: 400, 
           damping: 30 
         }}
-        onMouseLeave={() => setIsVisible(false)}
+        onMouseLeave={handleHideDock}
       >
         <motion.div className={styles.dock} layout>
           <DockItem 
             label={selectedGroup ? "Group" : "Home"}
             isActive={!selectedGroup}
-            onClick={onGroupClick || (() => {})}
+            onClick={handleGroupClick}
             color="var(--color-primary)"
             icon={Home}
           />
@@ -78,9 +106,9 @@ export const NeonDock: React.FC<NeonDockProps> = memo(({
                       animate={{ width: "auto", opacity: 1 }}
                       exit={{ width: 0, opacity: 0 }}
                       transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-                      style={{ overflow: 'hidden' }}
+                      style={groupSectionStyle}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', paddingRight: '0.25rem' }}>
+                    <div style={innerFlexStyle}>
                       <div className={styles.separator} />
 
                       {selectedGroup && (
@@ -88,7 +116,7 @@ export const NeonDock: React.FC<NeonDockProps> = memo(({
                           <DockItem 
                             label="Dashboard"
                             isActive={currentView === 'main' && !!selectedGroup}
-                            onClick={() => onViewChange('main')}
+                            onClick={handleMainClick}
                             color="var(--color-accent)"
                             icon={LayoutDashboard}
                           />
@@ -104,14 +132,14 @@ export const NeonDock: React.FC<NeonDockProps> = memo(({
                                   animate={{ width: "auto", opacity: 1, scale: 1 }}
                                   exit={{ width: 0, opacity: 0, scale: 0.8 }}
                                   transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                                  style={{ overflow: 'hidden' }}
+                                  style={groupSectionStyle}
                               >
-                                  <div style={{ padding: '0 12px' }}>
+                                  <div style={liveOpsPadding}>
                                       <DockItem 
                                           label="LIVE OPS"
                                           isActive={currentView === 'live'}
-                                          onClick={() => onViewChange('live')}
-                                          color="#ef4444" // Always red when visible (since it only shows in live mode)
+                                          onClick={handleLiveClick}
+                                          color="#ef4444"
                                           icon={Activity}
                                       />
                                   </div>
@@ -124,7 +152,7 @@ export const NeonDock: React.FC<NeonDockProps> = memo(({
                           <DockItem 
                             label="Auto-Mod"
                             isActive={currentView === 'moderation'}
-                            onClick={() => onViewChange('moderation')}
+                            onClick={handleModerationClick}
                             color="var(--color-primary)"
                             icon={Shield}
                           />
@@ -132,7 +160,7 @@ export const NeonDock: React.FC<NeonDockProps> = memo(({
                           <DockItem
                             label="Watchlist"
                             isActive={currentView === 'watchlist'}
-                            onClick={() => onViewChange('watchlist')}
+                            onClick={handleWatchlistClick}
                             color="var(--color-accent)"
                             icon={List}
                           />
@@ -140,7 +168,7 @@ export const NeonDock: React.FC<NeonDockProps> = memo(({
                           <DockItem 
                             label="Audit Logs"
                             isActive={currentView === 'audit'}
-                            onClick={() => onViewChange('audit')}
+                            onClick={handleAuditClick}
                             color="var(--color-accent)"
                             icon={ClipboardList}
                           />
@@ -148,7 +176,7 @@ export const NeonDock: React.FC<NeonDockProps> = memo(({
                           <DockItem 
                             label="Database"
                             isActive={currentView === 'database'}
-                            onClick={() => onViewChange('database')}
+                            onClick={handleDatabaseClick}
                             color="var(--color-primary)"
                             icon={Database}
                           />
@@ -168,5 +196,3 @@ export const NeonDock: React.FC<NeonDockProps> = memo(({
 });
 
 NeonDock.displayName = 'NeonDock';
-
-

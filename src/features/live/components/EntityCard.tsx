@@ -15,7 +15,7 @@ interface EntityCardProps {
     readOnly?: boolean;
 }
 
-export const EntityCard: React.FC<EntityCardProps> = ({ 
+const EntityCardComponent: React.FC<EntityCardProps> = ({ 
     entity, 
     onInvite, 
     onKick, 
@@ -113,3 +113,25 @@ export const EntityCard: React.FC<EntityCardProps> = ({
     </div>
     );
 };
+
+export const EntityCard = React.memo(EntityCardComponent, (prev, next) => {
+    // Check handlers reference equality (they should be memoized in parent)
+    if (prev.onInvite !== next.onInvite) return false;
+    if (prev.onKick !== next.onKick) return false;
+    if (prev.onBan !== next.onBan) return false;
+    if (prev.onReport !== next.onReport) return false;
+    if (prev.readOnly !== next.readOnly) return false;
+
+    // Check entity properties depth-wise for visual changes
+    const e1 = prev.entity;
+    const e2 = next.entity;
+
+    return (
+        e1.id === e2.id &&
+        e1.displayName === e2.displayName &&
+        e1.status === e2.status &&
+        e1.isGroupMember === e2.isGroupMember &&
+        e1.rank === e2.rank &&
+        e1.avatarUrl === e2.avatarUrl
+    );
+});

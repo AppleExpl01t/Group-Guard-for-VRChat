@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import styles from './StatTile.module.css';
 import { useMouseGlow } from '../../../hooks/useMouseGlow';
@@ -15,7 +15,7 @@ interface StatTileProps {
   headerLeftExtra?: React.ReactNode;
 }
 
-export const StatTile: React.FC<StatTileProps> = ({
+const StatTileComponent: React.FC<StatTileProps> = ({
   label,
   value,
   loading = false,
@@ -57,7 +57,7 @@ export const StatTile: React.FC<StatTileProps> = ({
 
   return (
     <motion.div
-      ref={glow.ref}
+      ref={glow.setRef}
       role="button"
       tabIndex={0}
       className={styles.tile}
@@ -109,3 +109,17 @@ export const StatTile: React.FC<StatTileProps> = ({
     </motion.div>
   );
 };
+
+// Memoized for performance - prevents re-render when parent updates
+export const StatTile = memo(StatTileComponent, (prev, next) => {
+  // Check primitive props
+  if (prev.label !== next.label) return false;
+  if (prev.value !== next.value) return false;
+  if (prev.loading !== next.loading) return false;
+  if (prev.color !== next.color) return false;
+  if (prev.onClick !== next.onClick) return false;
+  // ReactNode props may change reference, but we check identity
+  if (prev.headerRight !== next.headerRight) return false;
+  if (prev.headerLeftExtra !== next.headerLeftExtra) return false;
+  return true;
+});

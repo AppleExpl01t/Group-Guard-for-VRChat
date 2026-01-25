@@ -1,34 +1,45 @@
-import { useRef, useCallback, type RefObject, type CSSProperties } from 'react';
+import { useRef, useCallback, type CSSProperties } from 'react';
 
 interface MouseGlowResult {
-  ref: RefObject<HTMLDivElement | null>;
+  /** Callback ref to attach to the element */
+  setRef: (node: HTMLDivElement | null) => void;
+  /** Initial styles with CSS custom properties */
   style: CSSProperties;
+  /** Mouse move handler */
   onMouseMove: (e: React.MouseEvent) => void;
+  /** Mouse leave handler */
   onMouseLeave: () => void;
 }
-
-// Initial CSS custom properties for the glow effect
-const INITIAL_GLOW_STYLE: CSSProperties = {
-  '--glow-x': '50%',
-  '--glow-y': '50%',
-  '--glow-opacity': '0',
-} as CSSProperties;
 
 /**
  * Hook that tracks mouse position relative to an element and provides
  * CSS custom properties for creating cursor-following glow effects.
  * 
- * The glow effect is applied via inline style CSS custom properties
- * that are updated directly on the DOM element for performance.
+ * Uses a callback ref pattern to avoid React Compiler warnings about
+ * accessing refs during render.
  * 
- * @returns Object with ref, style, and event handlers to spread on target element
+ * @returns Object with setRef callback, style, and event handlers
  */
 export function useMouseGlow(): MouseGlowResult {
-  const ref = useRef<HTMLDivElement | null>(null);
+  // Store the DOM node in state-like ref that doesn't trigger re-renders
+  const nodeRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  
+  // Initial glow styles - constant since we manipulate DOM directly for performance
+  const glowStyle: CSSProperties = {
+    '--glow-x': '50%',
+    '--glow-y': '50%',
+    '--glow-opacity': '0',
+  } as CSSProperties;
+
+  // Callback ref - safe to use during render
+  const setRef = useCallback((node: HTMLDivElement | null) => {
+    nodeRef.current = node;
+  }, []);
 
   const onMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!ref.current) return;
+    const node = nodeRef.current;
+    if (!node) return;
     
     // Cancel any pending animation frame
     if (rafRef.current) {
@@ -36,15 +47,17 @@ export function useMouseGlow(): MouseGlowResult {
     }
 
     rafRef.current = requestAnimationFrame(() => {
-      if (!ref.current) return;
+      const currentNode = nodeRef.current;
+      if (!currentNode) return;
       
-      const rect = ref.current.getBoundingClientRect();
+      const rect = currentNode.getBoundingClientRect();
       const x = ((e.clientX - rect.left) / rect.width) * 100;
       const y = ((e.clientY - rect.top) / rect.height) * 100;
 
-      ref.current.style.setProperty('--glow-x', `${x}%`);
-      ref.current.style.setProperty('--glow-y', `${y}%`);
-      ref.current.style.setProperty('--glow-opacity', '1');
+      // Update DOM directly for performance (avoid React re-renders)
+      currentNode.style.setProperty('--glow-x', `${x}%`);
+      currentNode.style.setProperty('--glow-y', `${y}%`);
+      currentNode.style.setProperty('--glow-opacity', '1');
     });
   }, []);
 
@@ -52,14 +65,15 @@ export function useMouseGlow(): MouseGlowResult {
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
     }
-    if (ref.current) {
-      ref.current.style.setProperty('--glow-opacity', '0');
+    const node = nodeRef.current;
+    if (node) {
+      node.style.setProperty('--glow-opacity', '0');
     }
   }, []);
 
   return {
-    ref,
-    style: INITIAL_GLOW_STYLE,
+    setRef,
+    style: glowStyle,
     onMouseMove,
     onMouseLeave,
   };

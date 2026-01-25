@@ -15,7 +15,7 @@ import { InstancesListDialog } from '../dashboard/dialogs/InstancesListDialog';
 import { StatTile } from './components/StatTile';
 import styles from './DashboardView.module.css';
 import { motion } from 'framer-motion';
-import { MassInviteDialog } from './dialogs/MassInviteDialog';
+
 import { formatDistanceToNow } from 'date-fns';
 
 const containerVariants = {
@@ -41,19 +41,20 @@ const MEMBER_AFFECTING_EVENTS = [
 ];
 
 export const DashboardView: React.FC = memo(() => {
-  const { 
-      selectedGroup, 
-      requests, 
-      bans,
-      instances,
-      isRequestsLoading,
-      isBansLoading,
-      isInstancesLoading,
-      fetchGroupMembers,
-      isMembersLoading,
-  } = useGroupStore();
+  // PERF FIX: Use individual selectors instead of destructuring entire store
+  const selectedGroup = useGroupStore(state => state.selectedGroup);
+  const requests = useGroupStore(state => state.requests);
+  const bans = useGroupStore(state => state.bans);
+  const instances = useGroupStore(state => state.instances);
+  const isRequestsLoading = useGroupStore(state => state.isRequestsLoading);
+  const isBansLoading = useGroupStore(state => state.isBansLoading);
+  const isInstancesLoading = useGroupStore(state => state.isInstancesLoading);
+  const fetchGroupMembers = useGroupStore(state => state.fetchGroupMembers);
+  const isMembersLoading = useGroupStore(state => state.isMembersLoading);
   
-  const { logs, fetchLogs, isLoading: isLogsLoading } = useAuditStore();
+  const logs = useAuditStore(state => state.logs);
+  const fetchLogs = useAuditStore(state => state.fetchLogs);
+  const isLogsLoading = useAuditStore(state => state.isLoading);
   const pipelineStatus = usePipelineStatus();
   
   // Data Refresh Hooks
@@ -68,10 +69,10 @@ export const DashboardView: React.FC = memo(() => {
   const [showRequests, setShowRequests] = useState(false);
   const [showBans, setShowBans] = useState(false);
   const [showInstances, setShowInstances] = useState(false);
-  const [showMassInvite, setShowMassInvite] = useState(false);
+
   
   // Member refresh throttling
-  const [memberRefreshCooldown, setMemberRefreshCooldown] = useState(0);
+  const [memberNextRefreshAt, setMemberNextRefreshAt] = useState(0);
   const lastLogCountRef = useRef(0);
   const hasFetchedMembersRef = useRef(false);
   const lastGroupIdRef = useRef<string | null>(null);
@@ -115,19 +116,11 @@ export const DashboardView: React.FC = memo(() => {
     lastLogCountRef.current = logs.length;
   }, [logs, selectedGroup, fetchGroupMembers]);
 
-  // Cooldown effect
-  useEffect(() => {
-    if (memberRefreshCooldown > 0) {
-      const timer = setTimeout(() => setMemberRefreshCooldown(prev => prev - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [memberRefreshCooldown]);
-
   const handleMemberRefresh = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (memberRefreshCooldown > 0 || !selectedGroup) return;
+    if (memberNextRefreshAt > Date.now() || !selectedGroup) return;
     fetchGroupMembers(selectedGroup.id, 0);
-    setMemberRefreshCooldown(30);
+    setMemberNextRefreshAt(Date.now() + 30000);
   };
 
   const getLogIcon = (type: string) => {
@@ -218,7 +211,7 @@ export const DashboardView: React.FC = memo(() => {
                     headerLeftExtra={pipelineStatus.connected && <PipelineIndicator />}
                     headerRight={
                         <RefreshTimer 
-                            secondsUntilRefresh={memberRefreshCooldown} 
+                            nextRefreshAt={memberNextRefreshAt} 
                             isRefreshing={isMembersLoading} 
                             onRefreshClick={handleMemberRefresh} 
                         />
@@ -231,7 +224,7 @@ export const DashboardView: React.FC = memo(() => {
                     onClick={() => setShowInstances(true)}
                     headerRight={
                         <RefreshTimer 
-                            secondsUntilRefresh={instancesRefresh.secondsUntilRefresh} 
+                            nextRefreshAt={instancesRefresh.nextRefreshAt} 
                             isRefreshing={instancesRefresh.isRefreshing} 
                             onRefreshClick={(e) => { e?.stopPropagation(); instancesRefresh.refreshNow(); }} 
                         />
@@ -244,7 +237,7 @@ export const DashboardView: React.FC = memo(() => {
                     onClick={() => setShowRequests(true)}
                     headerRight={
                         <RefreshTimer 
-                            secondsUntilRefresh={requestsRefresh.secondsUntilRefresh} 
+                            nextRefreshAt={requestsRefresh.nextRefreshAt} 
                             isRefreshing={requestsRefresh.isRefreshing} 
                             onRefreshClick={(e) => { e?.stopPropagation(); requestsRefresh.refreshNow(); }} 
                         />
@@ -257,7 +250,7 @@ export const DashboardView: React.FC = memo(() => {
                     onClick={() => setShowBans(true)}
                     headerRight={
                         <RefreshTimer 
-                            secondsUntilRefresh={bansRefresh.secondsUntilRefresh} 
+                            nextRefreshAt={bansRefresh.nextRefreshAt} 
                             isRefreshing={bansRefresh.isRefreshing} 
                             onRefreshClick={(e) => { e?.stopPropagation(); bansRefresh.refreshNow(); }} 
                         />
@@ -366,13 +359,7 @@ export const DashboardView: React.FC = memo(() => {
                     <GlassPanel style={{ flex: 1, padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                         <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Quick Actions</h3>
                         
-                        <NeonButton 
-                            onClick={() => setShowMassInvite(true)} 
-                            style={{ width: '100%', justifyContent: 'center' }}
-                            variant="primary"
-                        >
-                            <span style={{ marginRight: '0.5rem' }}>📨</span> Mass Invite
-                        </NeonButton>
+
                         
                         <NeonButton 
                             onClick={() => {
@@ -401,7 +388,7 @@ export const DashboardView: React.FC = memo(() => {
         <RequestsListDialog isOpen={showRequests} onClose={() => setShowRequests(false)} />
         <BansListDialog isOpen={showBans} onClose={() => setShowBans(false)} />
         <InstancesListDialog isOpen={showInstances} onClose={() => setShowInstances(false)} />
-        <MassInviteDialog isOpen={showMassInvite} onClose={() => setShowMassInvite(false)} />
+
     </motion.div>
     </>
   );

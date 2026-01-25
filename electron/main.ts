@@ -142,7 +142,7 @@ import { setupUserHandlers } from './services/UserService';
 import { setupCredentialsHandlers } from './services/CredentialsService';
 import { setupPipelineHandlers } from './services/PipelineService';
 import { setupLogWatcherHandlers, logWatcherService } from './services/LogWatcherService';
-import { setupAutoModHandlers } from './services/AutoModService';
+import { setupAutoModHandlers, startAutoModService } from './services/AutoModService';
 import { setupInstanceHandlers } from './services/InstanceService';
 import { setupOscHandlers, oscService } from './services/OscService';
 import { setupOscAnnouncementHandlers } from './services/OscAnnouncementService';
@@ -209,6 +209,7 @@ setupPipelineHandlers();
 setupLogWatcherHandlers();
 logWatcherService.start(); // Start robust watching immediately
 setupAutoModHandlers();
+startAutoModService(); // Start the periodic join request processing loop
 
 setupInstanceHandlers();
 setupOscHandlers();

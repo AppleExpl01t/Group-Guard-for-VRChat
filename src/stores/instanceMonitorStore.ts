@@ -82,15 +82,20 @@ export const useInstanceMonitorStore = create<InstanceMonitorState>((set) => ({
   
   // NOTE: currentGroupId is NOT cleared here - it's managed by the separate onGroupChanged IPC event
   // This prevents race conditions when switching instances
-  clearInstance: () => set({ players: {}, currentWorldId: null, currentWorldName: null, currentInstanceId: null, currentLocation: null, instanceImageUrl: null }),
+  // NOTE: instanceImageUrl is also NOT cleared immediately - we keep the old image visible until a new one is fetched
+  clearInstance: () => set({ players: {}, currentWorldId: null, currentWorldName: null, currentInstanceId: null, currentLocation: null }),
 
   updateLiveScan: (newEntities) => set((state) => {
       const nextMap = new Map<string, LiveEntity>();
 
-      // 1. Carry over previous entities, default them to 'left' if they were active
+      // 1. Process existing entities
+      // Mark active/joining as 'left' temporarily
       state.liveScanResults.forEach(e => {
-          const nextStatus = (e.status === 'active' || e.status === 'joining') ? 'left' : e.status;
-          nextMap.set(e.id, { ...e, status: nextStatus });
+          if (e.status === 'active' || e.status === 'joining') {
+              nextMap.set(e.id, { ...e, status: 'left' });
+          } else {
+              nextMap.set(e.id, e);
+          }
       });
 
       // 2. Update with current results (revive to 'active')
@@ -99,7 +104,23 @@ export const useInstanceMonitorStore = create<InstanceMonitorState>((set) => ({
           nextMap.set(r.id, { ...(existing || {}), ...r, status: 'active' });
       });
 
-      return { liveScanResults: Array.from(nextMap.values()) };
+      // 3. Convert to array and cleanup history
+      let allEntities = Array.from(nextMap.values());
+      
+      // Separate active vs inactive
+      const active = allEntities.filter(e => e.status !== 'left' && e.status !== 'kicked');
+      const history = allEntities.filter(e => e.status === 'left' || e.status === 'kicked');
+
+      // Sort history by lastUpdated if available, or keep order. 
+      // If history is too large, slice it.
+      if (history.length > 50) {
+          // If we don't have timestamps, we just slice the end (assuming insertion order)
+          // But to be safe, let's just keep the last 50.
+          const keptHistory = history.slice(-50);
+          allEntities = [...active, ...keptHistory];
+      }
+
+      return { liveScanResults: allEntities };
   }),
 
   clearLiveScan: () => set({ liveScanResults: [] }),

@@ -126,34 +126,41 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     // Add to recent events (FIFO queue)
     const newEvents = [event, ...state.recentEvents].slice(0, state.maxRecentEvents);
     
+    // Single atomic state update - happens immediately
     set({
       recentEvents: newEvents,
       lastEventAt: event.timestamp
     });
     
-    // Notify all wildcard listeners
-    const wildcardListeners = state.eventListeners.get('*');
-    if (wildcardListeners) {
-      wildcardListeners.forEach(callback => {
-        try {
-          callback(event);
-        } catch (err) {
-          console.error('[Pipeline Store] Error in wildcard listener:', err);
-        }
-      });
-    }
-    
-    // Notify type-specific listeners
-    const typeListeners = state.eventListeners.get(event.type);
-    if (typeListeners) {
-      typeListeners.forEach(callback => {
-        try {
-          callback(event);
-        } catch (err) {
-          console.error(`[Pipeline Store] Error in ${event.type} listener:`, err);
-        }
-      });
-    }
+    // Defer listener callbacks to next microtask to avoid blocking UI
+    // This is critical for healthcare apps where UI responsiveness is paramount
+    queueMicrotask(() => {
+      const currentState = get();
+      
+      // Notify all wildcard listeners
+      const wildcardListeners = currentState.eventListeners.get('*');
+      if (wildcardListeners) {
+        wildcardListeners.forEach(callback => {
+          try {
+            callback(event);
+          } catch (err) {
+            console.error('[Pipeline Store] Error in wildcard listener:', err);
+          }
+        });
+      }
+      
+      // Notify type-specific listeners
+      const typeListeners = currentState.eventListeners.get(event.type);
+      if (typeListeners) {
+        typeListeners.forEach(callback => {
+          try {
+            callback(event);
+          } catch (err) {
+            console.error(`[Pipeline Store] Error in ${event.type} listener:`, err);
+          }
+        });
+      }
+    });
   },
 
   handleConnected: () => {

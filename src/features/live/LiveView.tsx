@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { NeonButton } from '../../components/ui/NeonButton';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,6 +9,7 @@ import { useInstanceMonitorStore, type LiveEntity } from '../../stores/instanceM
 import { BanUserDialog } from './dialogs/BanUserDialog';
 import { OscAnnouncementWidget } from '../dashboard/widgets/OscAnnouncementWidget';
 import { RecruitResultsDialog } from './dialogs/RecruitResultsDialog';
+import { MassInviteDialog } from '../dashboard/dialogs/MassInviteDialog';
 import { AutoModAlertOverlay } from './overlays/AutoModAlertOverlay';
 import { useAutoModAlertStore } from '../../stores/autoModAlertStore';
 import { ReportGeneratorDialog } from '../reports/ReportGeneratorDialog';
@@ -52,8 +53,17 @@ const ToggleButton = ({ enabled, onToggle }: { enabled: boolean; onToggle: () =>
 );
 
 export const LiveView: React.FC = () => {
-    const { selectedGroup, isRoamingMode } = useGroupStore();
-    const { currentWorldName, currentWorldId, instanceImageUrl, liveScanResults, updateLiveScan, setEntityStatus } = useInstanceMonitorStore();
+    // PERF FIX: Use individual selectors instead of destructuring entire store
+    const selectedGroup = useGroupStore(state => state.selectedGroup);
+    const isRoamingMode = useGroupStore(state => state.isRoamingMode);
+    
+    const currentWorldName = useInstanceMonitorStore(state => state.currentWorldName);
+    const currentWorldId = useInstanceMonitorStore(state => state.currentWorldId);
+    const instanceImageUrl = useInstanceMonitorStore(state => state.instanceImageUrl);
+    const liveScanResults = useInstanceMonitorStore(state => state.liveScanResults);
+    const updateLiveScan = useInstanceMonitorStore(state => state.updateLiveScan);
+    const setEntityStatus = useInstanceMonitorStore(state => state.setEntityStatus);
+    
     const scanActive = true;
     const entities = liveScanResults;
     
@@ -62,6 +72,27 @@ export const LiveView: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [customMessage, setCustomMessage] = useState('');
     
+    // Log Batching Refs
+    const logQueueRef = React.useRef<LogEntry[]>([]);
+
+    // Log Flushing Effect
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (logQueueRef.current.length > 0) {
+                const newLogs = [...logQueueRef.current];
+                logQueueRef.current = []; // Clear queue
+                
+                setLogs(prev => {
+                    // Combine and keep only last 50
+                    const combined = [...prev, ...newLogs];
+                    return combined.slice(-50);
+                });
+            }
+        }, 500); // Flush max twice per second
+        
+        return () => clearInterval(interval);
+    }, []);
+    
 
     
 
@@ -69,6 +100,7 @@ export const LiveView: React.FC = () => {
     // Dialog State
     const [banDialogUser, setBanUserDialog] = useState<{ id: string; displayName: string } | null>(null);
     const [recruitResults, setRecruitResults] = useState<{ blocked: {name:string, reason?:string}[], invited: number } | null>(null);
+    const [showMassInvite, setShowMassInvite] = useState(false);
     
     // Report Dialog State
     const [reportContext, setReportContext] = useState<ReportContext | null>(null);
@@ -79,22 +111,26 @@ export const LiveView: React.FC = () => {
     const { confirm } = useConfirm();
     const { addNotification } = useNotificationStore();
 
-    // Helpers to add logs
+    // Helpers to add logs (Batched)
     const addLog = useCallback((message: string, type: 'info' | 'warn' | 'success' | 'error' = 'info') => {
-        setLogs(prev => [...prev.slice(-49), { message, type, id: Date.now() + Math.random() }]);
+        logQueueRef.current.push({ 
+            message, 
+            type, 
+            id: Date.now() + Math.random() 
+        });
     }, []);
 
-    const handleBanClick = (userId: string, name: string) => {
+    const handleBanClick = useCallback((userId: string, name: string) => {
         setBanUserDialog({ id: userId, displayName: name });
-    };
+    }, []);
 
-    const handleReportClick = (userId: string, name: string) => {
+    const handleReportClick = useCallback((userId: string, name: string) => {
         setReportContext({
             target: { displayName: name, id: userId },
             world: { name: instanceInfo?.name },
             timestamp: new Date().toISOString()
         });
-    };
+    }, [instanceInfo?.name]);
 
     const performScan = useCallback(async () => {
         if (!selectedGroup && !isRoamingMode) return;
@@ -175,7 +211,7 @@ export const LiveView: React.FC = () => {
     }, [addLog]);
 
     // Actions
-    const handleRecruit = async (userId: string, name: string) => {
+    const handleRecruit = useCallback(async (userId: string, name: string) => {
         if (!selectedGroup) return;
         addLog(`[CMD] Inviting ${name}...`, 'info');
         try {
@@ -184,9 +220,9 @@ export const LiveView: React.FC = () => {
         } catch {
             addLog(`[CMD] Failed to invite ${name}`, 'error');
         }
-    };
+    }, [selectedGroup, addLog]);
 
-    const handleKick = async (userId: string, name: string) => {
+    const handleKick = useCallback(async (userId: string, name: string) => {
         if (!selectedGroup) return;
         
         const confirmed = await confirm({
@@ -211,7 +247,7 @@ export const LiveView: React.FC = () => {
                 message: `Failed to kick ${name}`
             });
         }
-    };
+    }, [selectedGroup, confirm, addLog, setEntityStatus, addNotification]);
     
     const [progress, setProgress] = useState<{ current: number, total: number } | null>(null);
     const [progressMode, setProgressMode] = useState<'recruit' | 'rally' | null>(null);
@@ -500,9 +536,18 @@ export const LiveView: React.FC = () => {
         }
     };
 
-    // Derived counts
-    const activeCount = entities.filter(e => e.status === 'active' || e.status === 'joining').length;
-    const leftCount = entities.filter(e => e.status === 'left' || e.status === 'kicked').length;
+    // Derived counts and filtered lists - memoized for performance
+    // PERF FIX: Prevents recalculating on every render
+    const { activeCount, leftCount, activeEntities, leftEntities } = useMemo(() => {
+        const active = entities.filter(e => e.status === 'active' || e.status === 'joining');
+        const left = entities.filter(e => e.status === 'left' || e.status === 'kicked');
+        return {
+            activeCount: active.length,
+            leftCount: left.length,
+            activeEntities: active,
+            leftEntities: left
+        };
+    }, [entities]);
 
     return (
         <>
@@ -627,7 +672,7 @@ export const LiveView: React.FC = () => {
                                                 <span style={{ fontSize: '0.8rem' }}>(Instance is empty)</span>
                                             </div>
                                         ) : (
-                                            entities.filter(e => e.status === 'active' || e.status === 'joining').map(entity => (
+                                            activeEntities.map(entity => (
                                                 <motion.div
                                                     key={entity.id}
                                                     initial={{ opacity: 0, y: 10 }}
@@ -659,7 +704,7 @@ export const LiveView: React.FC = () => {
                                                 History empty
                                             </div>
                                         ) : (
-                                            entities.filter(e => e.status === 'left' || e.status === 'kicked').map(entity => (
+                                            leftEntities.map(entity => (
                                                 <motion.div
                                                     key={entity.id}
                                                     initial={{ opacity: 0 }}
@@ -737,6 +782,18 @@ export const LiveView: React.FC = () => {
                                 {renderRecruitButton()}
                                 {renderRallyButton()}
                             </div>
+
+                            {/* Mass Invite Friends Button */}
+                            {!isRoamingMode && selectedGroup && (
+                                <NeonButton 
+                                    variant="secondary" 
+                                    style={{ height: '50px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                                    onClick={() => setShowMassInvite(true)}
+                                    disabled={progress !== null}
+                                >
+                                    <span>📨</span> MASS INVITE FRIENDS
+                                </NeonButton>
+                            )}
                             
                             {!isRoamingMode && selectedGroup && (
                                 <NeonButton 
@@ -794,6 +851,13 @@ export const LiveView: React.FC = () => {
                         onClose={() => setRecruitResults(null)}
                         blockedUsers={recruitResults?.blocked || []}
                         totalInvited={recruitResults?.invited || 0}
+                    />
+                )}
+                
+                {showMassInvite && selectedGroup && (
+                    <MassInviteDialog 
+                        isOpen={showMassInvite}
+                        onClose={() => setShowMassInvite(false)}
                     />
                 )}
             </AnimatePresence>

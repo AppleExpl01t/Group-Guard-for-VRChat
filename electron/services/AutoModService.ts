@@ -144,7 +144,7 @@ export const store = new Store<AutoModStoreSchema>({
     enableAutoBan: false,
   },
   migrations: {
-    "2.0.0": (store) => {
+    "2.0.0": () => {
       // Future migration: could move global rules to a "default" group or similar
     },
   },
@@ -1186,7 +1186,26 @@ export const processGroupJoinNotification = async (notification: {
 };
 
 export const startAutoModService = () => {
-  // Legacy setup if needed
+  // Stop any existing interval first
+  if (autoModInterval) {
+    clearInterval(autoModInterval);
+    autoModInterval = null;
+  }
+
+  logger.info(`[AutoMod] Starting AutoMod service with ${CHECK_INTERVAL / 1000}s interval...`);
+
+  // Run immediately on start
+  processAllPendingRequests().catch((err) =>
+    logger.error("[AutoMod] Initial request processing failed", err)
+  );
+
+  // Set up periodic interval
+  autoModInterval = setInterval(() => {
+    logger.debug("[AutoMod] Running periodic join request check...");
+    processAllPendingRequests().catch((err) =>
+      logger.error("[AutoMod] Periodic request processing failed", err)
+    );
+  }, CHECK_INTERVAL);
 };
 
 export const stopAutoModService = () => {

@@ -57,10 +57,16 @@ export const useCountUp = (
   const [value, setValue] = useState(animateOnMount ? 0 : targetValue);
   const [isAnimating, setIsAnimating] = useState(false);
   
-  const startValue = useRef(0);
+  // Refs for stability and mutable state tracking
   const startTime = useRef<number | null>(null);
   const animationFrame = useRef<number | null>(null);
   const previousTarget = useRef(targetValue);
+  const valueRef = useRef(value);
+  
+  // Update valueRef on every render so we can access current value in effects without dependencies
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   // Format number with separators and decimals
   const formatNumber = useCallback(
@@ -77,9 +83,18 @@ export const useCountUp = (
     [decimals, prefix, suffix, separator]
   );
 
-  // Animation loop
-  const animate = useCallback(
-    (timestamp: number) => {
+  // Reusable animation driver
+  // captures 'duration' and 'easing' from closure (assumed stable or safe to restart if changed)
+  const startAnimation = useCallback((from: number, to: number) => {
+    if (animationFrame.current) {
+      cancelAnimationFrame(animationFrame.current);
+    }
+
+    startTime.current = null;
+    setIsAnimating(true);
+    
+    // Define the loop function locally to avoid explicit recursion dependencies
+    const animate = (timestamp: number) => {
       if (startTime.current === null) {
         startTime.current = timestamp;
       }
@@ -88,37 +103,33 @@ export const useCountUp = (
       const progress = Math.min(elapsed / duration, 1);
       const easedProgress = easing(progress);
 
-      const currentValue =
-        startValue.current + (targetValue - startValue.current) * easedProgress;
-
+      const currentValue = from + (to - from) * easedProgress;
       setValue(currentValue);
 
       if (progress < 1) {
         animationFrame.current = requestAnimationFrame(animate);
       } else {
-        setValue(targetValue);
+        setValue(to);
         setIsAnimating(false);
         startTime.current = null;
+        animationFrame.current = null;
       }
-    },
-    [targetValue, duration, easing]
-  );
+    };
 
-  // Start animation when target changes
+    animationFrame.current = requestAnimationFrame(animate);
+  }, [duration, easing]);
+
+  // Watch for target changes
   useEffect(() => {
+    // Skip if target hasn't changed and we aren't supposed to animate on mount
     if (targetValue === previousTarget.current && !animateOnMount) {
       return;
     }
 
-    // Cancel any ongoing animation
-    if (animationFrame.current) {
-      cancelAnimationFrame(animationFrame.current);
-    }
-
-    startValue.current = value;
-    startTime.current = null;
-    setIsAnimating(true);
-    animationFrame.current = requestAnimationFrame(animate);
+    // Capture the *current* value as the starting point for the new animation
+    const startFrom = valueRef.current;
+    
+    startAnimation(startFrom, targetValue);
     previousTarget.current = targetValue;
 
     return () => {
@@ -126,46 +137,16 @@ export const useCountUp = (
         cancelAnimationFrame(animationFrame.current);
       }
     };
-  }, [targetValue, animate, animateOnMount, value]);
+  }, [targetValue, animateOnMount, startAnimation]);
 
   // Manual trigger
   const countTo = useCallback(
     (newValue: number) => {
-      if (animationFrame.current) {
-        cancelAnimationFrame(animationFrame.current);
-      }
-
-      startValue.current = value;
-      startTime.current = null;
-      setIsAnimating(true);
+      const startFrom = valueRef.current;
+      startAnimation(startFrom, newValue);
       previousTarget.current = newValue;
-      animationFrame.current = requestAnimationFrame((timestamp) => {
-        const animateToNew = (ts: number) => {
-          if (startTime.current === null) {
-            startTime.current = ts;
-          }
-
-          const elapsed = ts - startTime.current;
-          const progress = Math.min(elapsed / duration, 1);
-          const easedProgress = easing(progress);
-
-          const currentValue =
-            startValue.current + (newValue - startValue.current) * easedProgress;
-
-          setValue(currentValue);
-
-          if (progress < 1) {
-            animationFrame.current = requestAnimationFrame(animateToNew);
-          } else {
-            setValue(newValue);
-            setIsAnimating(false);
-            startTime.current = null;
-          }
-        };
-        animateToNew(timestamp);
-      });
     },
-    [value, duration, easing]
+    [startAnimation]
   );
 
   // Reset without animation

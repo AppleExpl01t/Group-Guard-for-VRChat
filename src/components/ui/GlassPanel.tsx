@@ -1,20 +1,26 @@
-import React, { type ReactNode } from 'react';
+import React, { type ReactNode, memo, useMemo } from 'react';
 
 interface GlassPanelProps extends React.HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
 }
 
-export const GlassPanel: React.FC<GlassPanelProps> = ({ children, className = '', style, ...props }) => {
+// PERF FIX: Memoized to prevent re-renders when parent updates
+export const GlassPanel: React.FC<GlassPanelProps> = memo(({ children, className = '', style, ...props }) => {
+  // Memoize combined style to prevent object recreation
+  const combinedStyle = useMemo(() => ({
+    padding: '1.5rem',
+    ...style
+  }), [style]);
+
   return (
     <div 
       className={`glass-panel ${className}`} 
-      style={{
-        padding: '1.5rem',
-        ...style
-      }}
+      style={combinedStyle}
       {...props}
     >
       {children}
     </div>
   );
-};
+});
+
+GlassPanel.displayName = 'GlassPanel';
