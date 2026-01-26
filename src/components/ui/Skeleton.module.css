@@ -1,0 +1,82 @@
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--border-radius, 8px);
+}
+
+/* Shimmer animation overlay */
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 20%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.08) 80%,
+    transparent 100%
+  );
+  animation: shimmer 1.5s ease-in-out infinite;
+  transform: translateX(-100%);
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Variant: Circular (for avatars) */
+.skeletonCircle {
+  border-radius: 50%;
+}
+
+/* Variant: Pill (for badges) */
+.skeletonPill {
+  border-radius: 9999px;
+}
+
+/* Variant: Text line */
+.skeletonText {
+  height: 1em;
+  border-radius: 4px;
+}
+
+/* Variant: With subtle pulse */
+.skeletonPulse {
+  animation: skeletonPulse 2s ease-in-out infinite;
+}
+
+.skeletonPulse::after {
+  animation: shimmer 1.5s ease-in-out infinite, skeletonPulse 2s ease-in-out infinite;
+}
+
+@keyframes skeletonPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Primary colored shimmer variant */
+.skeletonPrimary {
+  background: rgba(var(--primary-hue), 100%, 50%, 0.1);
+}
+
+.skeletonPrimary::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsla(var(--primary-hue), 80%, 60%, 0.1) 20%,
+    hsla(var(--primary-hue), 80%, 60%, 0.2) 50%,
+    hsla(var(--primary-hue), 80%, 60%, 0.1) 80%,
+    transparent 100%
+  );
+}

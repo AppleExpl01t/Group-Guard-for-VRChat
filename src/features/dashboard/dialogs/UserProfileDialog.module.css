@@ -1,0 +1,408 @@
+/* UserProfileDialog.module.css */
+
+.loadingState {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 3rem;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.errorState {
+    padding: 2rem;
+    text-align: center;
+    color: #f87171;
+}
+
+.dialogContent {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+/* Profile Grid - 2 columns */
+.profileGrid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+}
+
+/* Card */
+.card {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.cardHeader {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.6rem 0.8rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 600;
+    font-size: 0.8rem;
+}
+
+.cardContent {
+    padding: 0.8rem;
+}
+
+/* Profile Header */
+.profileHeader {
+    display: flex;
+    gap: 0.8rem;
+    align-items: flex-start;
+}
+
+.avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 10px;
+    object-fit: cover;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.profileInfo {
+    flex: 1;
+    min-width: 0;
+}
+
+.displayName {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: white;
+    margin: 0 0 0.2rem 0;
+}
+
+.idRow {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.userId {
+    font-size: 0.65rem;
+    color: rgba(255, 255, 255, 0.4);
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.15rem 0.35rem;
+    border-radius: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 180px;
+}
+
+.copyBtn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.4);
+    cursor: pointer;
+    padding: 0.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+}
+
+.copyBtn:hover {
+    color: #10b981;
+    background: rgba(16, 185, 129, 0.1);
+}
+
+.pronouns {
+    display: inline-block;
+    margin-top: 0.3rem;
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+}
+
+/* Bio Section */
+.bioSection {
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bioSection label,
+.languagesSection label {
+    display: block;
+    font-size: 0.65rem;
+    color: rgba(255, 255, 255, 0.4);
+    margin-bottom: 0.3rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.bio {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    margin: 0;
+    white-space: pre-wrap;
+    max-height: 60px;
+    overflow-y: auto;
+}
+
+/* Trust Badge */
+.trustBadge {
+    display: inline-flex;
+    padding: 0.35rem 0.75rem;
+    border: 2px solid;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin-bottom: 0.6rem;
+}
+
+/* Field Grid */
+.fieldGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+}
+
+.field label {
+    display: block;
+    font-size: 0.6rem;
+    color: rgba(255, 255, 255, 0.4);
+    margin-bottom: 0.15rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.field span {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.8rem;
+}
+
+.verified {
+    color: #10b981 !important;
+}
+
+.vrcPlus {
+    color: #ffd700 !important;
+}
+
+.warning {
+    color: #ef4444 !important;
+}
+
+/* Status */
+.statusRow {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.6rem;
+}
+
+.statusDot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #666;
+}
+
+.statusDot.active,
+.statusDot.join\ me {
+    background: #10b981;
+}
+
+.statusDot.ask\ me {
+    background: #f59e0b;
+}
+
+.statusDot.busy {
+    background: #ef4444;
+}
+
+.statusText {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.8rem;
+}
+
+/* Languages */
+.languagesSection {
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.languages {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+.language {
+    font-size: 0.7rem;
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+}
+
+/* Mutuals */
+.mutualStats {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.mutualStat {
+    text-align: center;
+}
+
+.mutualCount {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: white;
+}
+
+.mutualLabel {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* Tags */
+.tagsContainer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    max-height: 80px;
+    overflow-y: auto;
+}
+
+.tag {
+    font-size: 0.6rem;
+    font-family: "JetBrains Mono", monospace;
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.6);
+    padding: 0.15rem 0.3rem;
+    border-radius: 3px;
+}
+
+.tagMore {
+    font-size: 0.6rem;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* Groups Section */
+.groupsSection {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.groupsList {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.8rem;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.groupItem {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 6px;
+    flex: 0 0 calc(50% - 0.25rem);
+    min-width: 200px;
+}
+
+.groupIcon {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.groupIconPlaceholder {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.3);
+    flex-shrink: 0;
+}
+
+.groupInfo {
+    flex: 1;
+    min-width: 0;
+}
+
+.groupNameRow {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    flex-wrap: wrap;
+}
+
+.groupName {
+    font-weight: 600;
+    color: white;
+    font-size: 0.8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.representingBadge {
+    font-size: 0.6rem;
+    background: linear-gradient(135deg, #ffd700 0%, #f59e0b 100%);
+    color: #000;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    font-weight: 600;
+}
+
+.mutualBadge {
+    font-size: 0.6rem;
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    font-weight: 500;
+}
+
+.groupMeta {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.15rem;
+}
+
+.groupMeta code {
+    font-size: 0.6rem;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.groupMeta span {
+    font-size: 0.6rem;
+    color: rgba(255, 255, 255, 0.4);
+}

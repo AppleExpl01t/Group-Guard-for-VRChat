@@ -1,0 +1,375 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 0;
+  padding-bottom: var(--dock-height);
+  overflow: hidden;
+}
+
+/* --- HEADER SECTION --- */
+
+.headerPanel {
+  flex: 0 0 auto;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  z-index: 10;
+}
+
+.titleSection {
+  min-width: 150px;
+}
+
+.title {
+  font-size: 1.5rem;
+  margin: 0;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.subtitle {
+  font-size: 0.7rem;
+  color: var(--color-text-dim);
+  margin-top: 2px;
+  letter-spacing: 0.05em;
+  border-bottom: 2px solid var(--color-primary);
+  display: inline-block;
+  color: var(--color-primary);
+}
+
+.statsGrid {
+  display: flex;
+  gap: 0.5rem;
+  flex: 1;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* --- CONTENT AREA --- */
+
+.scrollArea {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 2rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-primary) transparent;
+}
+
+/* --- GRID MODES --- */
+
+.grid {
+  display: grid;
+  gap: 1.5rem;
+  padding-bottom: 2rem;
+  will-change: grid-template-columns; 
+  transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+  justify-content: center; 
+}
+
+.gridCompact {
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  grid-auto-rows: 1fr;
+}
+
+.gridLarge {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+/* --- CARD BASE --- */
+
+/* --- CARD BASE --- */
+
+/* --- CARD BASE --- */
+
+/* --- CARD BASE --- */
+
+.cardPanel {
+  position: relative;
+  overflow: hidden !important;
+  /* Match SettingsView innerCardStyle base but simpler for glow overwrite */
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 0 !important;
+  
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  
+  /* Glow Variables Defaults */
+  --glow-x: 50%;
+  --glow-y: 50%;
+  --glow-opacity: 0;
+  
+  /* Interaction transitions */
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.3s ease;
+}
+
+/* Mouse Glow Effect */
+.cardPanel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: calc(var(--glow-opacity) * 0.4); /* Subtle glow */
+  background: radial-gradient(
+    600px circle at var(--glow-x) var(--glow-y),
+    var(--color-primary-glow),
+    transparent 40%
+  );
+  transition: opacity 0.3s ease;
+  z-index: 10; /* Above banner, below content text */
+  mix-blend-mode: screen; /* Nice blending */
+}
+
+/* Ensure content is strictly above glow if needed, though banner is usually BG */
+.banner, .bannerFallback {
+    z-index: 1; /* Below glow */
+}
+
+.overlayContent, .groupIcon, .groupIconPlaceholder, .liveBadge {
+    z-index: 20; /* Above glow */
+}
+
+.cardPanel:hover {
+  transform: translateY(-4px) scale(1.02);
+  border-color: rgba(var(--primary-hue), 100%, 70%, 0.3); /* Neon border hint */
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+}
+
+.cardPanel:active {
+  transform: translateY(-2px) scale(1.01);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.cardLive {
+  /* We use a pseudo-element for the border so it sits ON TOP of children (banners/overlays) */
+  border-color: transparent !important;
+}
+
+.cardLive::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 20px; /* Match parent */
+  border: 2px solid var(--color-success);
+  box-shadow: 0 0 15px rgba(0, 255, 100, 0.2), inset 0 0 10px rgba(0, 255, 100, 0.1);
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* --- COMPACT MODE STYLES --- */
+
+.cardCompact {
+  aspect-ratio: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem !important;
+}
+
+.cardCompact .groupIcon {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  margin-bottom: 0.8rem;
+  background: #1a1a2e;
+  flex-shrink: 0; /* Prevent icon from squishing */
+}
+
+.cardCompact .groupName {
+  text-align: center;
+  font-size: 0.8rem; /* Slightly smaller to fit more text */
+  
+  /* Allow 3 lines */
+  max-height: 3.6em; 
+  overflow: hidden;
+  
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  word-break: break-word; /* Ensure functionality on long words */
+}
+
+/* --- LARGE MODE STYLES --- */
+
+.cardLarge {
+  height: 180px;
+  justify-content: flex-end;
+}
+
+.cardLarge .groupIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  margin-bottom: 0.5rem;
+  border: 2px solid white;
+  margin-left: 1.2rem;
+  z-index: 5;
+}
+
+/* Overlay for text content in large mode */
+.overlayContent {
+    padding: 1.2rem;
+    padding-top: 0.5rem;
+    background: linear-gradient(to top, rgba(0,0,0,0.95), transparent);
+    width: 100%;
+    z-index: 5;
+    position: relative;
+    border-bottom-left-radius: 20px;
+    border-bottom-right-radius: 20px;
+}
+
+.cardLarge .groupName {
+  text-align: left;
+  font-size: 1.1rem;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Ensure container doesn't clip badge in compact mode */
+.cardPanel {
+    overflow: visible !important; /* Allow badge to peek out */
+}
+
+.groupIcon {
+  object-fit: cover;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  transition: all 0.5s ease;
+}
+
+.groupIconPlaceholder {
+  border-radius: 16px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  background: linear-gradient(45deg, var(--color-primary), var(--color-accent));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  transition: all 0.5s ease;
+}
+
+.cardCompact .groupIconPlaceholder {
+    width: 64px;
+    height: 64px;
+    font-size: 1.5rem;
+    margin-bottom: 0.8rem;
+}
+
+.cardLarge .groupIconPlaceholder {
+    width: 48px;
+    height: 48px;
+    font-size: 1.2rem;
+    margin-bottom: 0.5rem; 
+    border: 2px solid white;
+    margin-left: 1.2rem;
+    z-index: 5;
+}
+
+.groupName {
+  font-weight: 700;
+  color: white;
+  margin: 0;
+  line-height: 1.1;
+  transition: all 0.5s ease;
+  position: relative;
+  z-index: 5;
+  width: 100%; /* Ensure full width availability */
+}
+
+
+
+/* Specific text handling for large mode */
+.cardLarge .groupName {
+    text-align: left;
+    font-size: 1.1rem;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+
+/* ... */
+
+.liveBadge {
+  position: absolute;
+  background: var(--color-success);
+  color: black;
+  font-weight: 800;
+  z-index: 30;
+  box-shadow: 0 0 10px var(--color-success);
+  pointer-events: none;
+}
+
+/* ... */
+
+
+
+
+
+.cardCompact .liveBadge {
+    top: 6px;   /* Inside the card boundary */
+    right: 6px;
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-size: 0.6rem;
+}
+
+.cardLarge .liveBadge {
+    top: 12px;
+    right: 12px;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.7rem;
+}
+
+.banner {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-size: cover;
+  background-position: center;
+  filter: brightness(0.7);
+  z-index: 1; /* Behind text but above BG */
+  border-radius: 20px; /* Force corner clipping on the image itself */
+}
+
+.bannerFallback {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(45deg, var(--color-primary), var(--color-accent));
+  opacity: 0.2;
+  z-index: 1;
+  border-radius: 20px;
+}
+
+.metaRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.shortCode {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.memberCount {
+  font-size: 0.7rem;
+  background: linear-gradient(90deg, hsla(var(--primary-hue), 100%, 60%, 0.2), hsla(var(--primary-hue), 100%, 40%, 0.2));
+  border: 1px solid hsla(var(--primary-hue), 100%, 60%, 0.3);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+}

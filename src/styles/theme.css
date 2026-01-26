@@ -1,0 +1,193 @@
+:root {
+  /* --- CORE PALETTE (HSL) --- */
+  /* User-customizable values */
+  --primary-hue: 330; /* Neon Pink */
+  --primary-sat: 100%;
+  --primary-light: 60%;
+
+  --accent-hue: 190; /* Neon Cyan */
+  --accent-sat: 100%;
+  --accent-light: 60%;
+
+  --tertiary-hue: 270; /* Neon Purple */
+  --tertiary-sat: 80%;
+  --tertiary-light: 60%;
+
+  --bg-hue: 240; /* Dark Blue-Black */
+  --bg-sat: 20%;
+  --bg-light: 5%;
+
+  /* --- GENERATED COLORS --- */
+  --color-primary: hsl(
+    var(--primary-hue),
+    var(--primary-sat),
+    var(--primary-light)
+  );
+  --color-primary-glow: hsl(
+    var(--primary-hue),
+    var(--primary-sat),
+    var(--primary-light),
+    0.6
+  );
+  --color-accent: hsl(
+    var(--accent-hue),
+    var(--accent-sat),
+    var(--accent-light)
+  );
+  --color-accent-glow: hsl(
+    var(--accent-hue),
+    var(--accent-sat),
+    var(--accent-light),
+    0.5
+  );
+  --color-tertiary: hsl(
+    var(--tertiary-hue),
+    var(--tertiary-sat),
+    var(--tertiary-light)
+  );
+  --color-tertiary-glow: hsl(
+    var(--tertiary-hue),
+    var(--tertiary-sat),
+    var(--tertiary-light),
+    0.4
+  );
+
+  --color-bg-app: hsl(var(--bg-hue), var(--bg-sat), var(--bg-light));
+  --color-bg-panel: hsla(var(--bg-hue), var(--bg-sat), 10%, 0.45); /* Glass */
+  --color-text-main: #ffffff;
+  --color-text-dim: rgba(255, 255, 255, 0.6);
+
+  /* --- GRADIENTS --- */
+  --gradient-primary: linear-gradient(
+    135deg,
+    var(--color-primary) 0%,
+    var(--color-accent) 100%
+  );
+  --gradient-secondary: linear-gradient(
+    135deg,
+    var(--color-accent) 0%,
+    var(--color-tertiary) 100%
+  );
+  --gradient-glow: linear-gradient(
+    135deg,
+    var(--color-primary-glow),
+    var(--color-accent-glow)
+  );
+  --gradient-dark: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, 0.8) 100%
+  );
+  --gradient-shimmer: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    transparent 100%
+  );
+
+  /* --- AESTHETICS --- */
+  --glass-blur: 20px;
+  --border-radius: 12px;
+  --border-width: 1px;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --border-color-active: var(--color-primary);
+
+  /* --- ANIMATION --- */
+  --transition-fast: 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  --transition-slow: 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+  --spring-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --spring-smooth: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* --- SEMANTIC COLORS --- */
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-info: #4cc9f0;
+
+  /* --- TRUST LEVELS --- */
+  --color-trust-trusted: #a855f7;
+  --color-trust-known: #f97316;
+  --color-trust-user: #22c55e;
+  --color-trust-basic: #3b82f6;
+  --color-trust-visitor: #6b7280;
+
+  /* --- Z-INDEX REGISTRY --- */
+  --z-background: -1;
+  --z-content: 1;
+  --z-header: 50;
+  --z-dropdown: 60;
+  --z-modal-backdrop: 100;
+  --z-modal: 110;
+  --z-tooltip: 500;
+  --z-window-controls: 5000;
+
+  /* --- LAYOUT --- */
+  --dock-height: 45px; /* Height for pill indicator clearance */
+
+  /* --- TYPOGRAPHY --- */
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 700;
+
+  /* --- VISUAL EFFECTS --- */
+  --focus-gradient: linear-gradient(
+    135deg,
+    var(--color-primary),
+    var(--color-accent)
+  );
+  --focus-glow: 0 0 0 3px
+    hsla(var(--primary-hue), var(--primary-sat), var(--primary-light), 0.3);
+  --glow-sm: 0 0 10px;
+  --glow-md: 0 0 20px;
+  --glow-lg: 0 0 40px;
+
+  /* --- DEPTH & 3D --- */
+  --shadow-floating:
+    0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 10px 15px -3px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.15);
+
+  --shadow-floating-hover:
+    0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 20px 25px -5px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.25);
+
+  --border-highlight: rgba(255, 255, 255, 0.25);
+  --border-shadow: rgba(0, 0, 0, 0.3);
+}
+
+/* Pulse Animation for Real-Time Data */
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.7;
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 4px var(--color-primary-glow);
+  }
+  50% {
+    box-shadow:
+      0 0 12px var(--color-primary-glow),
+      0 0 20px var(--color-primary-glow);
+  }
+}
+
+/* Dark Mode Defaults (Hardcoded for now, can be swapped via class) */
+body {
+  background-color: var(--color-bg-app);
+  color: var(--color-text-main);
+  font-family: "Inter", system-ui, sans-serif;
+}

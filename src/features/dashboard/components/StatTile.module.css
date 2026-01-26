@@ -1,0 +1,86 @@
+
+.tile {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.8rem;
+  border-radius: 8px;
+  min-width: 130px;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  /* Reset button styles */
+  appearance: none;
+  color: inherit;
+  font: inherit;
+  /* Enable glow effect */
+  position: relative;
+  overflow: hidden;
+  --glow-x: 50%;
+  --glow-y: 50%;
+  --glow-opacity: 0;
+}
+
+/* Cursor-tracking radial glow */
+.tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: calc(var(--glow-opacity) * 0.2);
+  background: radial-gradient(
+    400px circle at var(--glow-x) var(--glow-y),
+    var(--color-primary-glow),
+    transparent 40%
+  );
+  transition: opacity 0.3s ease;
+  z-index: 0;
+}
+
+.tile:hover, .tile:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Gradient focus border */
+.tile:focus-visible {
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-glow);
+}
+
+.tile:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Ensure content is above glow */
+.header, .value {
+  position: relative;
+  z-index: 1;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.2rem;
+  width: 100%;
+}
+
+.labelContainer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.value {
+  font-size: 1.5rem;
+  font-weight: bold;
+}

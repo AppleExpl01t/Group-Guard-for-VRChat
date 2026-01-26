@@ -1,0 +1,91 @@
+/* Global Reset & Base Styles */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden; /* App-like feel */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* UNIVERSAL CURSOR HIDE - Force custom cursor everywhere */
+html, body, #root, *, *::before, *::after {
+  cursor: none !important;
+}
+
+/* Scrollbar Customization */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* Utility Classes */
+.glass-panel {
+  background: var(--color-bg-panel);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  /* 3D Floating Effect Borders */
+  border: 1px solid rgba(255, 255, 255, 0.05); /* Base border */
+  border-top: 1px solid var(--border-highlight); /* Top light catch */
+  border-bottom: 1px solid var(--border-shadow); /* Bottom shadow for thickness */
+  border-radius: var(--border-radius);
+  /* Deep shadow for floating feel + thick bevel simulation */
+  box-shadow: var(--shadow-floating);
+  /* Enable overlay */
+  position: relative;
+  overflow: hidden;
+}
+
+/* Noise Texture Overlay - 3% opacity grain for organic feel */
+.glass-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 200px 200px;
+  z-index: 1;
+}
+
+.text-gradient {
+  background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  display: inline-block; /* Often needed for proper gradient text rendering */
+}
+
+/* Ensure glass-panel children render above noise overlay */
+.glass-panel > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* Global Focus Reset */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-glow);
+}

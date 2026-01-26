@@ -1,0 +1,61 @@
+/src/generated/prisma
+
+# Environment Variables
+.env
+.env.*
+.env.local
+
+# ============================================
+# SECRETS - All sensitive files go here
+# ============================================
+SENSITIVE/
+
+# ============================================
+# BUILD OUTPUT
+# ============================================
+dist
+dist-electron
+release
+out
+build
+
+# Dependencies
+node_modules
+
+# Local Data & Databases
+*.db
+*.sqlite
+*.sqlite-journal
+data/
+user_data/
+
+# Logs & Debugging
+debug_*
+*_debug.txt
+*_debug.log
+*.log
+*.txt
+
+# System & IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Agent & Reference
+.agent/
+reference repos/
+
+# Development Debug Files
+.dev/
+
+# Claude AI
+.claude/
+.claude_*
+claude.md
+CLAUDE.md
+
+# Temporary & Scratchpad
+scratchpad/
+tmp/
+temp/

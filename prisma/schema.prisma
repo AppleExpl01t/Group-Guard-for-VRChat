@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id          String     @id @default(cuid())
+  sessionId   String     @unique 
+  worldId     String
+  instanceId  String
+  worldName   String?
+  groupId     String?
+  location    String
+  startTime   DateTime
+  endTime     DateTime?
+  logs        LogEntry[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model LogEntry {
+  id               Int      @id @default(autoincrement())
+  sessionId        String
+  session          Session  @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+  type             String
+  timestamp        DateTime
+  actorDisplayName String?
+  actorUserId      String?
+  details          String   
+  createdAt        DateTime @default(now())
+}
+
+model AutoModLog {
+  id               String   @id @default(cuid())
+  timestamp        DateTime
+  user             String
+  userId           String
+  groupId          String
+  action           String
+  reason           String
+  module           String
+  details          String?
+  createdAt        DateTime @default(now())
+}
+
+model ScannedUser {
+  id               String   @id // usr_xxx (VRChat user ID)
+  displayName      String
+  rank             String?  // Trust level (e.g., "Trusted", "Known", etc.)
+  thumbnailUrl     String?
+  firstSeenAt      DateTime @default(now())
+  lastSeenAt       DateTime @updatedAt
+  groupId          String?  // Which group context they were last seen in
+  timesEncountered Int      @default(1)
+  
+  @@index([displayName])
+  @@index([groupId])
+  @@index([lastSeenAt])
+}

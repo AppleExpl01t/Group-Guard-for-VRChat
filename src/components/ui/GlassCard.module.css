@@ -1,0 +1,69 @@
+.glassCard {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  /* 3D Borders */
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--border-highlight);
+  border-bottom: 1px solid var(--border-shadow);
+  
+  /* Initial State: Floating but grounded */
+  box-shadow: var(--shadow-floating);
+  
+  padding: 1rem;
+  overflow: hidden;
+  position: relative;
+  
+  /* Smooth Physics-based Transition */
+  transition: 
+    transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.4s cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 0.3s ease;
+    
+  /* Initialize glow variables */
+  --glow-x: 50%;
+  --glow-y: 50%;
+  --glow-opacity: 0;
+}
+
+/* Cursor-tracking radial glow */
+.glassCard::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: calc(var(--glow-opacity) * 0.15);
+  background: radial-gradient(
+    600px circle at var(--glow-x) var(--glow-y),
+    var(--color-primary-glow),
+    transparent 40%
+  );
+  transition: opacity 0.3s ease;
+  z-index: 0;
+}
+
+/* 3D Hover Lift Effect */
+.glassCard:hover {
+  transform: translateY(-4px) scale(1.005);
+  box-shadow: var(--shadow-floating-hover);
+  border-top-color: rgba(255, 255, 255, 0.4); /* Catch more light */
+  z-index: 10; /* Ensure it floats above neighbors */
+}
+
+/* Gradient focus border */
+.glassCard:focus-visible {
+  outline: none;
+  border-color: transparent;
+  background-image: var(--focus-gradient);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  box-shadow: var(--focus-glow), var(--shadow-floating-hover);
+  transform: translateY(-2px);
+}
+
+/* Ensure content is above glow */
+.glassCard > * {
+  position: relative;
+  z-index: 1;
+}
