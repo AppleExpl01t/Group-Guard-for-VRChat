@@ -69,8 +69,8 @@ Enhance in-game communication without typing.
 
 1.  **Clone the repo**:
     ```bash
-    git clone https://github.com/gooseontheloose/Group-Guard-for-VRChat.git
-    cd Group-Guard-for-VRChat
+    git clone https://github.com/AppleExpl01t/VRChat-Group-Guard.git
+    cd VRChat-Group-Guard
     ```
 2.  **Install dependencies**:
     ```bash
