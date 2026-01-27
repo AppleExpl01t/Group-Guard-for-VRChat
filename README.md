@@ -55,6 +55,16 @@ Enhance in-game communication without typing.
 
 - **Announcer**: Automatically send welcome messages to new joins or periodic announcements (e.g., "Join our Discord!").
 
+### 🎨 Advanced Theming System
+
+Personalize your experience with comprehensive visual customization.
+
+- **Theme Presets**: Choose from Dark, Light, Midnight, or Sunset themes with distinct aesthetics.
+- **Color Control**: Full HSL spectrum control for primary/accent colors and backgrounds.
+- **Glass Effects**: Adjustable blur, opacity, and border radius for modern glass-morphism.
+- **Particle Effects**: Floating background particles with mouse interaction and color shifting.
+- **Real-time Updates**: Instant preview with persistent settings.
+
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -90,7 +100,73 @@ Enhance in-game communication without typing.
 4.  **Configure**:
     - Go to **Settings** to point the app to your VRChat install folder (usually automatic).
     - Go to **AutoMod** to set up your protection rules.
+    - Visit **Settings → Appearance** to customize themes and visual effects.
 5.  **Monitor**: Switch to the **Dashboard** to see the live feed of events and players.
+
+## 🎨 Themes & Customization
+
+Group Guard features a comprehensive theming system with real-time customization. All settings are automatically saved and persist between sessions.
+
+### Quick Access
+
+1. **Open Settings** → Click the gear icon in the sidebar
+2. **Appearance Tab** → First tab in the settings panel
+3. **Customize** → Changes apply instantly and auto-save
+
+### Theme Presets
+
+Choose from four carefully crafted presets, each with distinct characteristics:
+
+- **🌙 Dark** - Original neon cyberpunk aesthetic with purple/cyan accents
+- **☀️ Light** - Clean, professional theme with soft blue/gray tones  
+- **🌌 Midnight** - Ultra-dark space theme with electric blue and deep purple
+- **🌅 Sunset** - Warm, cozy vibes with orange and pink magenta accents
+
+### Color Customization
+
+Full HSL (Hue, Saturation, Lightness) control for precise color matching:
+
+- **Primary Neon** - Main accent color for buttons, highlights, and interactive elements
+- **Accent Neon** - Secondary accent for gradients and complementary highlights
+- **Background Hue** - Base color for the entire application background
+- **Background Saturation** - Color intensity (0% = grayscale, 100% = full color)
+- **Background Lightness** - Brightness control (0% = black, 100% = white)
+
+*All colors use spectrum pickers with real-time preview*
+
+### Glass & UI Effects
+
+Control the visual aesthetics and depth:
+
+- **Glass Blur** - Background blur intensity for glass panels (0-50px)
+- **Glass Opacity** - Transparency level for glass surfaces (0-100%)
+- **Border Radius** - Corner roundness for UI elements (0-30px)
+
+### Particles & Effects
+
+Ambient visual effects for enhanced immersion:
+
+- **Enable Particles** - Toggle floating background particles on/off
+- **Particle Count** - Number of particles (5-50)
+- **Ambient Orbs** - Glowing orb elements within particle field
+- **Color Shift** - Dynamic color transitions for particles
+- **Mouse Reactive** - Particles respond to mouse movement
+
+### Advanced Options
+
+Fine-tune the user experience:
+
+- **UI Scale** - Global interface scaling for accessibility
+- **Header Gradient** - Toggle gradient effects in header areas
+- **Reset All** - Restore default theme settings
+
+### Technical Notes
+
+- **CSS Custom Properties** - Theme uses CSS variables for instant updates
+- **HSL Color System** - Intuitive color control with predictable results
+- **localStorage Persistence** - Settings automatically save and restore
+- **Light/Dark Adaptation** - Interface automatically adjusts text colors based on background brightness
+- **Real-time Updates** - All changes apply instantly without restart
 
 ## ⚠️ Safety & Compliance
 
