@@ -1422,8 +1422,11 @@ export const processInstanceGuard = async (): Promise<{
             instanceGuardHistory.pop();
           }
 
-          // Broadcast to UI
-          windowService.broadcast('instance-guard:event', openEvent);
+           // Broadcast to UI with current instance count
+           windowService.broadcast('instance-guard:event', {
+               ...openEvent,
+               groupInstanceCount: instances.length // Add current instance count
+           });
 
           logger.info(`[InstanceGuard] New instance opened: ${worldName} by ${ownerName || ownerId || 'Unknown'} (18+: ${hasAgeGate})`);
         }
