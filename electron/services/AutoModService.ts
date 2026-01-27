@@ -250,12 +250,45 @@ const INSTANCE_CREATE_PERMISSIONS = [
 const processedAuditLogIds = new Set<string>();
 const PROCESSED_AUDIT_LOG_CACHE_SIZE = 1000;
 
+// Persistence file for processed audit log IDs (survives restarts)
+const PROCESSED_LOGS_FILE = path.join(app.getPath('userData'), 'permission-guard-processed-logs.json');
+let processedLogsLoaded = false;
+
+const loadProcessedAuditLogs = () => {
+    if (processedLogsLoaded) return;
+    try {
+        if (fs.existsSync(PROCESSED_LOGS_FILE)) {
+            const data = JSON.parse(fs.readFileSync(PROCESSED_LOGS_FILE, 'utf-8'));
+            if (Array.isArray(data)) {
+                data.forEach(id => processedAuditLogIds.add(id));
+                logger.info(`[PermissionGuard] Loaded ${data.length} processed log IDs from disk`);
+            }
+        }
+    } catch (err) {
+        logger.warn(`[PermissionGuard] Failed to load processed logs from disk:`, err);
+    }
+    processedLogsLoaded = true;
+};
+
+const saveProcessedAuditLogs = () => {
+    try {
+        const entries = Array.from(processedAuditLogIds).slice(-PROCESSED_AUDIT_LOG_CACHE_SIZE);
+        fs.writeFileSync(PROCESSED_LOGS_FILE, JSON.stringify(entries), 'utf-8');
+    } catch (err) {
+        logger.warn(`[PermissionGuard] Failed to save processed logs to disk:`, err);
+    }
+};
+
 const pruneProcessedAuditLogs = () => {
     if (processedAuditLogIds.size > PROCESSED_AUDIT_LOG_CACHE_SIZE) {
         const entries = Array.from(processedAuditLogIds);
         entries.slice(0, PROCESSED_AUDIT_LOG_CACHE_SIZE / 2).forEach(e => processedAuditLogIds.delete(e));
     }
 };
+
+// 429 Rate limit backoff for Permission Guard
+let permissionGuardPausedUntil = 0;
+const RATE_LIMIT_PAUSE_MS = 30 * 60 * 1000; // 30 minutes
 
 // Cache for group roles to reduce API calls during sniping checks
 // Key: groupId, Value: { roles: VRCGroupRole[], timestamp: number }
@@ -1519,6 +1552,16 @@ export const processInstanceSniper = async (): Promise<{
     totalClosed: number;
     groupsChecked: number;
 }> => {
+    // Load persisted audit log IDs on first run
+    loadProcessedAuditLogs();
+
+    // Check if we're paused due to rate limiting
+    if (Date.now() < permissionGuardPausedUntil) {
+        const remainingMinutes = Math.ceil((permissionGuardPausedUntil - Date.now()) / 60000);
+        logger.debug(`[PermissionGuard] Rate limit pause active. ${remainingMinutes} minutes remaining.`);
+        return { totalClosed: 0, groupsChecked: 0 };
+    }
+
     const authorizedGroups = groupAuthorizationService.getAllowedGroupIds();
     if (authorizedGroups.length === 0) {
         return { totalClosed: 0, groupsChecked: 0 };
@@ -1575,6 +1618,12 @@ export const processInstanceSniper = async (): Promise<{
             // We only need a small batch (e.g. 20) as we poll frequently
             const logsResult = await vrchatApiService.getGroupAuditLogs(groupId, 20);
             if (!logsResult.success || !logsResult.data) {
+                // Check for 429 rate limit
+                if (logsResult.error?.includes('429') || logsResult.error?.toLowerCase().includes('rate limit')) {
+                    logger.warn(`[PermissionGuard] Rate limit hit (429). Pausing for 30 minutes.`);
+                    permissionGuardPausedUntil = Date.now() + RATE_LIMIT_PAUSE_MS;
+                    return { totalClosed, groupsChecked };
+                }
                 continue;
             }
 
@@ -1670,13 +1719,17 @@ export const processInstanceSniper = async (): Promise<{
                         const closeResult = await vrchatApiService.closeInstance(location.worldId, location.instanceId);
                         
                         // Treat "Already Closed" (403) as success to stop retrying
-                        // Actually closeInstance returns Result object, we check that.
+                        const isAlreadyClosed = closeResult.error?.includes('403') || closeResult.error?.toLowerCase().includes('already closed');
                         
-                        if (closeResult.success) {
+                        if (closeResult.success || isAlreadyClosed) {
                             totalClosed++;
                              // Add to closed cache
                             closedInstancesCache.add(instanceKey);
                             closedInstancesTimestamps.set(instanceKey, Date.now());
+
+                            if (isAlreadyClosed) {
+                                logger.info(`[PermissionGuard] Instance already closed (treating as success)`);
+                            }
 
                             // Log action
                             await persistAction({
@@ -1715,7 +1768,13 @@ export const processInstanceSniper = async (): Promise<{
                              windowService.broadcast('instance-guard:event', eventEntry);
 
                         } else {
-                            logger.error(`[PermissionGuard] Failed to close instance: ${closeResult.error}`);
+                            // Check for 429 rate limit on close attempt
+                            if (closeResult.error?.includes('429') || closeResult.error?.toLowerCase().includes('rate limit')) {
+                                logger.warn(`[PermissionGuard] Rate limit hit (429) during close. Pausing for 30 minutes.`);
+                                permissionGuardPausedUntil = Date.now() + RATE_LIMIT_PAUSE_MS;
+                            } else {
+                                logger.error(`[PermissionGuard] Failed to close instance: ${closeResult.error}`);
+                            }
                         }
                     } else {
                         logger.debug(`[PermissionGuard] Instance allowed. Creator has permission.`);
@@ -1730,6 +1789,9 @@ export const processInstanceSniper = async (): Promise<{
             logger.error(`[PermissionGuard] Error checking group ${groupId}:`, e);
         }
     }
+
+    // Save processed logs to disk after each cycle
+    saveProcessedAuditLogs();
 
     return { totalClosed, groupsChecked };
 };
