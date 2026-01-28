@@ -254,7 +254,7 @@ const RoamingCard = memo(({
 export const GroupSelectionView: React.FC = memo(() => {
   const {
     myGroups,
-    totalGroupsToLoad,
+    // totalGroupsToLoad, // Removed: Property does not exist
     fetchMyGroups,
     fetchAllGroupsInstances,
     selectGroup,
@@ -357,9 +357,7 @@ export const GroupSelectionView: React.FC = memo(() => {
         </motion.h2>
         <p style={{ color: 'var(--color-text-dim)', fontSize: '0.8rem', marginTop: '1rem', textAlign: 'center' }}>
           Establishing secure link to VRChat API...<br />
-          {totalGroupsToLoad > 0 && (
-            <span style={{ opacity: 0.7 }}>Found {totalGroupsToLoad} potential groups to authorize.</span>
-          )}
+
         </p>
       </div>
     );

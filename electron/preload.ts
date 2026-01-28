@@ -296,6 +296,15 @@ contextBridge.exposeInMainWorld('electron', {
         }
     },
 
+    // Staff API (shares data with AutoMod whitelist)
+    staff: {
+        getMembers: (groupId: string) => ipcRenderer.invoke('staff:get-members', groupId),
+        addMember: (groupId: string, userId: string) => ipcRenderer.invoke('staff:add-member', { groupId, userId }),
+        removeMember: (groupId: string, userId: string) => ipcRenderer.invoke('staff:remove-member', { groupId, userId }),
+        getSettings: (groupId: string) => ipcRenderer.invoke('staff:get-settings', groupId),
+        setSettings: (groupId: string, settings: unknown) => ipcRenderer.invoke('staff:set-settings', { groupId, settings }),
+    },
+
     // Report API
     report: {
         getTemplates: () => ipcRenderer.invoke('report:get-templates'),

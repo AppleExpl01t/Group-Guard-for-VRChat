@@ -555,6 +555,25 @@ export interface ElectronAPI {
     onUpdate: (callback: (data: { entities: WatchedEntity[]; tags: ModerationTag[] }) => void) => () => void;
   };
 
+  // Staff API (shares data with AutoMod whitelist)
+  staff: {
+    getMembers: (groupId: string) => Promise<{ id: string; name: string; rules: string[] }[]>;
+    addMember: (groupId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
+    removeMember: (groupId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
+    getSettings: (groupId: string) => Promise<{
+      skipAutoModScans: boolean;
+      preventKicks: boolean;
+      preventBans: boolean;
+      allowAllInstances: boolean;
+    }>;
+    setSettings: (groupId: string, settings: {
+      skipAutoModScans?: boolean;
+      preventKicks?: boolean;
+      preventBans?: boolean;
+      allowAllInstances?: boolean;
+    }) => Promise<{ success: boolean; error?: string }>;
+  };
+
   // Settings API
   settings: {
     get: () => Promise<AppSettings>;

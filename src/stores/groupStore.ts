@@ -75,6 +75,7 @@ interface GroupState {
   fetchGroupBans: (groupId: string) => Promise<void>;
   fetchGroupMembers: (groupId: string, offset?: number) => Promise<void>;
   fetchGroupInstances: (groupId: string) => Promise<void>;
+  fetchAllGroupsInstances: () => Promise<void>;
   respondToRequest: (groupId: string, userId: string, action: 'accept' | 'deny') => Promise<{ success: boolean; error?: string }>;
 
   // Get timestamp helper
@@ -231,11 +232,62 @@ export const useGroupStore = create<GroupState>((set, get) => ({
           instances: result.instances,
           lastFetchedAt: { ...get().lastFetchedAt, instances: Date.now() }
         });
+
+        // Also update the group's activeInstanceCount in myGroups
+        const myGroups = get().myGroups;
+        const groupIndex = myGroups.findIndex(g => g.id === groupId);
+        if (groupIndex !== -1) {
+          const updatedGroups = [...myGroups];
+          updatedGroups[groupIndex] = {
+            ...updatedGroups[groupIndex],
+            activeInstanceCount: result.instances.length
+          };
+          set({ myGroups: updatedGroups });
+        }
       }
     } catch (error) {
       console.error('Failed to fetch instances', error);
     } finally {
       set({ isInstancesLoading: false });
+    }
+  },
+
+  fetchAllGroupsInstances: async () => {
+    const myGroups = get().myGroups;
+    // Limit concurrency to avoid slamming the API if user has many groups
+    // But since this is local IPC mostly (unless cached), 
+    // actually getGroupInstances does a network call.
+    // So we should be careful. 
+    // However, for now, simple Promise.all is probably okay if N is small (<50).
+
+    // Iterate through groups and update instance counts
+    for (const group of myGroups) {
+      // We use the SINGLE fetch method which handles updating state
+      // But wait, the SINGLE fetch method updates `instances` which is the SELECTED group instances.
+      // We don't want to overwrite `instances` (selected group view) with random group instances.
+      // We probably ONLY want to update the counts on the group objects.
+
+      // Let's create a specialized internal fetching logic or modify the loop.
+
+      try {
+        const result = await window.electron.getGroupInstances(group.id);
+        if (result.success && result.instances) {
+          // Capture instances to avoid closure issues or race conditions if needed, 
+          // though here simple variable is fine.
+          const instanceCount = result.instances.length;
+
+          set(state => {
+            const newGroups = state.myGroups.map(g =>
+              g.id === group.id
+                ? { ...g, activeInstanceCount: instanceCount }
+                : g
+            );
+            return { myGroups: newGroups };
+          });
+        }
+      } catch (e) {
+        console.error(`Failed to fetch instances for ${group.id}`, e);
+      }
     }
   },
 
