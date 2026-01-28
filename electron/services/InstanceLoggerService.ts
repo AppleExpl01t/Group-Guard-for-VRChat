@@ -4,7 +4,7 @@ import log from 'electron-log';
 import { windowService } from './WindowService';
 import { databaseService } from './DatabaseService';
 import { groupAuthorizationService } from './GroupAuthorizationService';
-import { serviceEventBus } from './ServiceEventBus';
+
 
 const logger = log.scope('InstanceLogger');
 
@@ -15,29 +15,15 @@ class InstanceLoggerService {
   private currentLocationString: string | null = null;
   private currentWorldName: string | null = null;
   private currentGroupId: string | null = null;
-  private allowedGroupIds: Set<string> | null = null;
 
-  /**
-   * Sets the list of group IDs that the user is authorized to moderate.
-   * This synchronizes with the central GroupAuthorizationService.
-   * 
-   * @param groupIds Array of group IDs with moderation permissions
-   */
-  public setAllowedGroups(groupIds: string[]): void {
-    this.allowedGroupIds = new Set(groupIds.filter(id => id && id.startsWith('grp_')));
-    // Also update central authorization service
-    groupAuthorizationService.setAllowedGroups(groupIds);
-    logger.info(`[InstanceLogger] Allowed groups set: ${this.allowedGroupIds.size} groups`);
-  }
+
 
   /**
    * Check if a group ID is allowed for this session
    */
   public isGroupAllowed(groupId: string): boolean {
-    if (!this.allowedGroupIds) return false;
-    return this.allowedGroupIds.has(groupId);
+    return groupAuthorizationService.isGroupAllowed(groupId);
   }
-  
   constructor() {
     this.setupListeners();
   }
@@ -70,11 +56,6 @@ class InstanceLoggerService {
         
         // Notify Frontend (redundant with logWatcher but good for specific store updates)
         windowService.broadcast('instance:group-changed', null);
-    });
-
-    serviceEventBus.on('groups-updated', (payload) => {
-        const groupIds = payload.groups.map(g => g.id);
-        this.setAllowedGroups(groupIds);
     });
   }
 
@@ -121,7 +102,7 @@ class InstanceLoggerService {
           return;
       }
 
-      if (this.allowedGroupIds && !this.allowedGroupIds.has(groupId)) {
+      if (!groupAuthorizationService.isGroupAllowed(groupId)) {
           log.info(`[InstanceLogger] Skipping group ${groupId} - not in moderated list`);
           this.currentSessionId = null;
           return;

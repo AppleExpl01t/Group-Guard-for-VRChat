@@ -346,6 +346,15 @@ export const vrchatApiService = {
             const groups = extractArray(response.data || response) as VRCGroup[];
             const result = groups;
 
+            // DEBUG: Log group details to investigate role/permission data
+            logger.info(`[getMyGroups] Fetched ${result.length} groups for user ${userId}`);
+            result.forEach((g, i) => {
+                const isOwner = g.ownerId === userId;
+                const perms = g.myMember?.permissions || [];
+                const roles = g.myMember?.roleIds || [];
+                logger.info(`[getMyGroups] Group ${i + 1}: "${g.name}" (${g.id}) - Owner: ${isOwner}, Roles: [${roles.join(', ')}], Permissions: [${perms.join(', ')}]`);
+            });
+
             // Populate Cache
             const now = Date.now();
             result.forEach(g => {

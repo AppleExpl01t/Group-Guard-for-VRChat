@@ -106,10 +106,10 @@ async function fetchAuthToken(): Promise<string | null> {
     // The VRChat SDK should have a method to get auth info
     // Looking at VRCX, they call: request('auth', { method: 'GET' })
     // which returns { ok: true, token: "authcookie_..." }
-    
+
     // Try using the SDK's internal methods
     const clientAny = client as Record<string, unknown>;
-    
+
     // Strategy 1: Try getAuth if available
     if (typeof clientAny.getAuth === 'function') {
       log.debug('[Pipeline] Using getAuth method');
@@ -136,19 +136,19 @@ async function fetchAuthToken(): Promise<string | null> {
     // The auth token for WebSocket is the same as the auth cookie value
     if (clientAny.jar || clientAny.cookieJar) {
       log.debug('[Pipeline] Attempting to extract token from cookie jar');
-      const jar = (clientAny.jar || clientAny.cookieJar) as { 
+      const jar = (clientAny.jar || clientAny.cookieJar) as {
         getCookiesSync?: (url: string) => Array<{ key?: string; name?: string; value?: string }>;
         _jar?: { getCookiesSync?: (url: string) => Array<{ key?: string; name?: string; value?: string }> };
       };
-      
+
       let cookies: Array<{ key?: string; name?: string; value?: string }> = [];
-      
+
       if (typeof jar.getCookiesSync === 'function') {
         cookies = jar.getCookiesSync('https://api.vrchat.cloud');
       } else if (jar._jar && typeof jar._jar.getCookiesSync === 'function') {
         cookies = jar._jar.getCookiesSync('https://api.vrchat.cloud');
       }
-      
+
       const authCookie = cookies.find(c => (c.key || c.name) === 'auth');
       if (authCookie?.value) {
         // The token format is "authcookie_..." which is the cookie value
@@ -160,10 +160,10 @@ async function fetchAuthToken(): Promise<string | null> {
     // Strategy 4: Manual fetch using node-fetch or similar
     // This is a fallback - we make a direct HTTP request to the auth endpoint
     log.debug('[Pipeline] Fallback: Making direct HTTP request to /auth');
-    
+
     // Get cookies from the client to include in the request
     // This requires the client to expose its cookie handling
-    
+
     log.warn('[Pipeline] Could not obtain auth token - all strategies exhausted');
     return null;
 
@@ -197,7 +197,7 @@ async function connectWebSocket(): Promise<boolean> {
 
   try {
     const token = await fetchAuthToken();
-    
+
     if (!token) {
       log.error('[Pipeline] Cannot connect - no auth token available');
       isConnecting = false;
@@ -218,29 +218,29 @@ async function connectWebSocket(): Promise<boolean> {
       isConnecting = false;
       reconnectAttempts = 0;
       webSocket = socket;
-      
+
       // Notify renderer that pipeline is connected
       emitToRenderer('pipeline:connected', { connected: true });
-      
+
       // Start periodic auto-reconnect timer
       startPeriodicReconnect();
     };
 
     socket.onclose = (event: WebSocket.CloseEvent) => {
       log.info(`[Pipeline] WebSocket closed: code=${event.code}, reason=${event.reason}`);
-      
+
       // Stop periodic timer on close
       stopPeriodicReconnect();
-      
+
       if (webSocket === socket) {
         webSocket = null;
       }
-      
+
       isConnecting = false;
-      
+
       // Notify renderer
-      emitToRenderer('pipeline:disconnected', { 
-        code: event.code, 
+      emitToRenderer('pipeline:disconnected', {
+        code: event.code,
         reason: event.reason,
         willReconnect: !isManualDisconnect && reconnectAttempts < MAX_RECONNECT_ATTEMPTS
       });
@@ -286,17 +286,17 @@ function scheduleReconnect(): void {
 
   if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
     log.warn('[Pipeline] Max reconnect attempts reached, giving up');
-    emitToRenderer('pipeline:reconnect-failed', { 
-      attempts: reconnectAttempts 
+    emitToRenderer('pipeline:reconnect-failed', {
+      attempts: reconnectAttempts
     });
     return;
   }
 
   reconnectAttempts++;
   const delay = RECONNECT_DELAY_MS * Math.min(reconnectAttempts, 5); // Cap at 25s
-  
+
   log.info(`[Pipeline] Scheduling reconnect attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms`);
-  
+
   reconnectTimeout = setTimeout(() => {
     reconnectTimeout = null;
     if (vrchatApiService.isAuthenticated() && !webSocket && !isConnecting && !isManualDisconnect) {
@@ -310,7 +310,7 @@ function scheduleReconnect(): void {
  */
 function disconnectWebSocket(): void {
   isManualDisconnect = true;
-  
+
   if (reconnectTimeout !== null) {
     clearTimeout(reconnectTimeout);
     reconnectTimeout = null;
@@ -325,7 +325,7 @@ function disconnectWebSocket(): void {
     }
     webSocket = null;
   }
-  
+
   reconnectAttempts = 0;
   isConnecting = false;
 }
@@ -335,9 +335,9 @@ function disconnectWebSocket(): void {
  */
 function startPeriodicReconnect(): void {
   stopPeriodicReconnect(); // Ensure no duplicates
-  
+
   log.info(`[Pipeline] Starting periodic auto-reconnect timer (${AUTO_RECONNECT_INTERVAL / 1000 / 60}m)`);
-  
+
   periodicReconnectTimer = setTimeout(() => {
     log.info('[Pipeline] Triggering scheduled auto-reconnection for stability...');
     forceReconnect().catch(err => {
@@ -361,15 +361,15 @@ function stopPeriodicReconnect(): void {
  */
 export async function forceReconnect(): Promise<boolean> {
   log.info('[Pipeline] Force reconnect initiated');
-  
+
   // We don't want the standard "onclose" reconnection logic to fire,
   // so we treat it as a manual disconnect initially, then reset.
   disconnectWebSocket();
-  
+
   // Reset state for a fresh connection
   isManualDisconnect = false;
   reconnectAttempts = 0;
-  
+
   // Small optional delay to ensure socket creates cleanly?
   // Usually immediate is fine, but a tiny tick helps.
   await new Promise(resolve => setTimeout(resolve, 100));
@@ -393,10 +393,10 @@ function handleMessage(data: string): void {
   lastMessageData = data;
 
   let message: PipelineMessage;
-  
+
   try {
     message = JSON.parse(data);
-    
+
     // VRChat double-encodes content as a JSON string
     if (typeof message.content === 'string') {
       try {
@@ -442,11 +442,11 @@ function handleSpecificEvent(event: PipelineEvent): void {
     case 'group-member-updated':
       log.info('[Pipeline] Group member updated:', event.content);
       break;
-      
+
     case 'group-role-updated':
       log.info('[Pipeline] Group role updated:', event.content);
       break;
-      
+
     case 'group-joined':
     case 'group-left':
       log.info(`[Pipeline] Group ${event.type}:`, event.content);

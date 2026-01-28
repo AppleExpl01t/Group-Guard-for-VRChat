@@ -388,8 +388,6 @@ export const LiveView: React.FC = () => {
 
             count++;
             setProgress({ current: count + blocked.length, total: targets.length });
-            count++;
-            setProgress({ current: count + blocked.length, total: targets.length });
             await new Promise(r => setTimeout(r, speedDelay * 1000));
         }
         
@@ -469,8 +467,6 @@ export const LiveView: React.FC = () => {
                     addLog(`[RALLY] ${t.displayName || t.id} ✗ Failed: ${invRes.error || 'Unknown'}`, 'error');
                 }
 
-                count++;
-                setProgress({ current: count, total: targets.length });
                 count++;
                 setProgress({ current: count, total: targets.length });
                 await new Promise(r => setTimeout(r, speedDelay * 1000));

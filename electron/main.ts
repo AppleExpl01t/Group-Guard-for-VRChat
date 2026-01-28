@@ -150,6 +150,7 @@ import { setupOscAnnouncementHandlers } from './services/OscAnnouncementService'
 import { setupDiscordWebhookHandlers } from './services/DiscordWebhookService';
 import { setupReportHandlers } from './services/ReportService';
 import { setupUserProfileHandlers } from './services/UserProfileService';
+import { setupBulkFriendHandlers } from './services/BulkFriendService';
 
 // ...
 import { processService } from './services/ProcessService';
@@ -219,6 +220,7 @@ setupOscAnnouncementHandlers();
 setupDiscordWebhookHandlers();
 setupReportHandlers();
 setupUserProfileHandlers();
+setupBulkFriendHandlers();
 
 import { settingsService, AppSettings } from './services/SettingsService';
 settingsService.initialize();
