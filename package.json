@@ -58,7 +58,7 @@
     "electron-updater": "^6.6.2",
     "framer-motion": "^12.23.26",
     "keyv-file": "^5.3.3",
-    "lru-cache": "^11.2.4",
+    "lru-cache": "^11.2.5",
     "lucide-react": "^0.562.0",
     "node-osc": "^11.2.2",
     "react": "^19.2.0",
