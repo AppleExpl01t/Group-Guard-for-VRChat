@@ -368,6 +368,7 @@ export interface ElectronAPI {
   getGroupInstances: (groupId: string) => Promise<{ success: boolean; instances?: VRChatInstance[]; error?: string }>;
   onGroupsUpdated: (callback: (data: { groups: any[] }) => void) => () => void;
   onGroupsCacheReady: (callback: (data: { groupIds: string[] }) => void) => () => void;
+  onGroupVerified: (callback: (data: { group: any }) => void) => () => void;
   banUser: (groupId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
   unbanUser: (groupId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
 

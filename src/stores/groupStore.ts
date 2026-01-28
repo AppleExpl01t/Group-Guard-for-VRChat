@@ -90,6 +90,10 @@ interface GroupState {
 
   loadMoreMembers: (groupId: string) => Promise<void>;
   setGroups: (groups: Group[]) => void;
+
+
+  handleGroupVerified: (group: Group) => void;
+
 }
 
 export const useGroupStore = create<GroupState>((set, get) => ({
@@ -142,7 +146,26 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
-  setGroups: (groups) => {
+  handleGroupVerified: (group: Group) => {
+    // Merge the verified group into the list
+    set(state => {
+      const existingIndex = state.myGroups.findIndex(g => g.id === group.id);
+
+      let newGroups;
+      if (existingIndex !== -1) {
+        // Update existing
+        newGroups = [...state.myGroups];
+        newGroups[existingIndex] = { ...newGroups[existingIndex], ...group };
+      } else {
+        // Add new (append)
+        newGroups = [...state.myGroups, group];
+      }
+
+      return { myGroups: newGroups };
+    });
+  },
+
+  setGroups: (groups: Group[]) => {
     set({ myGroups: groups, isPartialLoading: false, isLoading: false });
   },
 
@@ -453,12 +476,21 @@ export function initGroupStorePipelineSubscription(): () => void {
     useGroupStore.getState().setGroups(data.groups as Group[]);
   });
 
+
+
+  // Subscribe to granular verified events (Stage 2 granular updates)
+  const unsubGroupVerified = window.electron.onGroupVerified((data) => {
+    // data.group is the single verified group
+    useGroupStore.getState().handleGroupVerified(data.group);
+  });
+
   return () => {
     unsubMember();
     unsubRole();
     unsubJoined();
     unsubLeft();
     unsubGroupsUpdated();
+    unsubGroupVerified();
   };
 }
 

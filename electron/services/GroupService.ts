@@ -23,6 +23,11 @@ export function setupGroupHandlers() {
         windowService.broadcast('groups:cache-ready', { groupIds });
     });
 
+    serviceEventBus.on('group-verified', ({ group }) => {
+        // Broadacst granular update to UI
+        windowService.broadcast('groups:verified', { group });
+    });
+
     // Get user's groups (groups where user is a member)
     // Get user's groups (groups where user is a member)
     ipcMain.handle('groups:get-my-groups', async () => {
@@ -37,35 +42,41 @@ export function setupGroupHandlers() {
 
         // STAGE 1: Check if we have cached authorized groups already
         if (groupAuthorizationService.isInitialized()) {
-            const cachedGroupIds = groupAuthorizationService.getAllowedGroupIds();
-            const cachedFullObjects = groupAuthorizationService.getCachedGroupObjects();
+            // SECURITY CRITICAL: Verify the cache belongs to the CURRENT user
+            if (groupAuthorizationService.isCacheOwnedBy(safeUserId)) {
+                const cachedGroupIds = groupAuthorizationService.getAllowedGroupIds();
+                const cachedFullObjects = groupAuthorizationService.getCachedGroupObjects();
 
-            if (cachedGroupIds.length > 0) {
-                logger.info(`[PERF] Returning ${cachedGroupIds.length} cached groups instantly (Stage 1)`);
+                if (cachedGroupIds.length > 0) {
+                    logger.info(`[PERF] Returning ${cachedGroupIds.length} cached groups instantly (Stage 1)`);
 
-                // Trigger Stage 2 refresh in background
-                setTimeout(() => {
-                    vrchatApiService_refreshGroups(safeUserId).catch(err => {
-                        logger.error('Background refresh failed:', err);
-                    });
-                }, 100);
+                    // Trigger Stage 2 refresh in background
+                    setTimeout(() => {
+                        vrchatApiService_refreshGroups(safeUserId).catch(err => {
+                            logger.error('Background refresh failed:', err);
+                        });
+                    }, 100);
 
-                // Return full cached objects if available, otherwise return minimal placeholders
-                if (cachedFullObjects.length > 0) {
-                    logger.info(`[PERF] Returning ${cachedFullObjects.length} full cached group objects with images`);
+                    // Return full cached objects if available, otherwise return minimal placeholders
+                    if (cachedFullObjects.length > 0) {
+                        logger.info(`[PERF] Returning ${cachedFullObjects.length} full cached group objects with images`);
+                        return {
+                            success: true,
+                            groups: cachedFullObjects,
+                            isPartial: true // Still mark as partial so UI knows a refresh is coming
+                        };
+                    }
+
+                    // Fallback: minimal objects (no images, but UI won't be stuck)
                     return {
                         success: true,
-                        groups: cachedFullObjects,
-                        isPartial: true // Still mark as partial so UI knows a refresh is coming
+                        groups: cachedGroupIds.map(id => ({ id, name: 'Loading...', shortCode: '' })),
+                        isPartial: true
                     };
                 }
-
-                // Fallback: minimal objects (no images, but UI won't be stuck)
-                return {
-                    success: true,
-                    groups: cachedGroupIds.map(id => ({ id, name: 'Loading...', shortCode: '' })),
-                    isPartial: true
-                };
+            } else {
+                logger.warn(`[SECURITY] Cache mismatch! Cache belongs to different user. clearing cache.`);
+                groupAuthorizationService.clearAllowedGroups();
             }
         }
 
@@ -106,7 +117,12 @@ export function setupGroupHandlers() {
 
             return { groups: authorizedGroups };
         }, 'groups:get-my-groups:refresh').then(res => {
-            if (res.success) return { success: true, groups: res.data?.groups };
+            if (res.success) {
+                // START PREDICTIVE CACHING SERVICE ONCE AUTH IS CONFIRMED
+                groupAuthorizationService.startPredictiveCaching();
+
+                return { success: true, groups: res.data?.groups };
+            }
             return { success: false, error: res.error };
         });
     }

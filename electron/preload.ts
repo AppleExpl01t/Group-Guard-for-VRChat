@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld('electron', {
         ipcRenderer.on('groups:cache-ready', handler);
         return () => ipcRenderer.removeListener('groups:cache-ready', handler);
     },
+    onGroupVerified: (callback: (data: { group: any }) => void) => {
+        const handler = (_event: Electron.IpcRendererEvent, data: { group: any }) => callback(data);
+        ipcRenderer.on('groups:verified', handler);
+        return () => ipcRenderer.removeListener('groups:verified', handler);
+    },
 
     banUser: (groupId: string, userId: string) => ipcRenderer.invoke('groups:ban-user', { groupId, userId }),
     unbanUser: (groupId: string, userId: string) => ipcRenderer.invoke('groups:unban-user', { groupId, userId }),

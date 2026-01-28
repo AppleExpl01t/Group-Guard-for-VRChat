@@ -1,5 +1,6 @@
 import { app, BrowserWindow, shell, ipcMain, dialog } from 'electron';
 import path from 'path';
+import fs from 'fs'; // Added for log rotation
 import dotenv from 'dotenv';
 
 // Load environment variables
@@ -12,7 +13,49 @@ const logger = log.scope('App');
 // LOGGING & ERROR HANDLING
 // ========================================
 
+// LOG ROTATION LOGIC (Must run before log.initialize)
+try {
+  const userDataPath = app.getPath('userData');
+  const logDir = path.join(userDataPath, 'logs');
+  const logFile = path.join(logDir, 'latest.log');
+
+  // Ensure log directory exists
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
+  }
+
+  // Rotate existing latest.log
+  if (fs.existsSync(logFile)) {
+    const stats = fs.statSync(logFile);
+    const date = stats.mtime; // Use modification time (when the last session ended)
+
+    // Format: YYYY-MM-DD_HH-mm-ss
+    const timestamp = date.getFullYear() + '-' +
+      String(date.getMonth() + 1).padStart(2, '0') + '-' +
+      String(date.getDate()).padStart(2, '0') + '_' +
+      String(date.getHours()).padStart(2, '0') + '-' +
+      String(date.getMinutes()).padStart(2, '0') + '-' +
+      String(date.getSeconds()).padStart(2, '0');
+
+    const archiveName = `log_${timestamp}.txt`;
+    const archivePath = path.join(logDir, archiveName);
+
+    fs.renameSync(logFile, archivePath);
+    console.log(`[Startup] Archived previous log to ${archiveName}`);
+  }
+} catch (err) {
+  console.error('[Startup] Failed to rotate logs:', err);
+}
+
 // Configure logging for production
+// Force electron-log to use our specific path and filename
+log.transports.file.resolvePathFn = () => path.join(app.getPath('userData'), 'logs/latest.log');
+log.transports.file.fileName = 'latest.log';
+log.transports.file.archiveLogFn = (oldLogFile) => {
+  // Disable built-in rotation since we handle it manually on startup
+  // This empty function prevents electron-log from renaming 'latest.log'
+};
+
 log.initialize();
 log.transports.file.level = 'info';
 log.transports.console.level = process.env.NODE_ENV === 'development' ? 'info' : 'warn';
