@@ -70,7 +70,15 @@ export const useInstanceMonitorStore = create<InstanceMonitorState>((set) => ({
   setWorldName: (name) => set({ currentWorldName: name }),
   setInstanceInfo: (id, location) => set((state) => {
       if (state.currentInstanceId !== id) {
-          return { currentInstanceId: id, currentLocation: location, liveScanResults: [] };
+          // Instance changed - clear all instance-specific data
+          return { 
+            currentInstanceId: id, 
+            currentLocation: location, 
+            currentWorldId: null, // Will be set by setWorldId
+            currentWorldName: null, // Will be set by world fetch
+            players: {}, 
+            liveScanResults: [] 
+          };
       }
       return { currentInstanceId: id, currentLocation: location };
   }),

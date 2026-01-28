@@ -30,8 +30,34 @@
 
 import log from 'electron-log';
 import { serviceEventBus } from './ServiceEventBus';
+import { getVRChatClient } from './AuthService';
 
 const logger = log.scope('GroupAuthorization');
+
+// Moderation permission strings that indicate mod powers
+const MODERATION_PERMISSIONS = [
+    'group-bans-manage',
+    'group-members-manage', 
+    // 'group-members-viewall', // Too broad - regular members often have this
+    'group-members-remove',
+    'group-data-manage',
+    'group-audit-view',
+    'group-join-request-manage',
+    'group-instance-moderate',
+    'group-instance-open',
+    'group-instance-close'
+];
+
+interface GroupMembershipData {
+    id: string;
+    groupId?: string;
+    ownerId?: string;
+    userId?: string;
+    roleIds?: string[];
+    myMember?: { permissions?: string[]; roleIds?: string[] };
+    group?: { ownerId?: string; name?: string };
+    [key: string]: unknown;
+}
 
 class GroupAuthorizationService {
     // Set of group IDs where the user has moderation permissions
@@ -49,19 +75,139 @@ class GroupAuthorizationService {
     }> = [];
 
     constructor() {
-        // Listen for group updates from GroupService
-        serviceEventBus.on('groups-updated', (payload) => {
-             logger.info(`[SECURITY] Received groups-updated event with ${payload.groups?.length || 0} groups`);
-             // Debug: Log raw group data to identify mapping issues
-             payload.groups?.forEach((g: { id?: string; groupId?: string; name?: string }, i: number) => {
-                 logger.debug(`[SECURITY] Group ${i}: id=${g.id}, groupId=${g.groupId}, name=${g.name}`);
-             });
-             const groupIds = payload.groups
-                 .map((g: { id?: string }) => g.id)
-                 .filter((id): id is string => !!id);
-             logger.info(`[SECURITY] Extracted group IDs: ${JSON.stringify(groupIds)}`);
-             this.setAllowedGroups(groupIds);
+        // Listen for raw group updates from GroupService (legacy support for event-based calls)
+        serviceEventBus.on('groups-raw', async (payload) => {
+            logger.info(`[SECURITY] Received groups-raw event with ${payload.groups?.length || 0} groups`);
+            await this.processAndAuthorizeGroups(payload.groups || [], payload.userId);
         });
+    }
+
+    /**
+     * Process raw group memberships and determine which ones the user can moderate.
+     * This is the core authorization logic - checking ownership or mod permissions.
+     * 
+     * @param groups Raw group membership data from VRChat API
+     * @param userId The user ID to check permissions for
+     * @returns Array of groups where the user has moderation permissions
+     */
+    public async processAndAuthorizeGroups(groups: GroupMembershipData[], userId: string): Promise<GroupMembershipData[]> {
+        const client = getVRChatClient();
+        const moderatableGroups: GroupMembershipData[] = [];
+        
+        if (!client || !userId) {
+            logger.warn('[SECURITY] Cannot process groups: no client or userId');
+            this.setAllowedGroups([]);
+            return [];
+        }
+
+        for (const g of groups) {
+            const groupId = g.groupId || g.id;
+            if (!groupId || !groupId.startsWith('grp_')) {
+                continue;
+            }
+            
+            // Check if user is owner
+            const isOwner = g.ownerId === userId || g.group?.ownerId === userId;
+            
+            if (isOwner) {
+                moderatableGroups.push(g);
+                continue;
+            }
+            
+            // Check for moderation permissions via roles
+            const hasMod = await this.checkModPermissions(groupId, userId, g);
+            if (hasMod) {
+                moderatableGroups.push(g);
+            }
+        }
+
+        // Map the groups to ensure 'id' is the Group ID (grp_), not the Member ID (gmem_)
+        const mappedGroups = moderatableGroups.map((g) => {
+            if (g.groupId && typeof g.groupId === 'string' && g.groupId.startsWith('grp_')) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const groupObj = g as any;
+                const innerGroup = groupObj.group || {};
+                
+                return {
+                    ...g,
+                    id: g.groupId,
+                    _memberId: g.id,
+                    name: innerGroup.name || g.group?.name || groupObj.name || 'Unknown Group',
+                    onlineMemberCount: innerGroup.onlineMemberCount ?? groupObj.onlineMemberCount, 
+                    activeInstanceCount: innerGroup.activeInstanceCount ?? groupObj.activeInstanceCount
+                };
+            }
+            return g;
+        });
+
+        // Set allowed groups
+        const groupIds = mappedGroups
+            .map((g) => g.id || g.groupId)
+            .filter((id): id is string => !!id && id.startsWith('grp_'));
+        this.setAllowedGroups(groupIds);
+
+        // Emit filtered groups for other services
+        logger.info(`[SECURITY] Authorized ${mappedGroups.length} moderatable groups`);
+        serviceEventBus.emit('groups-updated', { groups: mappedGroups });
+        
+        return mappedGroups;
+    }
+
+    /**
+     * Check if a user has moderation permissions in a group by checking their roles.
+     */
+    private async checkModPermissions(groupId: string, userId: string, membership: GroupMembershipData): Promise<boolean> {
+        const client = getVRChatClient();
+        if (!client) return false;
+
+        // roleIds might be at top level, in myMember, or we need to fetch them
+        let userRoleIds = membership.roleIds || membership.myMember?.roleIds || [];
+        
+        // If no roleIds in the membership response, fetch member record directly
+        if (userRoleIds.length === 0) {
+            try {
+                const memberResp = await client.getGroupMember({ 
+                    path: { groupId, userId }
+                });
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const memberRecord = (memberResp.data || memberResp) as any;
+                
+                if (memberRecord) {
+                    userRoleIds = memberRecord.roleIds || [];
+                }
+            } catch (e) {
+                logger.warn(`[SECURITY] Failed to fetch member record for group ${groupId}:`, e);
+                return false;
+            }
+        }
+
+        if (!userRoleIds || userRoleIds.length === 0) {
+            return false;
+        }
+
+        // Fetch group roles and check for moderation permissions
+        try {
+            const rolesResponse = await client.getGroupRoles({ path: { groupId } });
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const roles = (rolesResponse.data || rolesResponse || []) as any[];
+            
+            for (const roleId of userRoleIds) {
+                const role = roles.find((r: { id?: string }) => r.id === roleId);
+                if (role && role.permissions && Array.isArray(role.permissions)) {
+                    const hasModPerm = role.permissions.some((p: string) => 
+                        MODERATION_PERMISSIONS.includes(p)
+                    );
+                    if (hasModPerm) {
+                        return true;
+                    }
+                }
+            }
+            
+            return false;
+        } catch (e) {
+            logger.warn(`[SECURITY] Failed to fetch roles for group ${groupId}:`, e);
+            return false;
+        }
     }
 
     /**

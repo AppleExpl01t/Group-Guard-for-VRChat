@@ -14,6 +14,7 @@ import { SettingsTabBar, type SettingsTab } from './SettingsTabBar';
 import { SettingsSearch, matchesSearch } from './SettingsSearch';
 import { SearchX } from 'lucide-react';
 import { useUIStore } from '../../stores/uiStore';
+import { BulkFriendImport } from './components/BulkFriendImport';
 import paw from '../../assets/images/paw.png';
 
 import appIcon from '../../assets/icon.png';
@@ -978,6 +979,13 @@ export const SettingsView: React.FC = () => {
                        >
                           Show Setup
                        </NeonButton>
+                    </div>
+
+                    {/* Bulk Friend Import */}
+                    <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
+                       <div style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>Bulk Friend from VRCX JSON</div>
+                       <div style={{ color: 'var(--color-text-dim)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>Import a VRCX friends export and send friend requests to all users.</div>
+                       <BulkFriendImport />
                     </div>
                  </div>
                </div>
