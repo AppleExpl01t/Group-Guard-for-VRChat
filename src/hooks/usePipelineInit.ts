@@ -53,11 +53,22 @@ export function usePipelineInit(): void {
     const unsubJoined = pipelineSubscribe('group-joined', handlePipelineEvent);
     const unsubLeft = pipelineSubscribe('group-left', handlePipelineEvent);
 
+    // KEY FIX: Subscribe to Stage 2 streaming group updates
+    // This replaces the "Loading..." placeholder groups with real data
+    let unsubGroupsUpdated: (() => void) | undefined;
+    if (window.electron?.onGroupsUpdated) {
+      unsubGroupsUpdated = window.electron.onGroupsUpdated((data) => {
+        console.log('[PIPELINE_INIT] Streaming groups update:', data.groups?.length, 'groups');
+        useGroupStore.getState().setGroups(data.groups);
+      });
+    }
+
     return () => {
       unsubMember();
       unsubRole();
       unsubJoined();
       unsubLeft();
+      unsubGroupsUpdated?.();
     };
   }, [isAuthenticated, pipelineSubscribe, handlePipelineEvent]);
 }

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassPanel } from '../../../components/ui/GlassPanel';
-import { Button } from '../../../components/ui/Button';
+import { NeonButton } from '../../../components/ui/NeonButton';
 import { ShieldCheck, User, Users, RefreshCw, Trash2, Search, X } from 'lucide-react';
 import { UserActionModal } from './UserActionModal';
 import { useGroupStore } from '../../../stores/groupStore';
@@ -24,7 +24,7 @@ export const WhitelistViewerModal: React.FC<WhitelistViewerModalProps> = ({ isOp
     const [groups, setGroups] = useState<WhitelistEntity[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    
+
     // User Action Modal State
     const [selectedEntity, setSelectedEntity] = useState<WhitelistEntity | null>(null);
     const [showActionModal, setShowActionModal] = useState(false);
@@ -81,8 +81,8 @@ export const WhitelistViewerModal: React.FC<WhitelistViewerModalProps> = ({ isOp
     const currentList = activeTab === 'users' ? users : groups;
     const filteredList = currentList
         .filter(item => item && item.id) // Filter out nulls or empty IDs
-        .filter(item => 
-            item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        .filter(item =>
+            item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             item.id.toLowerCase().includes(searchQuery.toLowerCase())
         );
 
@@ -113,35 +113,35 @@ export const WhitelistViewerModal: React.FC<WhitelistViewerModalProps> = ({ isOp
                         animate={{ scale: 1, opacity: 1 }}
                         exit={{ scale: 0.95, opacity: 0 }}
                         onClick={e => e.stopPropagation()}
-                        style={{ 
-                            width: '90%', 
-                            maxWidth: '700px', 
-                            maxHeight: '80vh', 
-                            zIndex: 101, 
-                            display: 'flex', 
+                        style={{
+                            width: '90%',
+                            maxWidth: '700px',
+                            maxHeight: '80vh',
+                            zIndex: 101,
+                            display: 'flex',
                             flexDirection: 'column',
-                            overflow: 'hidden', 
+                            overflow: 'hidden',
                             borderRadius: '12px'
                         }}
                     >
-                        <GlassPanel style={{ 
-                            padding: '0', 
+                        <GlassPanel style={{
+                            padding: '0',
                             border: '1px solid rgba(74, 222, 128, 0.3)', // Green tint for whitelist
-                            boxShadow: '0 0 30px rgba(74, 222, 128, 0.1)', 
-                            display: 'flex', 
-                            flexDirection: 'column', 
-                            height: '100%', 
+                            boxShadow: '0 0 30px rgba(74, 222, 128, 0.1)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            height: '100%',
                             maxHeight: '100%',
                             minHeight: 0
                         }}>
-                             {!selectedGroup && (
+                            {!selectedGroup && (
                                 <div style={{ padding: '0.75rem', background: 'rgba(234, 179, 8, 0.1)', borderBottom: '1px solid rgba(234, 179, 8, 0.2)', color: '#fbbf24', textAlign: 'center', fontSize: '0.9rem' }}>
                                     ⚠️ No Group Selected. Please select a group to view its whitelist.
                                 </div>
-                             )}
+                            )}
 
-                             {/* Header */}
-                             <div style={{ padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)', flexShrink: 0 }}>
+                            {/* Header */}
+                            <div style={{ padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)', flexShrink: 0 }}>
                                 <h2 style={{ margin: 0, fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
                                     <div style={{ padding: '8px', background: 'rgba(74, 222, 128, 0.1)', borderRadius: '50%', color: '#4ade80' }}>
                                         <ShieldCheck size={20} />
@@ -153,7 +153,7 @@ export const WhitelistViewerModal: React.FC<WhitelistViewerModalProps> = ({ isOp
                                         </div>
                                     </div>
                                 </h2>
-                                <button 
+                                <button
                                     onClick={onClose}
                                     style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: '1.5rem', display: 'flex' }}
                                 >
@@ -161,43 +161,39 @@ export const WhitelistViewerModal: React.FC<WhitelistViewerModalProps> = ({ isOp
                                 </button>
                             </div>
 
+
+
                             {/* Toolbar */}
                             <div style={{ padding: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', gap: '1rem', background: 'rgba(0,0,0,0.1)' }}>
                                 <div style={{ display: 'flex', gap: '4px', background: 'rgba(0,0,0,0.3)', padding: '4px', borderRadius: '8px' }}>
-                                    <button
+                                    <NeonButton
+                                        variant={activeTab === 'users' ? 'secondary' : 'ghost'}
+                                        size="sm"
                                         onClick={() => setActiveTab('users')}
-                                        style={{
-                                            padding: '6px 16px', borderRadius: '6px', border: 'none',
-                                            background: activeTab === 'users' ? 'rgba(255,255,255,0.1)' : 'transparent',
-                                            color: activeTab === 'users' ? 'white' : 'rgba(255,255,255,0.5)',
-                                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
-                                            transition: 'all 0.2s', fontWeight: 500, fontSize: '0.9rem'
-                                        }}
+                                        glow={activeTab === 'users'}
+                                        style={{ gap: '8px' }}
                                     >
                                         <User size={14} />
                                         Users
-                                        <span style={{ fontSize: '0.75rem', opacity: 0.7, background: 'rgba(0,0,0,0.3)', padding: '1px 6px', borderRadius: '10px' }}>{users.length}</span>
-                                    </button>
-                                    <button
+                                        <span style={{ fontSize: '0.75rem', opacity: 0.7, background: 'rgba(0,0,0,0.3)', padding: '1px 6px', borderRadius: '10px', marginLeft: '4px' }}>{users.length}</span>
+                                    </NeonButton>
+                                    <NeonButton
+                                        variant={activeTab === 'groups' ? 'secondary' : 'ghost'}
+                                        size="sm"
                                         onClick={() => setActiveTab('groups')}
-                                        style={{
-                                            padding: '6px 16px', borderRadius: '6px', border: 'none',
-                                            background: activeTab === 'groups' ? 'rgba(255,255,255,0.1)' : 'transparent',
-                                            color: activeTab === 'groups' ? 'white' : 'rgba(255,255,255,0.5)',
-                                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
-                                            transition: 'all 0.2s', fontWeight: 500, fontSize: '0.9rem'
-                                        }}
+                                        glow={activeTab === 'groups'}
+                                        style={{ gap: '8px' }}
                                     >
                                         <Users size={14} />
                                         Groups
-                                        <span style={{ fontSize: '0.75rem', opacity: 0.7, background: 'rgba(0,0,0,0.3)', padding: '1px 6px', borderRadius: '10px' }}>{groups.length}</span>
-                                    </button>
+                                        <span style={{ fontSize: '0.75rem', opacity: 0.7, background: 'rgba(0,0,0,0.3)', padding: '1px 6px', borderRadius: '10px', marginLeft: '4px' }}>{groups.length}</span>
+                                    </NeonButton>
                                 </div>
 
                                 <div style={{ flex: 1, position: 'relative' }}>
                                     <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)' }} />
-                                    <input 
-                                        type="text" 
+                                    <input
+                                        type="text"
                                         placeholder={`Search ${activeTab}...`}
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -210,9 +206,9 @@ export const WhitelistViewerModal: React.FC<WhitelistViewerModalProps> = ({ isOp
                                         onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
                                     />
                                 </div>
-                                <Button variant="ghost" size="sm" onClick={loadWhitelist} disabled={isLoading} title="Refresh">
+                                <NeonButton variant="ghost" size="sm" onClick={loadWhitelist} disabled={isLoading} title="Refresh">
                                     <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
-                                </Button>
+                                </NeonButton>
                             </div>
 
                             {/* List Content */}
@@ -224,10 +220,10 @@ export const WhitelistViewerModal: React.FC<WhitelistViewerModalProps> = ({ isOp
                                     </div>
                                 ) : filteredList.length > 0 ? (
                                     filteredList.map(item => (
-                                        <div 
-                                            key={item.id} 
+                                        <div
+                                            key={item.id}
                                             onClick={() => handleItemClick(item)}
-                                            style={{ 
+                                            style={{
                                                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                                                 padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px',
                                                 border: '1px solid rgba(255,255,255,0.05)',
@@ -248,8 +244,8 @@ export const WhitelistViewerModal: React.FC<WhitelistViewerModalProps> = ({ isOp
                                             }}
                                         >
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                                <div style={{ 
-                                                    width: '32px', height: '32px', borderRadius: '50%', 
+                                                <div style={{
+                                                    width: '32px', height: '32px', borderRadius: '50%',
                                                     background: activeTab === 'users' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(168, 85, 247, 0.2)',
                                                     color: activeTab === 'users' ? '#60a5fa' : '#c084fc',
                                                     display: 'flex', alignItems: 'center', justifyContent: 'center'
@@ -274,26 +270,17 @@ export const WhitelistViewerModal: React.FC<WhitelistViewerModalProps> = ({ isOp
                                                     </div>
                                                 </div>
                                             </div>
-                                            
-                                            <button 
+
+                                            <NeonButton
                                                 onClick={(e) => handleRemove(item.id, e)}
-                                                style={{ 
-                                                    padding: '8px', borderRadius: '6px', border: 'none', background: 'transparent', 
-                                                    color: 'rgba(255,255,255,0.3)', cursor: 'pointer', transition: 'all 0.2s',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                                }}
-                                                onMouseEnter={e => {
-                                                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
-                                                    e.currentTarget.style.color = '#f87171';
-                                                }}
-                                                onMouseLeave={e => {
-                                                    e.currentTarget.style.background = 'transparent';
-                                                    e.currentTarget.style.color = 'rgba(255,255,255,0.3)';
-                                                }}
+                                                variant="danger"
+                                                size="sm"
+                                                glow={false}
+                                                style={{ padding: '8px', height: 'auto', minWidth: 'auto' }}
                                                 title="Remove from whitelist"
                                             >
                                                 <Trash2 size={16} />
-                                            </button>
+                                            </NeonButton>
                                         </div>
                                     ))
                                 ) : (
@@ -308,31 +295,23 @@ export const WhitelistViewerModal: React.FC<WhitelistViewerModalProps> = ({ isOp
                                 )}
                             </div>
 
-                             {/* Sticky Footer */}
+                            {/* Sticky Footer */}
                             <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'flex-end', background: 'rgba(0,0,0,0.2)', flexShrink: 0 }}>
-                                <button 
+                                <NeonButton
                                     onClick={onClose}
-                                    style={{ 
-                                        padding: '10px 24px', 
-                                        background: '#4ade80', 
-                                        color: 'black', 
-                                        border: 'none', 
-                                        borderRadius: '6px', 
-                                        fontWeight: 'bold', 
-                                        cursor: 'pointer',
-                                        boxShadow: '0 4px 12px rgba(74, 222, 128, 0.3)',
-                                        fontSize: '0.9rem'
-                                    }}
+                                    variant="primary"
+                                    size="md"
+                                    glow
                                 >
                                     Done
-                                </button>
+                                </NeonButton>
                             </div>
 
                         </GlassPanel>
                     </motion.div>
                 </motion.div>
             )}
-            
+
             {showActionModal && selectedEntity && (
                 <UserActionModal
                     isOpen={showActionModal}

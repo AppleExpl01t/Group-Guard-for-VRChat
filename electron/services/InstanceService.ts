@@ -71,7 +71,7 @@ export function setupInstanceHandlers() {
 
                 const cacheKey = makeCacheKey(p.userId, groupId);
                 const cached = getCachedEntity(cacheKey);
-                
+
                 if (cached) {
                     results.push(cached);
                 } else {
@@ -358,7 +358,7 @@ export function setupInstanceHandlers() {
 
         // If we have the name locally, we *could* skip fetching, but we usually want the image too.
         // However, we use vrchatApiService.getWorld() which is cached, so it's cheap to call.
-        
+
         // Include vrchatApiService import if not present (it's likely needed)
         // Wait, InstanceService.ts doesn't import vrchatApiService yet?
         // Checking existing imports... need to add it if missing.
@@ -369,7 +369,7 @@ export function setupInstanceHandlers() {
         try {
             // This leverages the shared 10-minute cache for worlds
             const res = await import('./VRChatApiService').then(m => m.vrchatApiService.getWorld(worldId));
-            
+
             if (res.success && res.data) {
                 imageUrl = res.data.thumbnailImageUrl || res.data.imageUrl;
                 apiName = res.data.name;

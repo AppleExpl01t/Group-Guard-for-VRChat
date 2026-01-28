@@ -3,15 +3,19 @@ import log from 'electron-log';
 
 const logger = log.scope('ServiceEventBus');
 
-export type ServiceEventType = 
+export type ServiceEventType =
     | 'groups-updated'
     | 'groups-raw'
-    | 'auth-changed'; // Add more as needed
+    | 'groups-cache-ready'
+    | 'auth-changed' // Add more as needed
+    | 'group-verified';
 
 export interface ServiceEventPayloads {
-    'groups-updated': { groups: { id: string; [key: string]: unknown }[] };
-    'groups-raw': { groups: { id: string; [key: string]: unknown }[]; userId: string };
+    'groups-updated': { groups: { id: string;[key: string]: unknown }[] };
+    'groups-raw': { groups: { id: string;[key: string]: unknown }[]; userId: string };
+    'groups-cache-ready': { groupIds: string[] };
     'auth-changed': { userId: string | null };
+    'group-verified': { group: { id: string;[key: string]: unknown } };
 }
 
 class ServiceEventBus extends EventEmitter {

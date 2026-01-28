@@ -35,6 +35,7 @@ debug_*
 *_debug.log
 *.log
 *.txt
+logs/
 
 # System & IDE
 .DS_Store
