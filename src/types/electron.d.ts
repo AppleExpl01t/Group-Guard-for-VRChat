@@ -570,6 +570,13 @@ export interface ElectronAPI {
       getMutualGroups: (userId: string) => Promise<{ success: boolean; data?: unknown; error?: string }>;
       getUserFeedback: (userId: string) => Promise<{ success: boolean; data?: unknown; error?: string }>;
   };
+
+  // Debug API (developer tools)
+  debug: {
+      selectFriendJson: () => Promise<{ success: boolean; path?: string; count?: number; preview?: string[]; error?: string }>;
+      bulkFriendFromJson: (jsonPath: string, delayMs?: number) => Promise<{ success: boolean; sent?: number; failed?: number; skipped?: number; total?: number; error?: string; errors?: string[] }>;
+      onBulkFriendProgress: (callback: (data: { sent: number; skipped: number; failed: number; total: number; current?: string; done?: boolean }) => void) => () => void;
+  };
 }
 
 declare global {

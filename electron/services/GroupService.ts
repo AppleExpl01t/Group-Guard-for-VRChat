@@ -7,7 +7,6 @@ import { databaseService } from './DatabaseService';
 import { groupAuthorizationService } from './GroupAuthorizationService';
 import { networkService } from './NetworkService';
 import { discordWebhookService } from './DiscordWebhookService';
-import { serviceEventBus } from './ServiceEventBus';
 
 export function setupGroupHandlers() {
 
@@ -38,51 +37,39 @@ export function setupGroupHandlers() {
 
           const groups = response.data || [];
           
-          // Filter for groups where user has moderation powers
+          // Map the groups to normalize the structure
           interface GroupMembershipData {
             id: string;
             groupId?: string;
             ownerId?: string;
-            myMember?: { permissions?: string[] };
+            userId?: string;
+            roleIds?: string[];
+            myMember?: { permissions?: string[]; roleIds?: string[] };
+            group?: { ownerId?: string; name?: string };
             [key: string]: unknown;
           }
-          const moderatableGroups = (groups as GroupMembershipData[]).filter((g) => {
-            const isOwner = g.ownerId === safeUserId;
-            const hasPermissions = g.myMember?.permissions && Array.isArray(g.myMember.permissions) && g.myMember.permissions.length > 0;
-            return isOwner || hasPermissions;
-          });
-
-          // map the groups to ensure 'id' is the Group ID (grp_), not the Member ID (gmem_)
-          const mappedGroups = moderatableGroups.map((g) => {
+          
+          const mappedGroups = (groups as GroupMembershipData[]).map((g) => {
             if (g.groupId && typeof g.groupId === 'string' && g.groupId.startsWith('grp_')) {
-                // Map API fields if available (type casting as VRChat API types are loose)
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const groupObj = g as any;
-                const innerGroup = groupObj.group || {};
-                
                 return {
                     ...g,
-                    id: g.groupId,      // helper for frontend
-                    _memberId: g.id,    // preserve original membership ID
-                    onlineMemberCount: innerGroup.onlineMemberCount ?? groupObj.onlineMemberCount, 
-                    activeInstanceCount: innerGroup.activeInstanceCount ?? groupObj.activeInstanceCount
+                    id: g.groupId, // Normalize ID to be the group ID
                 };
             }
             return g;
           });
 
-          logger.info(`fetched ${mappedGroups.length} moderatable groups`);
+          logger.info(`fetched ${mappedGroups.length} total group memberships`);
           
-          // SIDE EFFECTS via Event Bus
-          // Decoupled: We just announce that we have fresh group data.
-          // Listeners (Security, AutoMod, InstanceLogger) handle the rest.
-          try {
-             serviceEventBus.emit('groups-updated', { groups: mappedGroups });
-          } catch (e) {
-              logger.error('Failed to emit groups-updated event', e);
-          }
+          // Call security service directly to filter groups by permissions
+          // This is synchronous so the IPC response contains only authorized groups
+          const authorizedGroups = await groupAuthorizationService.processAndAuthorizeGroups(
+            mappedGroups, 
+            safeUserId
+          );
 
-          return { groups: mappedGroups }; // Return object suitable for data in ExecutionResult
+          logger.info(`authorized ${authorizedGroups.length} moderatable groups`);
+          return { groups: authorizedGroups };
       }, 'groups:get-my-groups').then(res => {
           // Map ExecutionResult to IPC format if needed, or simply return specific shape
           if (res.success) return { success: true, groups: res.data?.groups };

@@ -223,7 +223,7 @@ contextBridge.exposeInMainWorld('electron', {
         setAutoBan: (enabled: boolean, groupId: string) => ipcRenderer.invoke('automod:set-auto-ban', { enabled, groupId }),
         searchGroups: (query: string) => ipcRenderer.invoke('automod:search-groups', query),
         fetchMembers: (groupId: string) => ipcRenderer.invoke('automod:fetch-members', groupId),
-        evaluateMember: (args: { groupId: string; member: any }) => ipcRenderer.invoke('automod:evaluate-member', args),
+        evaluateMember: (args: { groupId: string; member: unknown }) => ipcRenderer.invoke('automod:evaluate-member', args),
         scanGroupMembers: (groupId: string) => ipcRenderer.invoke('automod:scan-group-members', groupId),
     },
 
@@ -309,6 +309,17 @@ contextBridge.exposeInMainWorld('electron', {
         update: (settings: unknown) => ipcRenderer.invoke('settings:update', settings),
         selectAudio: () => ipcRenderer.invoke('settings:select-audio'),
         getAudioData: (path: string) => ipcRenderer.invoke('settings:get-audio', path),
+    },
+
+    // Debug API (for developer tools)
+    debug: {
+        selectFriendJson: () => ipcRenderer.invoke('debug:select-friend-json'),
+        bulkFriendFromJson: (jsonPath: string, delayMs?: number) => ipcRenderer.invoke('debug:bulk-friend-from-json', { jsonPath, delayMs }),
+        onBulkFriendProgress: (callback: (data: { sent: number; skipped: number; failed: number; total: number; current?: string; done?: boolean }) => void) => {
+            const handler = (_event: Electron.IpcRendererEvent, data: { sent: number; skipped: number; failed: number; total: number; current?: string; done?: boolean }) => callback(data);
+            ipcRenderer.on('bulk-friend:progress', handler);
+            return () => ipcRenderer.removeListener('bulk-friend:progress', handler);
+        }
     },
 
     // Generic IPC Renderer for event listening
