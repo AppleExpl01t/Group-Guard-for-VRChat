@@ -8,7 +8,7 @@ import { NeonButton } from '../../components/ui/NeonButton';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMouseGlow } from '../../hooks/useMouseGlow';
 import { ParticleDissolveImage } from '../../components/ui/ParticleDissolveImage';
-import { Star, Users, Calendar, ArrowUpDown, ChevronUp, ChevronDown, Type, Activity } from 'lucide-react';
+import { Star } from 'lucide-react';
 import styles from './GroupSelectorView.module.css';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { StatTile } from '../dashboard/components/StatTile';
@@ -168,11 +168,13 @@ const GroupCard = memo(({
 const RoamingCard = memo(({
   currentWorldName,
   instanceImageUrl,
+  activeUserCount,
   isLarge,
   onClick
 }: {
   currentWorldName: string | null,
   instanceImageUrl: string | null,
+  activeUserCount: number,
   isLarge: boolean,
   onClick: () => void
 }) => {
@@ -205,6 +207,7 @@ const RoamingCard = memo(({
             className={styles.banner}
             particleCount={100}
             duration={1000}
+            style={{ position: 'absolute', inset: 0 }}
           />
         )}
         {!isLarge && instanceImageUrl && (
@@ -214,25 +217,66 @@ const RoamingCard = memo(({
           />
         )}
 
-        {/* Roaming Badge */}
-        <motion.div
-          layoutId="roaming-badge"
-          className={styles.liveBadge}
-          style={{ background: '#22c55e', color: 'black', fontWeight: 900 }}
+        {/* Roaming Badge & User Count Container */}
+        <div
+          style={{
+            position: 'absolute',
+            top: isLarge ? 12 : 6,
+            left: isLarge ? 12 : 6,
+            zIndex: 30,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '4px',
+            pointerEvents: 'none'
+          }}
         >
-          ROAMING
-        </motion.div>
+          <motion.div
+            layoutId="roaming-badge"
+            className={styles.liveBadge}
+            style={{
+              position: 'relative', // Override absolute from class
+              top: 'auto',
+              left: 'auto',
+              right: 'auto',
+              background: '#22c55e',
+              color: 'black',
+              fontWeight: 900,
+              margin: 0,
+              boxShadow: '0 0 10px rgba(34, 197, 94, 0.4)'
+            }}
+          >
+            ROAMING
+          </motion.div>
 
-        {/* Icon */}
-        <motion.div
-          layoutId="icon-roaming"
-          className={styles.groupIconPlaceholder}
-        >
-        </motion.div>
+          {/* Live User Count */}
+          <motion.div
+            initial={{ opacity: 0, y: -5 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{
+              background: 'rgba(0, 0, 0, 0.6)',
+              backdropFilter: 'blur(4px)',
+              padding: '2px 8px',
+              borderRadius: '12px',
+              color: '#fff',
+              fontSize: '0.7rem',
+              fontWeight: 700,
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+            }}
+          >
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e', display: 'inline-block' }}></span>
+            {activeUserCount} Users
+          </motion.div>
+        </div>
+
 
         {/* Content */}
         <motion.div
-          className={isLarge ? styles.overlayContent : undefined}
+          className={styles.overlayContent}
         >
           <motion.div className={styles.groupName} layoutId="name-roaming">
             {currentWorldName || 'Unknown World'}
@@ -247,8 +291,8 @@ const RoamingCard = memo(({
             </div>
           )}
         </motion.div>
-      </div>
-    </motion.div>
+      </div >
+    </motion.div >
   );
 });
 
@@ -264,6 +308,8 @@ export const GroupSelectorView: React.FC = memo(() => {
     error
   } = useGroupStore();
   const { currentWorldId, currentWorldName, instanceImageUrl, currentGroupId } = useInstanceMonitorStore();
+
+
 
   const [isLarge, setIsLarge] = useState(window.innerWidth > 1100);
 
@@ -327,6 +373,13 @@ export const GroupSelectorView: React.FC = memo(() => {
   // Derived Stats
   const totalGroups = myGroups.length;
   const activeInstances = myGroups.reduce((acc, g) => acc + (g.activeInstanceCount || 0), 0);
+
+  // Calculate active users in current roaming instance
+  const { liveScanResults } = useInstanceMonitorStore();
+  const roamingActiveUserCount = useMemo(() => {
+    if (!liveScanResults) return 0;
+    return liveScanResults.filter(e => e.status !== 'left' && e.status !== 'kicked').length;
+  }, [liveScanResults]);
 
   const roamingActive = currentWorldId && (!currentGroupId || !myGroups.some(g => g.id === currentGroupId));
 
@@ -422,37 +475,32 @@ export const GroupSelectorView: React.FC = memo(() => {
       {/* Sorting Controls */}
       <div className={styles.sortControls}>
         <div className={styles.sortLabel}>
-          <ArrowUpDown size={14} />
-          <span>Sort by</span>
+          <span>SORT BY</span>
         </div>
         <div className={styles.sortButtons}>
           <button
             className={`${styles.sortButton} ${sortBy === 'alphabetical' ? styles.sortButtonActive : ''}`}
             onClick={() => setSortBy('alphabetical')}
           >
-            <Type size={14} />
-            <span>Name</span>
+            <span>NAME</span>
           </button>
           <button
             className={`${styles.sortButton} ${sortBy === 'members' ? styles.sortButtonActive : ''}`}
             onClick={() => setSortBy('members')}
           >
-            <Users size={14} />
-            <span>Members</span>
+            <span>MEMBERS</span>
           </button>
           <button
             className={`${styles.sortButton} ${sortBy === 'instances' ? styles.sortButtonActive : ''}`}
             onClick={() => setSortBy('instances')}
           >
-            <Activity size={14} />
-            <span>Active</span>
+            <span>ACTIVE</span>
           </button>
           <button
             className={`${styles.sortButton} ${sortBy === 'age' ? styles.sortButtonActive : ''}`}
             onClick={() => setSortBy('age')}
           >
-            <Calendar size={14} />
-            <span>Age</span>
+            <span>JOINED</span>
           </button>
         </div>
         <button
@@ -460,7 +508,6 @@ export const GroupSelectorView: React.FC = memo(() => {
           onClick={toggleSortOrder}
           title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
         >
-          {sortOrder === 'asc' ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
           <span>{sortOrder === 'asc' ? 'ASC' : 'DESC'}</span>
         </button>
       </div>
@@ -479,6 +526,7 @@ export const GroupSelectorView: React.FC = memo(() => {
             <RoamingCard
               currentWorldName={currentWorldName}
               instanceImageUrl={instanceImageUrl}
+              activeUserCount={roamingActiveUserCount}
               isLarge={isLarge}
               onClick={() => enterRoamingMode()}
             />

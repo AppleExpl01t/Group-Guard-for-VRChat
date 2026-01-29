@@ -52,18 +52,50 @@ export const useInstanceMonitorStore = create<InstanceMonitorState>((set) => ({
   liveScanResults: [],
 
   addPlayer: (player) =>
-    set((state) => ({
-      players: {
-        ...state.players,
-        [player.displayName]: player,
-      },
-    })),
+    set((state) => {
+      // Sync to liveScanResults
+      const existingIndex = state.liveScanResults.findIndex(e => e.displayName === player.displayName);
+      let newResults = [...state.liveScanResults];
+
+      if (existingIndex >= 0) {
+        newResults[existingIndex] = {
+          ...newResults[existingIndex],
+          status: 'active',
+          lastUpdated: Date.now()
+        };
+      } else {
+        newResults.push({
+          id: player.userId || `log:${player.displayName}`,
+          displayName: player.displayName,
+          rank: 'User', // Default, upgraded later if scanned
+          isGroupMember: false,
+          status: 'active',
+          lastUpdated: Date.now()
+        });
+      }
+
+      return {
+        players: {
+          ...state.players,
+          [player.displayName]: player,
+        },
+        liveScanResults: newResults
+      };
+    }),
 
   removePlayer: (displayName) =>
     set((state) => {
+      // Sync to liveScanResults
+      const newResults = state.liveScanResults.map(e =>
+        e.displayName === displayName ? { ...e, status: 'left' as const } : e
+      );
+
       const newPlayers = { ...state.players };
       delete newPlayers[displayName];
-      return { players: newPlayers };
+      return {
+        players: newPlayers,
+        liveScanResults: newResults
+      };
     }),
 
   setWorldId: (id) => set({ currentWorldId: id }),

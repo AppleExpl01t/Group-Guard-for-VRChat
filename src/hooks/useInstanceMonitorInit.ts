@@ -31,9 +31,6 @@ export function useInstanceMonitorInit(isAuthenticated: boolean) {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    // Start watching logs
-    window.electron.logWatcher.start();
-
     // Fetch initial group state
     window.electron.instance
       .getCurrentGroup()
@@ -63,8 +60,6 @@ export function useInstanceMonitorInit(isAuthenticated: boolean) {
         // NOTE: We don't call clearInstance() here - setInstanceInfo will only clear
         // when the instance ID actually changes. This preserves cache when rejoining
         // the same instance.
-        setWorldId(event.worldId);
-
         // Extended event type for instance info
         interface LocationEventExtended {
           worldId: string;
@@ -73,9 +68,14 @@ export function useInstanceMonitorInit(isAuthenticated: boolean) {
           location?: string;
         }
         const extEvent = event as LocationEventExtended;
+
+        // 1. Set Instance Info FIRST (This might clear currentWorldId in the store)
         if (extEvent.instanceId && extEvent.location) {
           setInstanceInfo(extEvent.instanceId, extEvent.location);
         }
+
+        // 2. Set World ID SECOND (To ensure it persists)
+        setWorldId(event.worldId);
 
         // Fetch world details if we can (to fix "Unknown World")
         try {
@@ -112,6 +112,9 @@ export function useInstanceMonitorInit(isAuthenticated: boolean) {
       setCurrentGroupId(null);
       exitRoamingMode();
     });
+
+    // Start watching logs AFTER listeners are set up
+    window.electron.logWatcher.start();
 
     return () => {
       cleanupJoined();

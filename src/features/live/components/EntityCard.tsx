@@ -15,102 +15,108 @@ interface EntityCardProps {
     readOnly?: boolean;
 }
 
-const EntityCardComponent: React.FC<EntityCardProps> = ({ 
-    entity, 
-    onInvite, 
-    onKick, 
-    onBan, 
-    onReport, 
-    readOnly 
+const EntityCardComponent: React.FC<EntityCardProps> = ({
+    entity,
+    onInvite,
+    onKick,
+    onBan,
+    onReport,
+    readOnly
 }) => {
     const { openProfile } = useUserProfileStore();
-    
-    return (
-    <div className={styles.entityCard}>
-        <div className={styles.entityInfo}>
-            <div className={`${styles.entityAvatar} ${!readOnly && entity.isGroupMember ? styles.entityAvatarMember : styles.entityAvatarDefault}`}>
-                {entity.avatarUrl ? (
-                    <img src={entity.avatarUrl} alt="" className={styles.entityAvatarImg} />
-                ) : (
-                    <Users size={18} />
-                )}
 
-            </div>
-            <div>
-                <div 
-                    className={styles.entityName}
-                    onClick={() => openProfile(entity.id)}
-                    style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'rgba(255,255,255,0.2)', textUnderlineOffset: '4px' }}
-                >
-                    {entity.displayName}
-                </div>
-                <div className={styles.entityMeta}>
-                    {!readOnly ? (
-                        <>
-                            <span style={{ 
-                                color: entity.isGroupMember ? 'var(--color-primary)' : '#fca5a5',
-                                fontWeight: 'bold'
-                            }}>
-                                {entity.isGroupMember ? 'MEMBER' : 'NON-MEMBER'}
-                            </span>
-                            <span>•</span>
-                            <span>{entity.rank}</span>
-                        </>
+    const [imgError, setImgError] = React.useState(false);
+
+    return (
+        <div className={styles.entityCard}>
+            <div className={styles.entityInfo}>
+                <div className={`${styles.entityAvatar} ${!readOnly && entity.isGroupMember ? styles.entityAvatarMember : styles.entityAvatarDefault}`}>
+                    {entity.avatarUrl && !imgError ? (
+                        <img
+                            src={entity.avatarUrl}
+                            alt=""
+                            className={styles.entityAvatarImg}
+                            onError={() => setImgError(true)}
+                        />
                     ) : (
-                        <span>Detected User</span>
+                        <Users size={18} />
                     )}
                 </div>
+                <div>
+                    <div
+                        className={styles.entityName}
+                        onClick={() => openProfile(entity.id)}
+                        style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'rgba(255,255,255,0.2)', textUnderlineOffset: '4px' }}
+                    >
+                        {entity.displayName}
+                    </div>
+                    <div className={styles.entityMeta}>
+                        {!readOnly ? (
+                            <>
+                                <span style={{
+                                    color: entity.isGroupMember ? 'var(--color-primary)' : '#fca5a5',
+                                    fontWeight: 'bold'
+                                }}>
+                                    {entity.isGroupMember ? 'MEMBER' : 'NON-MEMBER'}
+                                </span>
+                                <span>•</span>
+                                <span>{entity.rank}</span>
+                            </>
+                        ) : (
+                            <span>Detected User</span>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            <div className={styles.entityActions}>
+                {/* Report Button */}
+                <NeonButton
+                    size="sm"
+                    variant="secondary"
+                    style={{ padding: '4px 8px', fontSize: '0.75rem', opacity: 0.7 }}
+                    onClick={() => onReport(entity.id, entity.displayName)}
+                    title="Generate Report"
+                >
+                    <FileText size={14} />
+                </NeonButton>
+
+                {!readOnly && !entity.isGroupMember && (
+                    <NeonButton
+                        size="sm"
+                        variant="secondary"
+                        style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                        onClick={() => onInvite(entity.id, entity.displayName)}
+                        title="Invite to Group"
+                    >
+                        <UserPlus size={14} />
+                    </NeonButton>
+                )}
+
+                {/* Ban Manager Button */}
+                <NeonButton
+                    size="sm"
+                    variant="danger"
+                    style={{ padding: '4px 8px', fontSize: '0.75rem', opacity: readOnly ? 0.8 : 1 }}
+                    onClick={() => onBan(entity.id, entity.displayName)}
+                    title="Ban Manager"
+                >
+                    <Gavel size={14} />
+                </NeonButton>
+
+                {!readOnly && (
+                    <NeonButton
+                        size="sm"
+                        variant="danger"
+                        style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                        onClick={() => onKick(entity.id, entity.displayName)}
+                        title="Kick from Instance"
+                    >
+                        <AppShieldIcon size={14} />
+                    </NeonButton>
+                )}
             </div>
         </div>
-        
-        <div className={styles.entityActions}>
-            {/* Report Button */}
-            <NeonButton 
-                size="sm" 
-                variant="secondary" 
-                style={{ padding: '4px 8px', fontSize: '0.75rem', opacity: 0.7 }}
-                onClick={() => onReport(entity.id, entity.displayName)}
-                title="Generate Report"
-            >
-                <FileText size={14} />
-            </NeonButton>
-
-            {!readOnly && !entity.isGroupMember && (
-                <NeonButton 
-                    size="sm" 
-                    variant="secondary" 
-                    style={{ padding: '4px 8px', fontSize: '0.75rem' }}
-                    onClick={() => onInvite(entity.id, entity.displayName)}
-                    title="Invite to Group"
-                >
-                    <UserPlus size={14} />
-                </NeonButton>
-            )}
-             
-            {/* Ban Manager Button */}
-            <NeonButton 
-                size="sm" 
-                variant="danger" 
-                style={{ padding: '4px 8px', fontSize: '0.75rem', opacity: readOnly ? 0.8 : 1 }}
-                onClick={() => onBan(entity.id, entity.displayName)}
-                title="Ban Manager"
-            >
-                <Gavel size={14} />
-            </NeonButton>
-
-            {!readOnly && (
-                <NeonButton 
-                    size="sm" 
-                    variant="danger" 
-                    style={{ padding: '4px 8px', fontSize: '0.75rem' }}
-                    onClick={() => onKick(entity.id, entity.displayName)}
-                    title="Kick from Instance"
-                >
-                    <AppShieldIcon size={14} />
-                </NeonButton>
-            )}
-        </div>
-    </div>
     );
 };
 

@@ -240,6 +240,7 @@ class PlayerLogService {
         type?: 'join' | 'leave' | 'all';
         startDate?: string;
         endDate?: string;
+        instanceId?: string;
     } = {}): Promise<PlayerLogEntry[]> {
         const { limit, search, type = 'all', startDate, endDate } = options;
 
@@ -279,6 +280,10 @@ class PlayerLogService {
             if (endDate) {
                 const end = new Date(endDate).getTime();
                 entries = entries.filter(e => new Date(e.timestamp).getTime() <= end);
+            }
+
+            if (options.instanceId) {
+                entries = entries.filter(e => e.instanceId === options.instanceId);
             }
 
             // Return most recent first (slice only if limit specified)

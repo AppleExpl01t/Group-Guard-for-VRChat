@@ -837,8 +837,9 @@ export const logWatcherService = new LogWatcherService();
  * Sets up IPC handlers for the log watcher service
  */
 export function setupLogWatcherHandlers() {
-  ipcMain.handle('log-watcher:start', async (_event, callerWindow?: BrowserWindow) => {
-    logWatcherService.start(callerWindow);
+  ipcMain.handle('log-watcher:start', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    logWatcherService.start(win || undefined);
     return { success: true };
   });
 

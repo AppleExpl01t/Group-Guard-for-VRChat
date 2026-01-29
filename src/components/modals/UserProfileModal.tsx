@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from '../ui/Modal';
-import { User, Shield, Globe, Users, Clock, BadgeCheck, Crown, Copy, Check, Loader2, History, MapPin, Edit3, Save } from 'lucide-react';
+import { User, Shield, Globe, Users, Clock, BadgeCheck, Crown, Copy, Check, Loader2, History, MapPin, Edit3 } from 'lucide-react';
 import styles from '../../features/dashboard/dialogs/UserProfileDialog.module.css';
 
 interface UserProfileModalProps {

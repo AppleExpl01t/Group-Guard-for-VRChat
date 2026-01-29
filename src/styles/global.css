@@ -1,19 +1,29 @@
 /* Global Reset & Base Styles */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   width: 100%;
-  overflow: hidden; /* App-like feel */
+  overflow: hidden;
+  /* App-like feel */
   -webkit-font-smoothing: antialiased;
 }
 
 /* UNIVERSAL CURSOR HIDE - Force custom cursor everywhere */
-html, body, #root, *, *::before, *::after {
+html,
+body,
+#root,
+*,
+*::before,
+*::after {
   cursor: none !important;
 }
 
@@ -44,9 +54,12 @@ html, body, #root, *, *::before, *::after {
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
   /* 3D Floating Effect Borders */
-  border: 1px solid rgba(255, 255, 255, 0.05); /* Base border */
-  border-top: 1px solid var(--border-highlight); /* Top light catch */
-  border-bottom: 1px solid var(--border-shadow); /* Bottom shadow for thickness */
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  /* Base border */
+  border-top: 1px solid var(--border-highlight);
+  /* Top light catch */
+  border-bottom: 1px solid var(--border-shadow);
+  /* Bottom shadow for thickness */
   border-radius: var(--border-radius);
   /* Deep shadow for floating feel + thick bevel simulation */
   box-shadow: var(--shadow-floating);
@@ -73,11 +86,12 @@ html, body, #root, *, *::before, *::after {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  display: inline-block; /* Often needed for proper gradient text rendering */
+  display: inline-block;
+  /* Often needed for proper gradient text rendering */
 }
 
 /* Ensure glass-panel children render above noise overlay */
-.glass-panel > * {
+.glass-panel>* {
   position: relative;
   z-index: 2;
 }
@@ -90,4 +104,10 @@ html, body, #root, *, *::before, *::after {
 :focus-visible {
   outline: none;
   box-shadow: var(--focus-glow);
+}
+
+/* Critical System Error Overlay - Restore System Cursor */
+#critical-error-overlay,
+#critical-error-overlay * {
+  cursor: auto !important;
 }

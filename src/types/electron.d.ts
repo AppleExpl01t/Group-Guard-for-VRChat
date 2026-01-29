@@ -664,7 +664,7 @@ export interface ElectronAPI {
   friendship: {
     getStatus: () => Promise<{ initialized: boolean }>;
     getGameLog: (limit?: number) => Promise<GameLogEntry[]>;
-    getPlayerLog: (options?: { limit?: number; search?: string; type?: 'join' | 'leave' | 'all' }) => Promise<PlayerLogEntry[]>;
+    getPlayerLog: (options?: { limit?: number; search?: string; type?: 'join' | 'leave' | 'all'; instanceId?: string }) => Promise<PlayerLogEntry[]>;
     getFriendLocations: () => Promise<FriendLocation[]>;
     getSocialFeed: (limit?: number) => Promise<SocialFeedEntry[]>;
     getRelationshipEvents: (limit?: number) => Promise<RelationshipEvent[]>;

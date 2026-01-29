@@ -56,7 +56,8 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0.5rem 0.5rem; /* Horizontal padding for hover effects */
+  padding: 0.5rem 0.5rem;
+  /* Horizontal padding for hover effects */
   scrollbar-width: thin;
   scrollbar-color: var(--color-primary) transparent;
 }
@@ -66,7 +67,8 @@
 .grid {
   display: grid;
   gap: 1.5rem;
-  padding: 0.5rem; /* Room for hover glow/scale effects */
+  padding: 0.5rem;
+  /* Room for hover glow/scale effects */
   padding-bottom: 2rem;
   will-change: grid-template-columns;
   transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
@@ -113,24 +115,31 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: calc(var(--glow-opacity) * 0.4); /* Subtle glow */
-  background: radial-gradient(
-    600px circle at var(--glow-x) var(--glow-y),
-    var(--color-primary-glow),
-    transparent 40%
-  );
+  opacity: calc(var(--glow-opacity) * 0.4);
+  /* Subtle glow */
+  background: radial-gradient(600px circle at var(--glow-x) var(--glow-y),
+      var(--color-primary-glow),
+      transparent 40%);
   transition: opacity 0.3s ease;
-  z-index: 10; /* Above banner, below content text */
-  mix-blend-mode: screen; /* Nice blending */
+  z-index: 10;
+  /* Above banner, below content text */
+  mix-blend-mode: screen;
+  /* Nice blending */
 }
 
 /* Ensure content is strictly above glow if needed, though banner is usually BG */
-.banner, .bannerFallback {
-    z-index: 1; /* Below glow */
+.banner,
+.bannerFallback {
+  z-index: 1;
+  /* Below glow */
 }
 
-.overlayContent, .groupIcon, .groupIconPlaceholder, .liveBadge {
-    z-index: 20; /* Above glow */
+.overlayContent,
+.groupIcon,
+.groupIconPlaceholder,
+.liveBadge {
+  z-index: 20;
+  /* Above glow */
 }
 
 .cardPanel:hover {
@@ -153,7 +162,8 @@
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: inherit; /* Match parent */
+  border-radius: inherit;
+  /* Match parent */
   border: 2px solid var(--color-success);
   box-shadow: 0 0 15px rgba(0, 255, 100, 0.2), inset 0 0 10px rgba(0, 255, 100, 0.1);
   pointer-events: none;
@@ -175,13 +185,16 @@
   border-radius: 16px;
   margin-bottom: 0.8rem;
   background: var(--color-surface-dark);
-  flex-shrink: 0; /* Prevent icon from squishing */
+  flex-shrink: 0;
+  /* Prevent icon from squishing */
 }
 
 .cardCompact .groupName {
   text-align: center;
-  font-size: 0.8rem; /* Slightly smaller to fit more text */
-  color: var(--color-text-main); /* Theme-aware since no banner background */
+  font-size: 0.8rem;
+  /* Slightly smaller to fit more text */
+  color: var(--color-text-main);
+  /* Theme-aware since no banner background */
   text-shadow: none;
 
   /* Allow 3 lines */
@@ -192,7 +205,8 @@
   -webkit-line-clamp: 3;
   line-clamp: 3;
   -webkit-box-orient: vertical;
-  word-break: break-word; /* Ensure functionality on long words */
+  word-break: break-word;
+  /* Ensure functionality on long words */
 }
 
 /* --- LARGE MODE STYLES --- */
@@ -208,75 +222,80 @@
   border-radius: 10px;
   margin-bottom: 0.5rem;
   border: 2px solid white;
-  margin-left: 1rem; /* Closer to left edge */
+  margin-left: 1rem;
+  /* Closer to left edge */
   z-index: 5;
 }
 
 /* Overlay for text content in large mode */
 .overlayContent {
-    padding: 1.2rem;
-    padding-top: 0.5rem;
-    background: linear-gradient(to top, rgba(0,0,0,0.95), transparent);
-    width: 100%;
-    z-index: 5;
-    position: relative;
-    border-bottom-left-radius: 16px;
-    border-bottom-right-radius: 16px;
+  padding: 1.2rem;
+  padding-top: 0.5rem;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.95), transparent);
+  width: 100%;
+  z-index: 5;
+  position: relative;
+  border-bottom-left-radius: 16px;
+  border-bottom-right-radius: 16px;
 }
 
 .groupIcon {
   object-fit: cover;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
   transition: all 0.5s ease;
 }
 
 .groupIconPlaceholder {
   border-radius: 16px;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
   background: linear-gradient(45deg, var(--color-primary), var(--color-accent));
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: bold;
   color: white;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   transition: all 0.5s ease;
 }
 
 .cardCompact .groupIconPlaceholder {
-    width: 64px;
-    height: 64px;
-    font-size: 1.5rem;
-    margin-bottom: 0.8rem;
+  width: 64px;
+  height: 64px;
+  font-size: 1.5rem;
+  margin-bottom: 0.8rem;
 }
 
 .cardLarge .groupIconPlaceholder {
-    width: 48px;
-    height: 48px;
-    font-size: 1.2rem;
-    margin-bottom: 0.5rem;
-    border: 2px solid white;
-    margin-left: 1rem; /* Closer to left edge */
-    z-index: 5;
+  width: 48px;
+  height: 48px;
+  font-size: 1.2rem;
+  margin-bottom: 0.5rem;
+  border: 2px solid white;
+  margin-left: 1rem;
+  /* Closer to left edge */
+  z-index: 5;
 }
 
 .groupName {
   font-weight: 700;
-  color: var(--color-text-main); /* Default theme-aware */
+  color: var(--color-text-main);
+  /* Default theme-aware */
   margin: 0;
   line-height: 1.1;
   transition: all 0.5s ease;
   position: relative;
   z-index: 5;
-  width: 100%; /* Ensure full width availability */
+  width: 100%;
+  /* Ensure full width availability */
 }
 
 /* Large mode text - always white to contrast with banner */
 .cardLarge .groupName {
   text-align: left;
   font-size: 1.1rem;
-  color: #ffffff !important; /* Force white over banner */
-  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  color: #ffffff !important;
+  /* Force white over banner */
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -294,46 +313,59 @@
 
 
 .cardCompact .liveBadge {
-    top: 6px;   /* Inside the card boundary */
-    left: 6px;  /* Moved to left to avoid star button overlap */
-    right: auto;
-    padding: 2px 6px;
-    border-radius: 8px;
-    font-size: 0.6rem;
+  top: 6px;
+  /* Inside the card boundary */
+  left: 6px;
+  /* Moved to left to avoid star button overlap */
+  right: auto;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 0.6rem;
 }
 
 .cardLarge .liveBadge {
-    top: 12px;
-    left: 12px; /* Moved to left to avoid star button overlap */
-    right: auto;
-    padding: 4px 12px;
-    border-radius: 12px;
-    font-size: 0.7rem;
+  top: 12px;
+  left: 12px;
+  /* Moved to left to avoid star button overlap */
+  right: auto;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.7rem;
 }
 
 .banner {
   position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background-size: cover;
   background-position: center;
   filter: brightness(0.7);
-  z-index: 1; /* Behind text but above BG */
-  border-radius: inherit; /* Match parent card corners exactly */
+  z-index: 1;
+  /* Behind text but above BG */
+  border-radius: inherit;
+  /* Match parent card corners exactly */
 }
 
 .bannerFallback {
   position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: linear-gradient(45deg, var(--color-primary), var(--color-accent));
   opacity: 0.2;
   z-index: 1;
-  border-radius: inherit; /* Match parent card corners exactly */
+  border-radius: inherit;
+  /* Match parent card corners exactly */
 }
 
 .metaRow {
   display: flex;
   justify-content: space-between;
-  align-items: center; /* Center align for balanced appearance */
+  align-items: center;
+  /* Center align for balanced appearance */
   margin-top: 0.25rem;
 }
 
@@ -454,7 +486,8 @@
 .starButton {
   position: absolute;
   top: 8px;
-  right: 8px; /* Moved to right side to avoid icon overlap */
+  right: 8px;
+  /* Moved to right side to avoid icon overlap */
   z-index: 40;
   width: 28px;
   height: 28px;
@@ -499,7 +532,8 @@
   width: 24px;
   height: 24px;
   top: 6px;
-  right: 6px; /* Keep on right side */
+  right: 6px;
+  /* Keep on right side */
 }
 
 /* --- STARRED CARD STYLE --- */
@@ -517,4 +551,49 @@
   box-shadow: 0 0 20px rgba(255, 200, 0, 0.1), inset 0 0 15px rgba(255, 200, 0, 0.05);
   pointer-events: none;
   z-index: 1;
+}
+
+/* --- ROAMING CARD --- */
+
+.cardRoaming {
+  justify-content: flex-end !important;
+  /* Always align bottom */
+}
+
+/* Ensure legible text on background for Roaming Card in all sizes */
+.cardRoaming .groupName {
+  text-align: left;
+  width: 100%;
+  z-index: 20;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  font-size: 1rem;
+  padding: 0 0.5rem;
+}
+
+/* Force overlay background for readability */
+.cardRoaming::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 60%;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
+  pointer-events: none;
+  z-index: 2;
+  /* Below text (5/20) but above bg (1) */
+  border-bottom-left-radius: 16px;
+  border-bottom-right-radius: 16px;
+}
+
+/* Compact Roaming Card Specifics - Smaller text */
+.cardCompact.cardRoaming .groupName {
+  font-size: 0.7rem;
+  line-height: 1.1;
+  padding: 0 0.4rem 0.4rem 0.4rem;
+  white-space: normal;
+  /* Allow wrapping if needed, though cardCompact usually clamps */
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  /* Limit to 2 lines in this tiny view */
 }
