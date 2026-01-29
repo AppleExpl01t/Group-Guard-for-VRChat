@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from '../ui/Modal';
-import { User, Shield, Globe, Users, Clock, BadgeCheck, Crown, Copy, Check, Loader2, History, MapPin } from 'lucide-react';
+import { User, Shield, Globe, Users, Clock, BadgeCheck, Crown, Copy, Check, Loader2, History, MapPin, Edit3, Save } from 'lucide-react';
 import styles from '../../features/dashboard/dialogs/UserProfileDialog.module.css';
 
 interface UserProfileModalProps {
@@ -29,6 +29,12 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     const [stats, setStats] = useState<LocalStats | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [copiedField, setCopiedField] = useState<string | null>(null);
+
+    // Notes
+    const [note, setNote] = useState('');
+    const [isSavingNote, setIsSavingNote] = useState(false);
+    const [noteSaved, setNoteSaved] = useState(false);
+    const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
         const loadData = async () => {
@@ -81,6 +87,36 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
         loadData();
     }, [userId]);
+
+    // Update note state when profile loads
+    useEffect(() => {
+        if (profileData?.profile) {
+            setNote(profileData.profile.note || '');
+        }
+    }, [profileData]);
+
+    const handleNoteChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const newValue = e.target.value;
+        setNote(newValue);
+        setNoteSaved(false);
+
+        if (typingTimeout) clearTimeout(typingTimeout);
+
+        const timeout = setTimeout(async () => {
+            setIsSavingNote(true);
+            try {
+                await window.electron.userProfile.setUserNote(userId, newValue);
+                setNoteSaved(true);
+                setTimeout(() => setNoteSaved(false), 2000);
+            } catch (err) {
+                console.error("Failed to save note", err);
+            } finally {
+                setIsSavingNote(false);
+            }
+        }, 1000);
+
+        setTypingTimeout(timeout);
+    };
 
     const handleCopy = async (text: string, fieldName: string) => {
         await navigator.clipboard.writeText(text);
