@@ -119,13 +119,13 @@ class SocialFeedService {
         }
     }
 
-    public async getRecentEntries(limit = 100): Promise<SocialFeedEntry[]> {
+    public async getRecentEntries(limit?: number): Promise<SocialFeedEntry[]> {
         if (!this.dbPath || !fs.existsSync(this.dbPath)) return [];
         try {
             const content = await fs.promises.readFile(this.dbPath, 'utf-8');
             const lines = content.trim().split('\n');
-            return lines
-                .slice(-limit)
+            const entries = (limit && limit > 0) ? lines.slice(-limit) : lines;
+            return entries
                 .map(line => {
                     try { return JSON.parse(line) as SocialFeedEntry; } catch { return null; }
                 })

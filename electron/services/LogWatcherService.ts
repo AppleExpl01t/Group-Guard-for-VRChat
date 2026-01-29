@@ -641,6 +641,11 @@ class LogWatcherService extends EventEmitter {
           displayName = displayName.substring(0, displayName.length - 7).trim();
         }
 
+        // IGNORE: Internal VRChat debug message often confused for a player name
+        if (displayName.includes('called, updating lock state')) {
+          return;
+        }
+
         if (displayName) {
           log.info(`[LogWatcher] MATCH Player Joined: ${displayName} (${userId || 'No ID'})`);
 
@@ -719,6 +724,11 @@ class LogWatcherService extends EventEmitter {
         }
         if (displayName.endsWith('(local)')) {
           displayName = displayName.substring(0, displayName.length - 7).trim();
+        }
+
+        // IGNORE: Internal VRChat debug message often confused for a player name
+        if (displayName.includes('called, updating lock state')) {
+          return;
         }
 
         if (displayName) {

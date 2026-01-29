@@ -220,6 +220,7 @@ export const LocationsView: React.FC = () => {
     }, [friends, worldCache, groupCache]);
 
     const totalOnline = friends.filter(f => f.status?.toLowerCase() !== 'offline').length;
+    const publicInstanceCount = instanceGroups.filter(g => !g.isPrivate).length;
 
     const getStatusColor = (status: string) => {
         const s = status?.toLowerCase() || '';
@@ -258,7 +259,7 @@ export const LocationsView: React.FC = () => {
                         color: 'var(--color-text-main)',
                         margin: 0
                     }}>
-                        Friend Locations ({totalOnline} online in {instanceGroups.length} {instanceGroups.length === 1 ? 'instance' : 'instances'})
+                        Friend Locations ({totalOnline} online in {publicInstanceCount} {publicInstanceCount === 1 ? 'public instance' : 'public instances'})
                     </h3>
                     {lastRefresh && (
                         <span style={{ fontSize: '0.7rem', color: 'var(--color-text-dim)' }}>
@@ -320,230 +321,378 @@ export const LocationsView: React.FC = () => {
                                     Active Locations
                                 </h4>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                                    {instanceGroups.map((group) => (
-                                        <div
-                                            key={group.location}
-                                            style={{
-                                                position: 'relative',
-                                                borderRadius: 'var(--border-radius)',
-                                                border: '1px solid rgba(255,255,255,0.1)',
-                                                background: 'rgba(255,255,255,0.02)',
-                                                padding: '1rem',
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                gap: '1rem',
-                                                width: 'fit-content', // Shrink wrap width
-                                                maxWidth: '100%' // Prevent overflow
-                                            }}
-                                        >
-                                            {/* Instance Header */}
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                    {group.worldThumbnail && (
-                                                        <img
-                                                            src={group.worldThumbnail}
-                                                            alt=""
-                                                            style={{
-                                                                width: '40px',
-                                                                height: '30px',
-                                                                borderRadius: '4px',
-                                                                objectFit: 'cover',
-                                                                border: '1px solid rgba(255,255,255,0.1)'
-                                                            }}
-                                                        />
-                                                    )}
-                                                    <div>
-                                                        <div
-                                                            style={{
-                                                                fontWeight: 700,
-                                                                fontSize: '1rem',
-                                                                color: 'var(--color-text-main)',
-                                                                ...clickableStyle
-                                                            }}
-                                                            onClick={() => !group.isPrivate && group.worldId && openWorldProfile(group.worldId, group.worldName)}
-                                                        >
-                                                            {group.worldName}
-                                                        </div>
-                                                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                                            {group.groupName && (
-                                                                <span
-                                                                    style={{ fontSize: '0.75rem', color: 'var(--color-primary)', ...clickableStyle }}
-                                                                    onClick={() => group.groupId && openGroupProfile(group.groupId, group.groupName)}
-                                                                >
-                                                                    👥 {group.groupName}
-                                                                </span>
-                                                            )}
-                                                            <span style={{ fontSize: '0.65rem', color: 'var(--color-text-dim)' }}>
-                                                                {group.instanceType}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                {(!group.isPrivate || group.location.includes('groupAccessType(public)')) && (
-                                                    <NeonButton
-                                                        variant="secondary"
-                                                        size="sm"
-                                                        onClick={() => handleJoinInstance(group.location)}
-                                                        style={{ fontSize: '0.7rem', padding: '0.25rem 0.75rem', height: '28px', marginLeft: '1rem' }}
-                                                    >
-                                                        Join
-                                                    </NeonButton>
-                                                )}
-                                            </div>
-
-                                            {/* Friends Flex Grid */}
-                                            <div style={{
-                                                display: 'flex',
-                                                flexWrap: 'wrap',
-                                                gap: '1rem'
-                                            }}>
-                                                {group.friends.map(friend => {
-                                                    const userImage = friend.profilePicOverride || friend.userIcon || friend.currentAvatarThumbnailImageUrl;
-                                                    return (
-                                                        <div
-                                                            key={friend.userId}
-                                                            style={{
-                                                                position: 'relative',
-                                                                borderRadius: 'var(--border-radius)',
-                                                                overflow: 'hidden',
-                                                                background: 'var(--color-surface-card)',
-                                                                border: '1px solid var(--border-color)',
-                                                                height: '110px',
-                                                                width: '200px', // Fixed width for nice flex alignment
-                                                                transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-                                                                cursor: 'pointer',
-                                                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                                                            }}
-                                                            onClick={() => friend.userId && openUserProfile(friend.userId, friend.displayName)}
-                                                            onMouseEnter={(e) => {
-                                                                e.currentTarget.style.transform = 'translateY(-2px)';
-                                                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
-                                                                e.currentTarget.style.borderColor = 'var(--color-primary)';
-                                                            }}
-                                                            onMouseLeave={(e) => {
-                                                                e.currentTarget.style.transform = 'translateY(0)';
-                                                                e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
-                                                                e.currentTarget.style.borderColor = 'var(--border-color)';
-                                                            }}
-                                                        >
-                                                            {/* Instance Background Image */}
-                                                            {(group.worldThumbnail) ? (
-                                                                <div style={{
-                                                                    position: 'absolute',
-                                                                    top: 0, left: 0, right: 0, bottom: 0,
-                                                                    backgroundImage: `url(${group.worldThumbnail})`,
-                                                                    backgroundSize: 'cover',
-                                                                    backgroundPosition: 'center',
-                                                                    opacity: 0.5, // Dim severely to make text and avatar pop
-                                                                    filter: 'blur(0.5px)'
-                                                                }} />
-                                                            ) : (
-                                                                /* Fallback Gradient if no world thumb */
+                                    {instanceGroups.map((group) => {
+                                        // For private instances, render friend cards directly without container
+                                        if (group.isPrivate) {
+                                            return (
+                                                <div
+                                                    key={group.location}
+                                                    style={{
+                                                        display: 'flex',
+                                                        flexWrap: 'wrap',
+                                                        gap: '1rem',
+                                                        width: '100%'
+                                                    }}
+                                                >
+                                                    {group.friends.map(friend => {
+                                                        const userImage = friend.profilePicOverride || friend.userIcon || friend.currentAvatarThumbnailImageUrl;
+                                                        return (
+                                                            <div
+                                                                key={friend.userId}
+                                                                style={{
+                                                                    position: 'relative',
+                                                                    borderRadius: 'var(--border-radius)',
+                                                                    overflow: 'hidden',
+                                                                    background: 'var(--color-surface-card)',
+                                                                    border: '1px solid var(--border-color)',
+                                                                    height: '110px',
+                                                                    width: '200px',
+                                                                    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                                                                    cursor: 'pointer',
+                                                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                                                }}
+                                                                onClick={() => friend.userId && openUserProfile(friend.userId, friend.displayName)}
+                                                                onMouseEnter={(e) => {
+                                                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                                                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+                                                                    e.currentTarget.style.borderColor = 'var(--color-primary)';
+                                                                }}
+                                                                onMouseLeave={(e) => {
+                                                                    e.currentTarget.style.transform = 'translateY(0)';
+                                                                    e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                                                                    e.currentTarget.style.borderColor = 'var(--border-color)';
+                                                                }}
+                                                            >
+                                                                {/* Fallback Gradient for private */}
                                                                 <div style={{
                                                                     position: 'absolute',
                                                                     top: 0, left: 0, right: 0, bottom: 0,
                                                                     background: `linear-gradient(135deg, ${getStatusColor(friend.status)}22, rgba(20,20,30,0.9))`
                                                                 }} />
-                                                            )}
 
-                                                            {/* Dark Overlay for Contrast */}
-                                                            <div style={{
-                                                                position: 'absolute',
-                                                                top: 0, left: 0, right: 0, bottom: 0,
-                                                                background: 'linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.2))'
-                                                            }} />
+                                                                {/* Dark Overlay for Contrast */}
+                                                                <div style={{
+                                                                    position: 'absolute',
+                                                                    top: 0, left: 0, right: 0, bottom: 0,
+                                                                    background: 'linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.2))'
+                                                                }} />
 
-                                                            {/* Content */}
-                                                            <div style={{
-                                                                position: 'relative',
-                                                                zIndex: 2,
-                                                                padding: '0.75rem',
-                                                                height: '100%',
-                                                                display: 'flex',
-                                                                flexDirection: 'column',
-                                                                justifyContent: 'space-between'
-                                                            }}>
-                                                                {/* Top Row: Avatar & Status */}
-                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                                    {/* Avatar Circle */}
-                                                                    <div style={{
-                                                                        width: '45px',
-                                                                        height: '45px',
-                                                                        borderRadius: '50%',
-                                                                        border: '2px solid var(--color-primary)',
-                                                                        overflow: 'hidden',
-                                                                        background: '#000',
-                                                                        boxShadow: '0 2px 8px rgba(0,0,0,0.5)'
-                                                                    }}>
-                                                                        {userImage ? (
-                                                                            <img
-                                                                                src={userImage}
-                                                                                alt={friend.displayName}
-                                                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                                                            />
-                                                                        ) : (
-                                                                            <div style={{
-                                                                                width: '100%',
-                                                                                height: '100%',
-                                                                                background: `linear-gradient(45deg, ${getStatusColor(friend.status)}, #222)`,
-                                                                                display: 'flex',
-                                                                                alignItems: 'center',
-                                                                                justifyContent: 'center',
-                                                                                fontSize: '1.2rem'
-                                                                            }}>
-                                                                                👤
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-
-                                                                    {/* Status Pill */}
-                                                                    <div style={{
-                                                                        fontSize: '0.65rem',
-                                                                        color: 'rgba(255,255,255,0.9)',
-                                                                        background: 'rgba(0,0,0,0.6)',
-                                                                        padding: '2px 8px',
-                                                                        borderRadius: '12px',
-                                                                        marginTop: '2px',
-                                                                        backdropFilter: 'blur(4px)',
-                                                                        border: '1px solid rgba(255,255,255,0.1)'
-                                                                    }}>
-                                                                        <span style={{
-                                                                            display: 'inline-block',
-                                                                            width: '6px',
-                                                                            height: '6px',
+                                                                {/* Content */}
+                                                                <div style={{
+                                                                    position: 'relative',
+                                                                    zIndex: 2,
+                                                                    padding: '0.75rem',
+                                                                    height: '100%',
+                                                                    display: 'flex',
+                                                                    flexDirection: 'column',
+                                                                    justifyContent: 'space-between'
+                                                                }}>
+                                                                    {/* Top Row: Avatar & Status */}
+                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                                        {/* Avatar Circle */}
+                                                                        <div style={{
+                                                                            width: '45px',
+                                                                            height: '45px',
                                                                             borderRadius: '50%',
-                                                                            background: getStatusColor(friend.status),
-                                                                            boxShadow: `0 0 5px ${getStatusColor(friend.status)}`,
-                                                                            marginRight: '0.4rem'
-                                                                        }} />
-                                                                        {friend.status}
-                                                                    </div>
-                                                                </div>
+                                                                            border: '2px solid var(--color-primary)',
+                                                                            overflow: 'hidden',
+                                                                            background: '#000',
+                                                                            boxShadow: '0 2px 8px rgba(0,0,0,0.5)'
+                                                                        }}>
+                                                                            {userImage ? (
+                                                                                <img
+                                                                                    src={userImage}
+                                                                                    alt={friend.displayName}
+                                                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                                                />
+                                                                            ) : (
+                                                                                <div style={{
+                                                                                    width: '100%',
+                                                                                    height: '100%',
+                                                                                    background: `linear-gradient(45deg, ${getStatusColor(friend.status)}, #222)`,
+                                                                                    display: 'flex',
+                                                                                    alignItems: 'center',
+                                                                                    justifyContent: 'center',
+                                                                                    fontSize: '1.2rem'
+                                                                                }}>
+                                                                                    👤
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
 
-                                                                {/* Bottom Row: Name */}
-                                                                <div>
-                                                                    <span style={{
-                                                                        fontWeight: 700,
-                                                                        fontSize: '0.95rem',
-                                                                        color: 'white',
-                                                                        textShadow: '0 2px 4px rgba(0,0,0,1)',
-                                                                        display: 'block',
-                                                                        whiteSpace: 'nowrap',
-                                                                        overflow: 'hidden',
-                                                                        textOverflow: 'ellipsis',
-                                                                        marginTop: '0.25rem'
-                                                                    }}>
-                                                                        {friend.displayName}
-                                                                    </span>
+                                                                        {/* Status Pill */}
+                                                                        <div style={{
+                                                                            fontSize: '0.65rem',
+                                                                            color: 'rgba(255,255,255,0.9)',
+                                                                            background: 'rgba(0,0,0,0.6)',
+                                                                            padding: '2px 8px',
+                                                                            borderRadius: '12px',
+                                                                            marginTop: '2px',
+                                                                            backdropFilter: 'blur(4px)',
+                                                                            border: '1px solid rgba(255,255,255,0.1)'
+                                                                        }}>
+                                                                            <span style={{
+                                                                                display: 'inline-block',
+                                                                                width: '6px',
+                                                                                height: '6px',
+                                                                                borderRadius: '50%',
+                                                                                background: getStatusColor(friend.status),
+                                                                                boxShadow: `0 0 5px ${getStatusColor(friend.status)}`,
+                                                                                marginRight: '0.4rem'
+                                                                            }} />
+                                                                            {friend.status}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Bottom Row: Name */}
+                                                                    <div>
+                                                                        <span style={{
+                                                                            fontWeight: 700,
+                                                                            fontSize: '0.95rem',
+                                                                            color: 'white',
+                                                                            textShadow: '0 2px 4px rgba(0,0,0,1)',
+                                                                            display: 'block',
+                                                                            whiteSpace: 'nowrap',
+                                                                            overflow: 'hidden',
+                                                                            textOverflow: 'ellipsis',
+                                                                            marginTop: '0.25rem'
+                                                                        }}>
+                                                                            {friend.displayName}
+                                                                        </span>
+                                                                    </div>
                                                                 </div>
                                                             </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            );
+                                        }
+
+                                        // For public/group instances, render with container card
+                                        return (
+                                            <div
+                                                key={group.location}
+                                                style={{
+                                                    position: 'relative',
+                                                    borderRadius: 'var(--border-radius)',
+                                                    border: '1px solid rgba(255,255,255,0.1)',
+                                                    background: 'rgba(255,255,255,0.02)',
+                                                    padding: '1rem',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '1rem',
+                                                    width: 'fit-content',
+                                                    maxWidth: '100%'
+                                                }}
+                                            >
+                                                {/* Instance Header */}
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                        {group.worldThumbnail && (
+                                                            <img
+                                                                src={group.worldThumbnail}
+                                                                alt=""
+                                                                style={{
+                                                                    width: '40px',
+                                                                    height: '30px',
+                                                                    borderRadius: '4px',
+                                                                    objectFit: 'cover',
+                                                                    border: '1px solid rgba(255,255,255,0.1)'
+                                                                }}
+                                                            />
+                                                        )}
+                                                        <div>
+                                                            <div
+                                                                style={{
+                                                                    fontWeight: 700,
+                                                                    fontSize: '1rem',
+                                                                    color: 'var(--color-text-main)',
+                                                                    ...clickableStyle
+                                                                }}
+                                                                onClick={() => !group.isPrivate && group.worldId && openWorldProfile(group.worldId, group.worldName)}
+                                                            >
+                                                                {group.worldName}
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                                                {group.groupName && (
+                                                                    <span
+                                                                        style={{ fontSize: '0.75rem', color: 'var(--color-primary)', ...clickableStyle }}
+                                                                        onClick={() => group.groupId && openGroupProfile(group.groupId, group.groupName)}
+                                                                    >
+                                                                        👥 {group.groupName}
+                                                                    </span>
+                                                                )}
+                                                                <span style={{ fontSize: '0.65rem', color: 'var(--color-text-dim)' }}>
+                                                                    {group.instanceType}
+                                                                </span>
+                                                            </div>
                                                         </div>
-                                                    );
-                                                })}
+                                                    </div>
+
+                                                    {(!group.isPrivate || group.location.includes('groupAccessType(public)')) && (
+                                                        <NeonButton
+                                                            variant="secondary"
+                                                            size="sm"
+                                                            onClick={() => handleJoinInstance(group.location)}
+                                                            style={{ fontSize: '0.7rem', padding: '0.25rem 0.75rem', height: '28px', marginLeft: '1rem' }}
+                                                        >
+                                                            Join
+                                                        </NeonButton>
+                                                    )}
+                                                </div>
+
+                                                {/* Friends Flex Grid */}
+                                                <div style={{
+                                                    display: 'flex',
+                                                    flexWrap: 'wrap',
+                                                    gap: '1rem'
+                                                }}>
+                                                    {group.friends.map(friend => {
+                                                        const userImage = friend.profilePicOverride || friend.userIcon || friend.currentAvatarThumbnailImageUrl;
+                                                        return (
+                                                            <div
+                                                                key={friend.userId}
+                                                                style={{
+                                                                    position: 'relative',
+                                                                    borderRadius: 'var(--border-radius)',
+                                                                    overflow: 'hidden',
+                                                                    background: 'var(--color-surface-card)',
+                                                                    border: '1px solid var(--border-color)',
+                                                                    height: '110px',
+                                                                    width: '200px',
+                                                                    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                                                                    cursor: 'pointer',
+                                                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                                                }}
+                                                                onClick={() => friend.userId && openUserProfile(friend.userId, friend.displayName)}
+                                                                onMouseEnter={(e) => {
+                                                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                                                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+                                                                    e.currentTarget.style.borderColor = 'var(--color-primary)';
+                                                                }}
+                                                                onMouseLeave={(e) => {
+                                                                    e.currentTarget.style.transform = 'translateY(0)';
+                                                                    e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                                                                    e.currentTarget.style.borderColor = 'var(--border-color)';
+                                                                }}
+                                                            >
+                                                                {/* Instance Background Image */}
+                                                                {(group.worldThumbnail) ? (
+                                                                    <div style={{
+                                                                        position: 'absolute',
+                                                                        top: 0, left: 0, right: 0, bottom: 0,
+                                                                        backgroundImage: `url(${group.worldThumbnail})`,
+                                                                        backgroundSize: 'cover',
+                                                                        backgroundPosition: 'center',
+                                                                        opacity: 0.5,
+                                                                        filter: 'blur(0.5px)'
+                                                                    }} />
+                                                                ) : (
+                                                                    <div style={{
+                                                                        position: 'absolute',
+                                                                        top: 0, left: 0, right: 0, bottom: 0,
+                                                                        background: `linear-gradient(135deg, ${getStatusColor(friend.status)}22, rgba(20,20,30,0.9))`
+                                                                    }} />
+                                                                )}
+
+                                                                {/* Dark Overlay for Contrast */}
+                                                                <div style={{
+                                                                    position: 'absolute',
+                                                                    top: 0, left: 0, right: 0, bottom: 0,
+                                                                    background: 'linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.2))'
+                                                                }} />
+
+                                                                {/* Content */}
+                                                                <div style={{
+                                                                    position: 'relative',
+                                                                    zIndex: 2,
+                                                                    padding: '0.75rem',
+                                                                    height: '100%',
+                                                                    display: 'flex',
+                                                                    flexDirection: 'column',
+                                                                    justifyContent: 'space-between'
+                                                                }}>
+                                                                    {/* Top Row: Avatar & Status */}
+                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                                        {/* Avatar Circle */}
+                                                                        <div style={{
+                                                                            width: '45px',
+                                                                            height: '45px',
+                                                                            borderRadius: '50%',
+                                                                            border: '2px solid var(--color-primary)',
+                                                                            overflow: 'hidden',
+                                                                            background: '#000',
+                                                                            boxShadow: '0 2px 8px rgba(0,0,0,0.5)'
+                                                                        }}>
+                                                                            {userImage ? (
+                                                                                <img
+                                                                                    src={userImage}
+                                                                                    alt={friend.displayName}
+                                                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                                                />
+                                                                            ) : (
+                                                                                <div style={{
+                                                                                    width: '100%',
+                                                                                    height: '100%',
+                                                                                    background: `linear-gradient(45deg, ${getStatusColor(friend.status)}, #222)`,
+                                                                                    display: 'flex',
+                                                                                    alignItems: 'center',
+                                                                                    justifyContent: 'center',
+                                                                                    fontSize: '1.2rem'
+                                                                                }}>
+                                                                                    👤
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+
+                                                                        {/* Status Pill */}
+                                                                        <div style={{
+                                                                            fontSize: '0.65rem',
+                                                                            color: 'rgba(255,255,255,0.9)',
+                                                                            background: 'rgba(0,0,0,0.6)',
+                                                                            padding: '2px 8px',
+                                                                            borderRadius: '12px',
+                                                                            marginTop: '2px',
+                                                                            backdropFilter: 'blur(4px)',
+                                                                            border: '1px solid rgba(255,255,255,0.1)'
+                                                                        }}>
+                                                                            <span style={{
+                                                                                display: 'inline-block',
+                                                                                width: '6px',
+                                                                                height: '6px',
+                                                                                borderRadius: '50%',
+                                                                                background: getStatusColor(friend.status),
+                                                                                boxShadow: `0 0 5px ${getStatusColor(friend.status)}`,
+                                                                                marginRight: '0.4rem'
+                                                                            }} />
+                                                                            {friend.status}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Bottom Row: Name */}
+                                                                    <div>
+                                                                        <span style={{
+                                                                            fontWeight: 700,
+                                                                            fontSize: '0.95rem',
+                                                                            color: 'white',
+                                                                            textShadow: '0 2px 4px rgba(0,0,0,1)',
+                                                                            display: 'block',
+                                                                            whiteSpace: 'nowrap',
+                                                                            overflow: 'hidden',
+                                                                            textOverflow: 'ellipsis',
+                                                                            marginTop: '0.25rem'
+                                                                        }}>
+                                                                            {friend.displayName}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}

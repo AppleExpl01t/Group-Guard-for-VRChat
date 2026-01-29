@@ -5,8 +5,10 @@
  * Retrieves all publicly available user data from the VRChat API.
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, app } from 'electron';
 import log from 'electron-log';
+import fs from 'fs';
+import path from 'path';
 import { getAuthCookieStringAsync } from './AuthService';
 import { vrchatApiService } from './VRChatApiService';
 import { networkService } from './NetworkService';
@@ -204,6 +206,56 @@ const TRUST_CLASS_MAP: Record<TrustRank, string> = {
 // ============================================
 
 class UserProfileService {
+    private notesPath: string | null = null;
+    private notesCache = new Map<string, string>(); // userId -> note
+    private isNotesInitialized = false;
+
+    constructor() {
+        this.initializeNotes();
+    }
+
+    private initializeNotes() {
+        try {
+            const userData = app.getPath('userData');
+            this.notesPath = path.join(userData, 'user_notes.json');
+
+            if (fs.existsSync(this.notesPath)) {
+                const content = fs.readFileSync(this.notesPath, 'utf8');
+                const data = JSON.parse(content);
+                // Migrate object to Map
+                Object.entries(data).forEach(([key, value]) => {
+                    this.notesCache.set(key, String(value));
+                });
+                logger.info(`[UserProfile] Loaded ${this.notesCache.size} notes.`);
+            }
+            this.isNotesInitialized = true;
+        } catch (e) {
+            logger.error('[UserProfile] Failed to initialize notes:', e);
+        }
+    }
+
+    private saveNotes() {
+        if (!this.notesPath) return;
+        try {
+            const obj = Object.fromEntries(this.notesCache);
+            fs.writeFileSync(this.notesPath, JSON.stringify(obj, null, 2));
+        } catch (e) {
+            logger.error('[UserProfile] Failed to save notes:', e);
+        }
+    }
+
+    public async setUserNote(userId: string, note: string) {
+        if (!userId) return;
+
+        // If empty, delete
+        if (!note || !note.trim()) {
+            this.notesCache.delete(userId);
+        } else {
+            this.notesCache.set(userId, note.trim());
+        }
+
+        this.saveNotes();
+    }
     /**
      * Get comprehensive user profile with computed fields
      */
@@ -463,9 +515,13 @@ class UserProfileService {
         logger.info(`  ├─ userGroups: ${userGroups.length} public groups`);
         logger.info(`  └─ feedback: ${feedback.length} entries`);
 
-        logger.info(`========================================`);
-        logger.info(`[UserProfile] Complete data fetch finished for: ${profile.displayName}`);
-        logger.info(`========================================`);
+        if (profile) {
+            const localNote = this.notesCache.get(userId);
+            if (localNote) {
+                profile.note = localNote;
+                logger.info(`[UserProfile] Note merged for ${userId}`);
+            }
+        }
 
         return {
             profile,
@@ -482,25 +538,25 @@ class UserProfileService {
      */
     enrichProfile(profile: VRChatUserProfile): EnrichedUserProfile {
         const tags = profile.tags || [];
-        
+
         // Trust level
         const trustLevel = getTrustRank(tags);
         const trustClass = TRUST_CLASS_MAP[trustLevel] || 'x-tag-unknown';
-        
+
         // VRC+ status
         const isVRCPlus = tags.includes('system_supporter');
-        
+
         // Moderator check
-        const isModerator = tags.some(t => 
-            t.includes('admin_moderator') || 
+        const isModerator = tags.some(t =>
+            t.includes('admin_moderator') ||
             t.includes('admin_') ||
             t === 'system_legend'
         );
-        
+
         // Troll flags
         const isTroll = tags.includes('system_troll');
         const isProbableTroll = tags.includes('system_probable_troll');
-        
+
         // Extract languages from tags
         const languages: { key: string; value: string }[] = [];
         for (const tag of tags) {
@@ -581,6 +637,16 @@ export function setupUserProfileHandlers() {
         try {
             const groups = await userProfileService.getMutualGroups(userId);
             return { success: true, groups };
+        } catch (error) {
+            const err = error as Error;
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('userProfile:setUserNote', async (_event, userId: string, note: string) => {
+        try {
+            await userProfileService.setUserNote(userId, note);
+            return { success: true };
         } catch (error) {
             const err = error as Error;
             return { success: false, error: err.message };

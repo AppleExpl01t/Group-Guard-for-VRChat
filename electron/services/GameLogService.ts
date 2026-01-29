@@ -172,7 +172,7 @@ class GameLogService {
     /**
      * Reads the last N entries from the log.
      */
-    public async getRecentEntries(limit = 100): Promise<GameLogEntry[]> {
+    public async getRecentEntries(limit?: number): Promise<GameLogEntry[]> {
         if (!this.dbPath || !fs.existsSync(this.dbPath)) return [];
 
         // Basic implementation: Read all, reverse, take N.
@@ -181,8 +181,8 @@ class GameLogService {
         try {
             const content = await fs.promises.readFile(this.dbPath, 'utf-8');
             const lines = content.trim().split('\n');
-            const entries = lines
-                .slice(-limit)
+            const slicedLines = (limit && limit > 0) ? lines.slice(-limit) : lines;
+            const entries = slicedLines
                 .map(line => {
                     try { return JSON.parse(line) as GameLogEntry; } catch { return null; }
                 })

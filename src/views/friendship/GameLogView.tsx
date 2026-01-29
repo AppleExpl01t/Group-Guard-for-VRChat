@@ -44,7 +44,6 @@ export const GameLogView: React.FC = () => {
 
         try {
             const data = await window.electron.friendship.getPlayerLog({
-                limit: 500,
                 search: search || undefined,
                 type: filter
             });
@@ -228,13 +227,13 @@ export const GameLogView: React.FC = () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                         <tr style={{
-                            color: 'var(--color-text-dim)',
+                            color: 'rgba(255,255,255,0.7)',
                             fontSize: '0.7rem',
                             textTransform: 'uppercase',
                             letterSpacing: '0.05em',
                             position: 'sticky',
                             top: 0,
-                            background: '#1a1a1a',
+                            background: 'var(--glass-bg, #1a1a1a)',
                             zIndex: 10
                         }}>
                             <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)', minWidth: '110px' }}>Date</th>

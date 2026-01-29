@@ -109,8 +109,43 @@ class PlayerLogService {
     public initialize(userDataDir: string) {
         this.dbPath = path.join(userDataDir, 'player_log.jsonl');
         this.isInitialized = true;
+
+        // AUTO-FIX: Remove known corrupted entries from log history
+        this.cleanupDatabase();
+
         this.loadRecentIds();
         logger.info(`PlayerLogService initialized. DB Path: ${this.dbPath}`);
+    }
+
+    private cleanupDatabase() {
+        if (!this.dbPath || !fs.existsSync(this.dbPath)) return;
+
+        try {
+            const content = fs.readFileSync(this.dbPath, 'utf-8');
+            const lines = content.split('\n');
+            let sanitizedContent = '';
+            let removedCount = 0;
+
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                // Quick check before parsing JSON to save time
+                if (line.includes('called, updating lock state')) {
+                    removedCount++;
+                    continue;
+                }
+                sanitizedContent += line + '\n';
+            }
+
+            if (removedCount > 0) {
+                // Write back atomically-ish
+                const tempPath = this.dbPath + '.tmp';
+                fs.writeFileSync(tempPath, sanitizedContent);
+                fs.renameSync(tempPath, this.dbPath);
+                logger.info(`[PlayerLogService] Cleanup: Removed ${removedCount} false 'lock state' entries from history.`);
+            }
+        } catch (e) {
+            logger.error('[PlayerLogService] Cleanup failed:', e);
+        }
     }
 
     public shutdown() {
@@ -206,7 +241,7 @@ class PlayerLogService {
         startDate?: string;
         endDate?: string;
     } = {}): Promise<PlayerLogEntry[]> {
-        const { limit = 500, search, type = 'all', startDate, endDate } = options;
+        const { limit, search, type = 'all', startDate, endDate } = options;
 
         if (!this.dbPath || !fs.existsSync(this.dbPath)) {
             logger.debug('[PlayerLogService] getRecentEntries: no db file');
@@ -246,8 +281,9 @@ class PlayerLogService {
                 entries = entries.filter(e => new Date(e.timestamp).getTime() <= end);
             }
 
-            // Return most recent first
-            return entries.slice(-limit).reverse();
+            // Return most recent first (slice only if limit specified)
+            const sliced = (limit && limit > 0) ? entries.slice(-limit) : entries;
+            return sliced.reverse();
         } catch (e) {
             logger.error('Failed to read player log:', e);
             return [];

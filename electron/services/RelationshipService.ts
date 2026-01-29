@@ -206,14 +206,14 @@ class RelationshipService {
     /**
      * Get recent relationship events
      */
-    public async getRecentEvents(limit = 100): Promise<RelationshipEvent[]> {
+    public async getRecentEvents(limit?: number): Promise<RelationshipEvent[]> {
         if (!this.dbPath || !fs.existsSync(this.dbPath)) return [];
 
         try {
             const content = await fs.promises.readFile(this.dbPath, 'utf-8');
             const lines = content.trim().split('\n');
-            return lines
-                .slice(-limit)
+            const entries = (limit && limit > 0) ? lines.slice(-limit) : lines;
+            return entries
                 .map(line => {
                     try { return JSON.parse(line) as RelationshipEvent; } catch { return null; }
                 })
