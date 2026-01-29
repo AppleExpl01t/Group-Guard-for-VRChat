@@ -15,6 +15,12 @@ export interface LiveEntity {
   status: 'active' | 'kicked' | 'joining' | 'left';
   avatarUrl?: string;
   lastUpdated?: number;
+  friendStatus?: 'friend' | 'outgoing' | 'incoming' | 'none';
+  friendScore?: number;
+  metrics?: {
+    encounters: number;
+    timeSpent: number;
+  };
 }
 
 export interface InstanceMonitorState {
@@ -26,8 +32,13 @@ export interface InstanceMonitorState {
   instanceImageUrl: string | null;
   players: Record<string, LivePlayerInfo>; // Keyed by displayName
   liveScanResults: LiveEntity[]; // Persisted scan results with history
+  history: { timestamp: number; count: number }[]; // Player count history
 
   // Actions
+  handlePlayerJoined: (player: LivePlayerInfo) => void;
+  handlePlayerLeft: (displayName: string) => void;
+  updateEntity: (entity: LiveEntity) => void;
+
   addPlayer: (player: LivePlayerInfo) => void;
   removePlayer: (displayName: string) => void;
   setWorldId: (id: string) => void;
@@ -42,6 +53,7 @@ export interface InstanceMonitorState {
 }
 
 export const useInstanceMonitorStore = create<InstanceMonitorState>((set) => ({
+
   currentWorldId: null,
   currentWorldName: null,
   currentInstanceId: null,
@@ -50,64 +62,112 @@ export const useInstanceMonitorStore = create<InstanceMonitorState>((set) => ({
   instanceImageUrl: null,
   players: {},
   liveScanResults: [],
+  history: [],
 
-  addPlayer: (player) =>
+  // Event-Driven Actions
+  handlePlayerJoined: (player: LivePlayerInfo) =>
     set((state) => {
-      // Sync to liveScanResults
       const existingIndex = state.liveScanResults.findIndex(e => e.displayName === player.displayName);
       let newResults = [...state.liveScanResults];
 
       if (existingIndex >= 0) {
+        // Reactivate existing entity
         newResults[existingIndex] = {
           ...newResults[existingIndex],
+          id: player.userId || newResults[existingIndex].id, // Update ID if we have it now
           status: 'active',
           lastUpdated: Date.now()
         };
       } else {
+        // Add new entity
         newResults.push({
           id: player.userId || `log:${player.displayName}`,
           displayName: player.displayName,
-          rank: 'User', // Default, upgraded later if scanned
+          rank: 'Loading...',
           isGroupMember: false,
           status: 'active',
           lastUpdated: Date.now()
         });
       }
 
+      // Calculate new count for history
+      const activeCount = newResults.filter(e => e.status === 'active').length;
+      let newHistory = [...state.history];
+      const lastHistory = newHistory[newHistory.length - 1];
+
+      // Debounce: update last entry if <1s, else push new
+      if (!lastHistory || (Date.now() - lastHistory.timestamp > 1000)) {
+        newHistory.push({ timestamp: Date.now(), count: activeCount });
+      } else {
+        newHistory[newHistory.length - 1] = { timestamp: Date.now(), count: activeCount };
+      }
+
       return {
-        players: {
-          ...state.players,
-          [player.displayName]: player,
-        },
-        liveScanResults: newResults
+        players: { ...state.players, [player.displayName]: player },
+        liveScanResults: newResults,
+        history: newHistory
       };
     }),
 
-  removePlayer: (displayName) =>
+  handlePlayerLeft: (displayName: string) =>
     set((state) => {
-      // Sync to liveScanResults
       const newResults = state.liveScanResults.map(e =>
-        e.displayName === displayName ? { ...e, status: 'left' as const } : e
+        e.displayName === displayName ? { ...e, status: 'left' as const, lastUpdated: Date.now() } : e
       );
 
       const newPlayers = { ...state.players };
       delete newPlayers[displayName];
+
       return {
         players: newPlayers,
         liveScanResults: newResults
       };
     }),
 
+  updateEntity: (entity: LiveEntity) =>
+    set((state) => {
+      const index = state.liveScanResults.findIndex(e => e.id === entity.id || e.displayName === entity.displayName);
+      if (index === -1) return {}; // Warning: Update for unknown entity?
+
+      const newResults = [...state.liveScanResults];
+      // Merge updates
+      newResults[index] = {
+        ...newResults[index],
+        ...entity,
+        // Preserve status if the update doesn't specify it (though it usually should be 'active')
+        status: entity.status || newResults[index].status
+      };
+
+      // Calculate new count for history
+      const activeCount = newResults.filter(e => e.status === 'active').length;
+      let newHistory = [...state.history];
+      const lastHistory = newHistory[newHistory.length - 1];
+
+      if (!lastHistory || (Date.now() - lastHistory.timestamp > 1000)) {
+        newHistory.push({ timestamp: Date.now(), count: activeCount });
+      } else {
+        newHistory[newHistory.length - 1] = { timestamp: Date.now(), count: activeCount };
+      }
+
+      return {
+        liveScanResults: newResults,
+        history: newHistory
+      };
+    }),
+
+  // Legacy / Polling Actions (Kept for compatibility or bulk updates)
+  addPlayer: (player) => useInstanceMonitorStore.getState().handlePlayerJoined(player), // Alias
+  removePlayer: (displayName) => useInstanceMonitorStore.getState().handlePlayerLeft(displayName), // Alias
+
   setWorldId: (id) => set({ currentWorldId: id }),
   setWorldName: (name) => set({ currentWorldName: name }),
   setInstanceInfo: (id, location) => set((state) => {
     if (state.currentInstanceId !== id) {
-      // Instance changed - clear all instance-specific data
       return {
         currentInstanceId: id,
         currentLocation: location,
-        currentWorldId: null, // Will be set by setWorldId
-        currentWorldName: null, // Will be set by world fetch
+        currentWorldId: null,
+        currentWorldName: null,
         players: {},
         liveScanResults: []
       };
@@ -115,52 +175,17 @@ export const useInstanceMonitorStore = create<InstanceMonitorState>((set) => ({
     return { currentInstanceId: id, currentLocation: location };
   }),
 
-  // New action
   setCurrentGroupId: (groupId) => set({ currentGroupId: groupId }),
-
   setInstanceImage: (url) => set({ instanceImageUrl: url }),
 
-  // NOTE: currentGroupId is NOT cleared here - it's managed by the separate onGroupChanged IPC event
-  // This prevents race conditions when switching instances
-  // NOTE: instanceImageUrl is also NOT cleared immediately - we keep the old image visible until a new one is fetched
-  clearInstance: () => set({ players: {}, currentWorldId: null, currentWorldName: null, currentInstanceId: null, currentLocation: null }),
+  clearInstance: () => set({ players: {}, currentWorldId: null, currentWorldName: null, currentInstanceId: null, currentLocation: null, liveScanResults: [] }),
 
   updateLiveScan: (newEntities) => set((state) => {
+    // Only used for initial hydration now
     const nextMap = new Map<string, LiveEntity>();
-
-    // 1. Process existing entities
-    // Mark active/joining as 'left' temporarily
-    state.liveScanResults.forEach(e => {
-      if (e.status === 'active' || e.status === 'joining') {
-        nextMap.set(e.id, { ...e, status: 'left' });
-      } else {
-        nextMap.set(e.id, e);
-      }
-    });
-
-    // 2. Update with current results (revive to 'active')
-    newEntities.forEach(r => {
-      const existing = nextMap.get(r.id);
-      nextMap.set(r.id, { ...(existing || {}), ...r, status: 'active' });
-    });
-
-    // 3. Convert to array and cleanup history
-    let allEntities = Array.from(nextMap.values());
-
-    // Separate active vs inactive
-    const active = allEntities.filter(e => e.status !== 'left' && e.status !== 'kicked');
-    const history = allEntities.filter(e => e.status === 'left' || e.status === 'kicked');
-
-    // Sort history by lastUpdated if available, or keep order. 
-    // If history is too large, slice it.
-    if (history.length > 50) {
-      // If we don't have timestamps, we just slice the end (assuming insertion order)
-      // But to be safe, let's just keep the last 50.
-      const keptHistory = history.slice(-50);
-      allEntities = [...active, ...keptHistory];
-    }
-
-    return { liveScanResults: allEntities };
+    state.liveScanResults.forEach(e => nextMap.set(e.id, e));
+    newEntities.forEach(r => nextMap.set(r.id, { ...(nextMap.get(r.id) || {}), ...r, status: 'active' }));
+    return { liveScanResults: Array.from(nextMap.values()) };
   }),
 
   clearLiveScan: () => set({ liveScanResults: [] }),

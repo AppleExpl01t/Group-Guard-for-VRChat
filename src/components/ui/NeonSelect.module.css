@@ -1,0 +1,93 @@
+.container {
+    position: relative;
+    display: inline-block;
+    width: 100%;
+    height: 100%;
+}
+
+.trigger {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    font-family: inherit;
+    font-weight: 600;
+    border: 1px solid var(--border-color);
+    background: var(--color-surface-card);
+    color: var(--color-text-main);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.75rem;
+    appearance: none;
+    min-height: 48px;
+}
+
+.trigger:hover {
+    border-color: var(--color-primary);
+    background: var(--color-surface-elevated);
+    box-shadow: var(--shadow-floating-hover);
+}
+
+.triggerActive {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 10px var(--color-primary-glow);
+}
+
+.dropdown {
+    position: absolute;
+    bottom: 100%;
+    /* Opens upwards by default */
+    left: 0;
+    right: 0;
+    margin-bottom: 8px;
+    background: var(--color-surface-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-floating);
+    z-index: 1000;
+    max-height: 200px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    padding: 4px;
+}
+
+.dropdownOpenDown {
+    bottom: auto;
+    top: 100%;
+    margin-top: 8px;
+    margin-bottom: 0;
+}
+
+.option {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    color: var(--color-text-dim);
+    transition: all 0.1s;
+}
+
+.option:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text-main);
+}
+
+.optionSelected {
+    background: rgba(var(--primary-hue), 100%, 50%, 0.1);
+    color: var(--color-primary);
+    font-weight: bold;
+}
+
+.chevron {
+    transition: transform 0.2s;
+}
+
+.chevronRotated {
+    transform: rotate(180deg);
+}

@@ -105,8 +105,8 @@ contextBridge.exposeInMainWorld('electron', {
             ipcRenderer.on('log:player-left', handler);
             return () => ipcRenderer.removeListener('log:player-left', handler);
         },
-        onLocation: (callback: (event: { worldId: string; timestamp: string }) => void) => {
-            const handler = (_event: Electron.IpcRendererEvent, data: { worldId: string; timestamp: string }) => callback(data);
+        onLocation: (callback: (event: { worldId: string; instanceId?: string; location?: string; timestamp: string }) => void) => {
+            const handler = (_event: Electron.IpcRendererEvent, data: { worldId: string; instanceId?: string; location?: string; timestamp: string }) => callback(data);
             ipcRenderer.on('log:location', handler);
             return () => ipcRenderer.removeListener('log:location', handler);
         },

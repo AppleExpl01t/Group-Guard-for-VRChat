@@ -106,6 +106,12 @@ export function getTrustTagForRank(rank: TrustRank): string | null {
 // TYPES
 // ============================================
 
+import { friendshipService } from './FriendshipService';
+
+// ... (existing imports)
+
+// ...
+
 export interface LiveEntity {
     id: string; // userId (usr_...)
     displayName: string;
@@ -114,7 +120,21 @@ export interface LiveEntity {
     status: 'active' | 'kicked' | 'joining';
     avatarUrl?: string;
     lastUpdated: number;
+    // New Fields
+    friendStatus?: 'friend' | 'outgoing' | 'incoming' | 'none';
+    friendScore?: number;
+    metrics?: {
+        encounters: number;
+        timeSpent: number;
+    };
 }
+
+// ...
+
+// Inside processFetchQueue, around line 240
+// Update Cache logic
+
+
 
 // ============================================
 // CACHE (LRU to prevent memory leaks)
@@ -244,6 +264,9 @@ export async function processFetchQueue(groupId?: string): Promise<void> {
                 // Use centralized trust rank service
                 const rank = getTrustRank(tags);
 
+                // Fetch Friendship Data
+                const friendDetails = await friendshipService.getFriendshipDetails(userId);
+
                 const entity: LiveEntity = {
                     id: userId,
                     displayName,
@@ -252,7 +275,9 @@ export async function processFetchQueue(groupId?: string): Promise<void> {
                     status: 'active',
                     // Prioritize persistent profile pictures (userIcon via VRC+) over current avatar thumbnail
                     avatarUrl: userData?.userIcon || userData?.profilePicOverride || userData?.currentAvatarThumbnailImageUrl || '',
-                    lastUpdated: Date.now()
+                    lastUpdated: Date.now(),
+                    friendStatus: friendDetails.isFriend ? 'friend' : 'none',
+                    friendScore: friendDetails.score
                 };
 
                 entityCache.set(cacheKey, entity);

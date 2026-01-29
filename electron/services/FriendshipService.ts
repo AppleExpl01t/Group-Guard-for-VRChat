@@ -199,6 +199,36 @@ class FriendshipService {
             };
         });
     }
+    /**
+     * Get lightweight friendship details for a specific user.
+     * Used by EntityEnrichmentService for Live Ops.
+     */
+    public async getFriendshipDetails(userId: string): Promise<{ isFriend: boolean; score: number; status: string }> {
+        if (!this.isInitialized) return { isFriend: false, score: 0, status: 'none' };
+
+        // 1. Check if Friend
+        const friend = locationService.getFriend(userId);
+        if (!friend) return { isFriend: false, score: 0, status: 'none' };
+
+        // 2. Calculate Score (Simplified for speed)
+        // We can't do full log scan here synchronously for every user. 
+        // We'll rely on cached stats if available, or just use encounter count from light cache if we had one.
+        // For now, let's use the playerLogService to get quick stats - assuming it's indexed.
+        // Actually, let's just use what we have in memory or default.
+
+        let score = 0;
+        // Check PlayerLogService cache (if exposed) or LocationService enriched data?
+        // LocationService doesn't store score.
+
+        // Let's grab basic stats from PlayerLogService - it reads from JSON, might be slow if file is huge.
+        // OPTIMIZATION: Just return isFriend for now, and implement cached score lookup later if needed.
+        // OR: Calculate score based on locationService data if we add 'daysKnown' there.
+
+        // For Phase 5 initial implementation, let's return isFriend and a placeholder score.
+        // real score calculation requires async file IO which causes lag in enrichment loop.
+
+        return { isFriend: true, score: 1, status: friend.status || 'offline' };
+    }
 }
 
 export const friendshipService = new FriendshipService();

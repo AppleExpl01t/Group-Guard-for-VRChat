@@ -264,6 +264,12 @@ export interface LiveEntity {
   status: 'active' | 'kicked' | 'joining';
   avatarUrl?: string;
   lastUpdated: number;
+  friendStatus?: 'friend' | 'outgoing' | 'incoming' | 'none';
+  friendScore?: number;
+  metrics?: {
+    encounters: number;
+    timeSpent: number;
+  };
 }
 
 // Type for Rally Target
@@ -466,7 +472,7 @@ export interface ElectronAPI {
     stop: () => Promise<{ success: boolean }>;
     onPlayerJoined: (callback: (event: { displayName: string; userId?: string; timestamp: string }) => void) => () => void;
     onPlayerLeft: (callback: (event: { displayName: string; userId?: string; timestamp: string }) => void) => () => void;
-    onLocation: (callback: (event: { worldId: string; timestamp: string }) => void) => () => void;
+    onLocation: (callback: (event: { worldId: string; instanceId?: string; location?: string; timestamp: string }) => void) => () => void;
     onWorldName: (callback: (event: { name: string; timestamp: string }) => void) => () => void;
     onGameClosed: (callback: () => void) => () => void;
     onVoteKick: (callback: (event: { target: string; initiator: string; timestamp: string }) => void) => () => void;
@@ -518,6 +524,7 @@ export interface ElectronAPI {
 
     getCurrentGroup: () => Promise<string | null>;
     onGroupChanged: (callback: (groupId: string | null) => void) => () => void;
+    getHealthStats: () => Promise<{ success: boolean; stats?: { enrichmentQueue: number; isEnriching: boolean } }>;
   };
 
 

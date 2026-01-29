@@ -18,6 +18,7 @@ import { logWatcherService } from './LogWatcherService';
 import { groupAuthorizationService } from './GroupAuthorizationService';
 import { networkService } from './NetworkService';
 import { discordWebhookService } from './DiscordWebhookService';
+
 import {
     clearRecruitmentCache,
     isUserInvitedThisInstance,
@@ -29,7 +30,8 @@ import {
     getCachedEntity,
     makeCacheKey,
     queueUserEnrichment,
-    processFetchQueue
+    processFetchQueue,
+    entityEnrichmentService
 } from './EntityEnrichmentService';
 import { setupRallyHandlers } from './RallyService';
 
@@ -392,6 +394,20 @@ export function setupInstanceHandlers() {
     // Cleanup cache handler triggered by InstanceLogger or manual close
     ipcMain.handle('instance:cleanup-cache', (_event, fullInstanceId: string) => {
         clearRecruitmentCache(fullInstanceId);
+    });
+
+    // INSTANCE HEALTH STATS
+    ipcMain.handle('instance:get-health-stats', async () => {
+        const { queueLength, isFetching } = entityEnrichmentService.getQueueStatus();
+        // We could add more here like log watcher lag, api rate limit status, etc.
+        return {
+            success: true,
+            stats: {
+                enrichmentQueue: queueLength,
+                isEnriching: isFetching,
+                // Add estimated API usage?
+            }
+        };
     });
 
     // Register Rally handlers from RallyService

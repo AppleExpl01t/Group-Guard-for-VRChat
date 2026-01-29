@@ -2,8 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { GlassPanel } from '../../components/ui/GlassPanel';
 import { NeonButton } from '../../components/ui/NeonButton';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Crosshair, ShieldAlert, Radio, RefreshCw, Activity, UserPlus, ChevronDown } from 'lucide-react';
-import { AppShieldIcon } from '../../components/ui/AppShieldIcon';
+import { Crosshair, ShieldAlert, Radio, RefreshCw, Activity } from 'lucide-react';
 import { useGroupStore } from '../../stores/groupStore';
 import { useInstanceMonitorStore, type LiveEntity } from '../../stores/instanceMonitorStore';
 import { BanUserDialog } from './dialogs/BanUserDialog';
@@ -17,6 +16,9 @@ import { StatTile } from '../dashboard/components/StatTile';
 import { EntityCard } from './components/EntityCard';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { OperationStartDialog } from './dialogs/OperationStartDialog';
+import { InstanceHealthWidget } from './components/InstanceHealthWidget';
+import { LivePlayerChart } from './components/LivePlayerChart';
+import { LiveToolbar } from './components/LiveToolbar';
 
 import { useConfirm } from '../../context/ConfirmationContext';
 import { useNotificationStore } from '../../stores/notificationStore';
@@ -86,6 +88,7 @@ export const LiveView: React.FC = () => {
     const logs = useRoamingLogStore(state => state.logs);
     const addLogsToStore = useRoamingLogStore(state => state.addLogs);
     const [isLoading, setIsLoading] = useState(false);
+
     // Initial load state for the very first scan
     const [isInitialLoad, setIsInitialLoad] = useState(true);
     const [headerImgError, setHeaderImgError] = useState(false);
@@ -238,7 +241,12 @@ export const LiveView: React.FC = () => {
         }
     }, [selectedGroup, isRoamingMode, currentWorldName, currentWorldId, instanceImageUrl, updateLiveScan]);
 
-    // Initial and Periodic Scan
+    // Actions
+    const handlePlayerJoined = useInstanceMonitorStore(state => state.handlePlayerJoined);
+    const handlePlayerLeft = useInstanceMonitorStore(state => state.handlePlayerLeft);
+    const updateEntity = useInstanceMonitorStore(state => state.updateEntity);
+
+    // Initial Scan for Hydration Only
     useEffect(() => {
         if (!selectedGroup && !isRoamingMode) return;
 
@@ -249,23 +257,36 @@ export const LiveView: React.FC = () => {
         }
 
         performScan();
-
-        const interval = setInterval(performScan, 5000);
-        return () => clearInterval(interval);
+        // NO POLLING: Event-driven updates only
     }, [selectedGroup, isRoamingMode, performScan, addLog]);
 
-    // Listen for Entity Updates (Live)
+    // Live Event Listeners (Zero Latency)
     useEffect(() => {
-        const unsubscribe = window.electron.instance.onEntityUpdate((updatedEntity: LiveEntity) => {
+        // 1. Join Events (LogWatcher)
+        const unsubJoin = window.electron.logWatcher.onPlayerJoined((event) => {
+            // Convert to store format
+            handlePlayerJoined({
+                displayName: event.displayName,
+                userId: event.userId,
+                joinTime: new Date(event.timestamp).getTime()
+            });
+            // Optional: Log it in the feed if it's new
+            // addLog(`[JOIN] ${event.displayName} (${event.userId || 'Unknown'})`, 'info');
+        });
+
+        // 2. Leave Events (LogWatcher)
+        const unsubLeave = window.electron.logWatcher.onPlayerLeft((event) => {
+            handlePlayerLeft(event.displayName);
+            addLog(`[LEFT] ${event.displayName}`, 'warn');
+        });
+
+        // 3. Entity Metadata Updates (Enrichment Service)
+        const unsubEntity = window.electron.instance.onEntityUpdate((updatedEntity: LiveEntity) => {
+            updateEntity(updatedEntity);
             addLog(`[SCAN] Profile Resolved: ${updatedEntity.displayName} (Rank: ${updatedEntity.rank})`, 'info');
         });
-        return unsubscribe;
-    }, [addLog]);
 
-    // LOG WATCHER INTEGRATION
-    useEffect(() => {
-        window.electron.logWatcher.start();
-
+        // 4. Log Watcher telemetry
         const unsubKick = window.electron.logWatcher.onVoteKick((event) => {
             addLog(`[VOTE KICK] ${event.initiator} initiated vote kick against ${event.target}`, 'warn');
         });
@@ -275,11 +296,38 @@ export const LiveView: React.FC = () => {
             addLog(`[VIDEO] Now Playing: ${shortUrl} (Req: ${event.requestedBy})`, 'info');
         });
 
+        // 5. World/Instance Changes
+        const unsubLocation = window.electron.logWatcher.onLocation((event) => {
+            // Update store
+            const instId = event.instanceId || '';
+            const loc = event.location || `${event.worldId}:${instId}`;
+            useInstanceMonitorStore.getState().setInstanceInfo(instId, loc);
+            useInstanceMonitorStore.getState().setWorldId(event.worldId);
+
+            // Optionally trigger a fresh scan/fetch for image if needed, 
+            // but LogWatcher typically handles the data flow.
+            // The store clearing happens in setInstanceInfo logic.
+            addLog(`[WORLD] Moved to ${event.worldId}`, 'info');
+        });
+
+        const unsubWorldName = window.electron.logWatcher.onWorldName((event) => {
+            useInstanceMonitorStore.getState().setWorldName(event.name);
+            addLog(`[WORLD] Entered: ${event.name}`, 'success');
+        });
+
+        // Ensure service is running
+        window.electron.logWatcher.start();
+
         return () => {
+            unsubJoin();
+            unsubLeave();
+            unsubEntity();
             unsubKick();
             unsubVideo();
+            unsubLocation();
+            unsubWorldName();
         };
-    }, [addLog]);
+    }, [handlePlayerJoined, handlePlayerLeft, updateEntity, addLog]);
 
     // Actions
     const handleRecruit = useCallback(async (userId: string, name: string) => {
@@ -323,6 +371,73 @@ export const LiveView: React.FC = () => {
     const [progress, setProgress] = useState<{ current: number, total: number } | null>(null);
     const [progressMode, setProgressMode] = useState<'recruit' | 'rally' | null>(null);
     const [currentProcessingUser, setCurrentProcessingUser] = useState<{ name: string; phase: 'checking' | 'inviting' | 'skipped' } | null>(null);
+
+    // SELECTION STATE (Multi-Select)
+    const [selectedEntityIds, setSelectedEntityIds] = useState<Set<string>>(new Set());
+
+    const toggleSelection = useCallback((id: string) => {
+        setSelectedEntityIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    }, []);
+
+    const clearSelection = useCallback(() => setSelectedEntityIds(new Set()), []);
+
+    // BATCH ACTIONS
+    const handleKickSelected = useCallback(async () => {
+        if (!selectedGroup || selectedEntityIds.size === 0) return;
+
+        const count = selectedEntityIds.size;
+        const confirmed = await confirm({
+            title: 'Confirm Batch Kick',
+            message: `Are you sure you want to KICK ${count} selected users?`,
+            confirmLabel: `Kick ${count} Users`,
+            variant: 'danger'
+        });
+
+        if (!confirmed) return;
+
+        addLog(`[BATCH] Starting kick for ${count} users...`, 'warn');
+        let successCount = 0;
+
+        for (const id of selectedEntityIds) {
+            try {
+                // Find display name for log
+                const name = entities.find(e => e.id === id)?.displayName || id;
+                await window.electron.instance.kickUser(selectedGroup.id, id);
+                addLog(`[BATCH] Kicked ${name}`, 'success');
+                setEntityStatus(id, 'kicked'); // Optimistic update
+                successCount++;
+                await new Promise(r => setTimeout(r, 200)); // Rate limit safety
+            } catch {
+                const name = entities.find(e => e.id === id)?.displayName || id;
+                addLog(`[BATCH] Failed to kick ${name}`, 'error');
+            }
+        }
+        clearSelection();
+    }, [selectedGroup, selectedEntityIds, confirm, addLog, setEntityStatus, entities]);
+
+    const handleInviteSelected = useCallback(async () => {
+        if (!effectiveGroup || selectedEntityIds.size === 0) return;
+
+        const count = selectedEntityIds.size;
+        addLog(`[BATCH] Sending invites to ${count} users...`, 'info');
+
+        for (const id of selectedEntityIds) {
+            const name = entities.find(e => e.id === id)?.displayName || id;
+            try {
+                await window.electron.instance.recruitUser(effectiveGroup.id, id);
+                addLog(`[BATCH] Invited ${name}`, 'success');
+                await new Promise(r => setTimeout(r, 200));
+            } catch {
+                addLog(`[BATCH] Failed to invite ${name}`, 'error');
+            }
+        }
+        clearSelection();
+    }, [effectiveGroup, selectedEntityIds, addLog, entities]);
 
     const handleRecruitAll = () => {
         console.log('[LiveView] handleRecruitAll clicked');
@@ -530,166 +645,7 @@ export const LiveView: React.FC = () => {
         }
     };
 
-    const renderRecruitButton = () => {
-        if (progress && progressMode === 'recruit') {
-            const pct = Math.round((progress.current / progress.total) * 100);
 
-            let statusText = `${progress.current}/${progress.total} PROCESSED`;
-            let statusColor = 'inherit';
-
-            if (currentProcessingUser) {
-                const truncatedName = currentProcessingUser.name.length > 15
-                    ? currentProcessingUser.name.substring(0, 15) + '...'
-                    : currentProcessingUser.name;
-
-                if (currentProcessingUser.phase === 'checking') {
-                    statusText = `🔍 Checking: ${truncatedName}`;
-                    statusColor = '#fde047';
-                } else if (currentProcessingUser.phase === 'inviting') {
-                    statusText = `📨 Inviting: ${truncatedName}`;
-                    statusColor = '#86efac';
-                } else if (currentProcessingUser.phase === 'skipped') {
-                    statusText = `⛔ Skipped: ${truncatedName}`;
-                    statusColor = '#fca5a5';
-                }
-            }
-
-            return (
-                <NeonButton
-                    disabled
-                    style={{ flex: 1, height: '60px', flexDirection: 'column', gap: '4px', position: 'relative', overflow: 'hidden' }}
-                >
-                    <div style={{
-                        position: 'absolute', left: 0, top: 0, bottom: 0,
-                        width: `${pct}%`,
-                        background: 'rgba(var(--primary-hue), 100%, 50%, 0.3)',
-                        transition: 'width 0.2s linear'
-                    }} />
-                    <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>{pct}%</span>
-                        <span style={{ fontSize: '0.65rem', color: statusColor, fontWeight: 500 }}>{statusText}</span>
-                    </div>
-                </NeonButton>
-            );
-        }
-
-        // In roaming mode, disable if no group selected
-        const isDisabled = progress !== null || (isRoamingMode && !roamingSelectedGroup);
-
-        return (
-            <NeonButton
-                onClick={handleRecruitAll}
-                disabled={isDisabled}
-                style={{ flex: 1, height: '60px', flexDirection: 'column', gap: '4px' }}
-            >
-                <UserPlus size={20} />
-                <span style={{ fontSize: '0.75rem' }}>
-                    {isRoamingMode && roamingSelectedGroup
-                        ? `INVITE ALL TO ${roamingSelectedGroup.name.substring(0, 15).toUpperCase()}${roamingSelectedGroup.name.length > 15 ? '...' : ''}`
-                        : 'INVITE INSTANCE TO GROUP'
-                    }
-                </span>
-            </NeonButton>
-        );
-    };
-
-    const renderRallyButton = () => {
-        // In roaming mode, show a group selector dropdown instead of "GROUP OFF-LINE"
-        if (isRoamingMode) {
-            return (
-                <div style={{
-                    flex: 1,
-                    height: '60px',
-                    position: 'relative'
-                }}>
-                    <select
-                        value={roamingSelectedGroupId || ''}
-                        onChange={(e) => setRoamingSelectedGroupId(e.target.value || null)}
-                        style={{
-                            width: '100%',
-                            height: '100%',
-                            padding: '8px 12px',
-                            paddingRight: '32px',
-                            background: 'var(--color-surface-card)',
-                            border: '1px solid var(--border-color)',
-                            borderRadius: '12px',
-                            color: 'var(--color-text-main)',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            appearance: 'none',
-                            textAlign: 'center',
-                        }}
-                    >
-                        <option value="">SELECT GROUP FOR INVITES</option>
-                        {myGroups.map(group => (
-                            <option key={group.id} value={group.id}>
-                                {group.name}
-                            </option>
-                        ))}
-                    </select>
-                    <ChevronDown
-                        size={16}
-                        style={{
-                            position: 'absolute',
-                            right: '12px',
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            pointerEvents: 'none',
-                            color: 'var(--color-text-dim)'
-                        }}
-                    />
-                </div>
-            );
-        }
-
-        if (!selectedGroup) {
-            return (
-                <NeonButton
-                    disabled
-                    variant="secondary"
-                    style={{ flex: 1, height: '60px', flexDirection: 'column', gap: '4px', opacity: 0.5 }}
-                >
-                    <AppShieldIcon size={20} />
-                    <span style={{ fontSize: '0.75rem' }}>GROUP OFF-LINE</span>
-                </NeonButton>
-            );
-        }
-
-        if (progress && progressMode === 'rally') {
-            const pct = Math.round((progress.current / progress.total) * 100);
-            return (
-                <NeonButton
-                    disabled
-                    variant="secondary"
-                    style={{ flex: 1, height: '60px', flexDirection: 'column', gap: '4px', position: 'relative', overflow: 'hidden' }}
-                >
-                    <div style={{
-                        position: 'absolute', left: 0, top: 0, bottom: 0,
-                        width: `${pct}%`,
-                        background: 'rgba(255, 255, 255, 0.2)',
-                        transition: 'width 0.2s linear'
-                    }} />
-                    <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>{pct}%</span>
-                        <span style={{ fontSize: '0.65rem', opacity: 0.8 }}>{progress.current}/{progress.total} SENT</span>
-                    </div>
-                </NeonButton>
-            );
-        }
-
-        return (
-            <NeonButton
-                onClick={handleRally}
-                disabled={isLoading || progress !== null}
-                variant="secondary"
-                style={{ flex: 1, height: '60px', flexDirection: 'column', gap: '4px' }}
-            >
-                <AppShieldIcon size={20} />
-                <span style={{ fontSize: '0.75rem' }}>INVITE GROUP HERE</span>
-            </NeonButton>
-        );
-    };
 
     const handleLockdown = async () => {
         const confirmed = await confirm({
@@ -792,8 +748,10 @@ export const LiveView: React.FC = () => {
                                     <h1 className={`${styles.title} text-gradient`}>
                                         {instanceInfo?.name || currentWorldName || 'CURRENT INSTANCE'}
                                     </h1>
-                                    <div className={styles.subtitle}>
-                                        {isRoamingMode ? 'ROAMING MODE - PASSIVE MONITORING' : 'LIVE SECTOR SCAN'}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                        <div className={styles.subtitle}>
+                                            {isRoamingMode ? 'ROAMING MODE - PASSIVE MONITORING' : 'LIVE SECTOR SCAN'}
+                                        </div>
                                     </div>
                                 </>
                             )}
@@ -924,6 +882,9 @@ export const LiveView: React.FC = () => {
                                                         onBan={handleBanClick}
                                                         onReport={handleReportClick}
                                                         readOnly={isRoamingMode && !roamingSelectedGroup}
+                                                        isSelected={selectedEntityIds.has(entity.id)}
+                                                        selectionMode={true}
+                                                        onToggleSelect={toggleSelection}
                                                     />
                                                 </motion.div>
                                             ))
@@ -1008,8 +969,8 @@ export const LiveView: React.FC = () => {
                         </div>
 
                         {/* Actions Panel */}
-                        <div style={{ display: rightTab === 'controls' ? 'block' : 'none' }}>
-                            <GlassPanel style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <div style={{ display: rightTab === 'controls' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+                            <GlassPanel style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', position: 'relative', zIndex: 10, overflow: 'visible', flexShrink: 0 }}>
                                 <h3 className={styles.actionsHeader}>
                                     <Crosshair size={16} />
                                     {isRoamingMode ? 'ROAMING CONTROLS' : 'INSTANCE ACTIONS'}
@@ -1050,33 +1011,62 @@ export const LiveView: React.FC = () => {
                                 )}
 
                                 <div style={{ display: 'flex', gap: '10px' }}>
-                                    {renderRecruitButton()}
-                                    {renderRallyButton()}
+                                    <LiveToolbar
+                                        selectedCount={selectedEntityIds.size}
+                                        onClearSelection={clearSelection}
+                                        onKickSelected={handleKickSelected}
+                                        onInviteSelected={handleInviteSelected}
+                                        onRally={handleRally}
+                                        onRecruitAll={handleRecruitAll}
+                                        onLockdown={handleLockdown}
+                                        isRoaming={isRoamingMode}
+                                        hasGroupSelected={!!effectiveGroup}
+                                        isRallying={progressMode === 'rally'}
+                                        isRecruiting={progressMode === 'recruit'}
+                                        progress={progress ? Math.round((progress.current / progress.total) * 100) : null}
+                                        statusText={currentProcessingUser
+                                            ? `${currentProcessingUser.phase === 'inviting' ? '📨' : currentProcessingUser.phase === 'skipped' ? '⛔' : '🔍'} ${currentProcessingUser.name}`
+                                            : undefined
+                                        }
+                                        roamingGroups={myGroups}
+                                        selectedRoamingGroupId={roamingSelectedGroupId}
+                                        onSelectRoamingGroup={setRoamingSelectedGroupId}
+                                        isLoading={isLoading}
+                                    />
                                 </div>
+                            </GlassPanel>
 
-                                {/* Mass Invite Friends Button */}
-                                {!isRoamingMode && selectedGroup && (
+                            {/* Instance Health Card */}
+                            <GlassPanel style={{ marginTop: '10px', padding: '0', flexShrink: 0 }}>
+                                <InstanceHealthWidget
+                                    style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        justifyContent: 'space-around',
+                                        width: '100%',
+                                        flexWrap: 'wrap',
+                                        rowGap: '8px'
+                                    }}
+                                />
+                            </GlassPanel>
+
+                            {/* Live Player Chart */}
+                            <GlassPanel style={{ marginTop: '10px', padding: '0', flex: 1, minHeight: '150px', display: 'flex', flexDirection: 'column' }}>
+                                <LivePlayerChart style={{ flex: 1, width: '100%' }} />
+                            </GlassPanel>
+
+                            {!isRoamingMode && selectedGroup && (
+                                <GlassPanel style={{ marginTop: '10px', padding: '10px' }}>
                                     <NeonButton
                                         variant="secondary"
-                                        style={{ height: '50px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                                        style={{ height: '50px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '10px' }}
                                         onClick={() => setShowMassInvite(true)}
                                         disabled={progress !== null}
                                     >
                                         <span>📨</span> MASS INVITE FRIENDS
                                     </NeonButton>
-                                )}
-
-                                {!isRoamingMode && selectedGroup && (
-                                    <NeonButton
-                                        variant="danger"
-                                        style={{ height: '40px', fontSize: '0.75rem', marginTop: '0.5rem', opacity: 0.8 }}
-                                        onClick={handleLockdown}
-                                    >
-                                        <ShieldAlert size={16} />
-                                        EMERGENCY LOCKDOWN
-                                    </NeonButton>
-                                )}
-                            </GlassPanel>
+                                </GlassPanel>
+                            )}
                         </div>
 
                         {/* Log Terminal */}
@@ -1108,45 +1098,51 @@ export const LiveView: React.FC = () => {
 
             {/* Dialogs */}
             <AnimatePresence>
-                {banDialogUser && selectedGroup && (
-                    <BanUserDialog
-                        key={banDialogUser ? banDialogUser.id : 'closed'}
-                        isOpen={!!banDialogUser}
-                        onClose={() => setBanUserDialog(null)}
-                        user={banDialogUser}
-                        initialGroupId={selectedGroup?.id}
-                    />
-                )}
+                {
+                    banDialogUser && selectedGroup && (
+                        <BanUserDialog
+                            key={banDialogUser ? banDialogUser.id : 'closed'}
+                            isOpen={!!banDialogUser}
+                            onClose={() => setBanUserDialog(null)}
+                            user={banDialogUser}
+                            initialGroupId={selectedGroup?.id}
+                        />
+                    )
+                }
 
-                {recruitResults && selectedGroup && (
-                    <RecruitResultsDialog
-                        isOpen={!!recruitResults}
-                        onClose={() => setRecruitResults(null)}
-                        blockedUsers={recruitResults?.blocked || []}
-                        totalInvited={recruitResults?.invited || 0}
-                    />
-                )}
+                {
+                    recruitResults && selectedGroup && (
+                        <RecruitResultsDialog
+                            isOpen={!!recruitResults}
+                            onClose={() => setRecruitResults(null)}
+                            blockedUsers={recruitResults?.blocked || []}
+                            totalInvited={recruitResults?.invited || 0}
+                        />
+                    )
+                }
 
-                {showMassInvite && selectedGroup && (
-                    <MassInviteDialog
-                        isOpen={showMassInvite}
-                        onClose={() => setShowMassInvite(false)}
-                    />
-                )}
-            </AnimatePresence>
+                {
+                    showMassInvite && selectedGroup && (
+                        <MassInviteDialog
+                            isOpen={showMassInvite}
+                            onClose={() => setShowMassInvite(false)}
+                        />
+                    )
+                }
+            </AnimatePresence >
 
             {/* AutoMod Alert Overlay */}
-            <AutoModAlertOverlay />
+            < AutoModAlertOverlay />
 
             {/* Report Generator Dialog */}
-            <ReportGeneratorDialog
+            < ReportGeneratorDialog
                 isOpen={!!reportContext}
                 onClose={() => setReportContext(null)}
                 context={reportContext}
             />
 
             {/* Operation Start Dialog */}
-            <OperationStartDialog
+            < OperationStartDialog
                 isOpen={operationDialog.isOpen}
                 onClose={() => setOperationDialog(prev => ({ ...prev, isOpen: false }))}
                 onConfirm={(speed) => {

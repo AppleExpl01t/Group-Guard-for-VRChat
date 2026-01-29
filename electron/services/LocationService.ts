@@ -163,6 +163,10 @@ class LocationService {
         return Array.from(this.friends.values());
     }
 
+    public getFriend(userId: string): FriendLocation | undefined {
+        return this.friends.get(userId);
+    }
+
     private loadSnapshot() {
         if (!this.snapshotPath || !fs.existsSync(this.snapshotPath)) return;
         try {
