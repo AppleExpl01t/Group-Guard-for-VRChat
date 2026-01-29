@@ -365,6 +365,7 @@ contextBridge.exposeInMainWorld('electron', {
         },
         getPlayerStats: (userId: string) => ipcRenderer.invoke('friendship:get-player-stats', userId),
         getWorldStats: (worldId: string) => ipcRenderer.invoke('friendship:get-world-stats', worldId),
+        getFriendsList: () => ipcRenderer.invoke('friendship:get-friends-list'),
     },
 
     // Generic IPC Renderer for event listening

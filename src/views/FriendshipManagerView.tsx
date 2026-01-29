@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { GlassPanel } from '../components/ui/GlassPanel';
-import { GameLogView, LocationsView, FeedView, SocialView } from './friendship';
+import { GameLogView, LocationsView, FeedView, SocialView, FriendsListView } from './friendship';
 
-type TabType = 'feed' | 'locations' | 'gamelog' | 'social';
+type TabType = 'friends' | 'feed' | 'locations' | 'gamelog' | 'social';
 
 export const FriendshipManagerView: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<TabType>('locations');
+    const [activeTab, setActiveTab] = useState<TabType>('friends');
     const [isInitialized, setIsInitialized] = useState(false);
     const [isChecking, setIsChecking] = useState(true);
     const [retryCount, setRetryCount] = useState(0);
@@ -151,6 +151,7 @@ export const FriendshipManagerView: React.FC = () => {
                             maxWidth: '600px'
                         }}>
                             {[
+                                { key: 'friends' as TabType, label: 'Friends List' },
                                 { key: 'locations' as TabType, label: 'Friend Locations' },
                                 { key: 'feed' as TabType, label: 'Activity Feed' },
                                 { key: 'gamelog' as TabType, label: 'Instance History' },
@@ -208,6 +209,7 @@ export const FriendshipManagerView: React.FC = () => {
                 overflow: 'hidden',
                 position: 'relative'
             }}>
+                {activeTab === 'friends' && <FriendsListView />}
                 {activeTab === 'feed' && <FeedView />}
                 {activeTab === 'locations' && <LocationsView />}
                 {activeTab === 'gamelog' && <GameLogView />}

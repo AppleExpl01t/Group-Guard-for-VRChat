@@ -44,7 +44,7 @@ class OscAnnouncementService {
     private clearMessageTimer: NodeJS.Timeout | null = null;
     private greetedPlayers: Set<string> = new Set();
     private currentPlayers: Set<string> = new Set(); // To track who is actually here if we want to be smart
-    
+
     // Local cache for group names (populated via EventBus)
     private groupNames: Map<string, string> = new Map();
 
@@ -68,7 +68,7 @@ class OscAnnouncementService {
                     }
                 });
                 logger.info(`Updated local group name cache with ${updatedCount} entries.`);
-                
+
                 // If we are currently active in a group and just learned its name, update immediately
                 if (this.activeGroupId && this.groupNames.has(this.activeGroupId)) {
                     const newName = this.groupNames.get(this.activeGroupId)!;
@@ -89,12 +89,12 @@ class OscAnnouncementService {
             }
         });
 
-        logWatcherService.on('player-joined', (event: PlayerJoinedEvent) => {
+        serviceEventBus.on('player-joined', (event: PlayerJoinedEvent) => {
             this.handlePlayerJoined(event);
         });
-        
+
         // Handle leaving to clean up sets and allow re-greeting on rejoin
-        logWatcherService.on('player-left', (event: { displayName: string; userId?: string }) => {
+        serviceEventBus.on('player-left', (event: { displayName: string; userId?: string }) => {
             this.currentPlayers.delete(event.displayName);
             // Clear from greeted set so they can be greeted again if they rejoin
             if (event.userId) {
@@ -117,7 +117,7 @@ class OscAnnouncementService {
         if (this.activeGroupId !== newGroupId) {
             logger.info(`Location changed. Group: ${newGroupId || 'None'} (was ${this.activeGroupId || 'None'})`);
             this.activeGroupId = newGroupId;
-            
+
             // Clean up old state
             this.stopPeriodicTimer();
             this.greetedPlayers.clear();
@@ -151,22 +151,22 @@ class OscAnnouncementService {
                     this.groupNames.set(groupId, result.data.name); // Update local cache
                     logger.info(`Updated active group name from API to: ${this.activeGroupName}`);
                 } else {
-                     this.activeGroupName = 'Group'; // Fallback
+                    this.activeGroupName = 'Group'; // Fallback
                 }
             } catch (e) {
                 logger.warn(`Failed to fetch group name for ${groupId}`, e);
                 this.activeGroupName = 'Group';
             }
         })();
-        
+
         return this.groupNamePromise;
     }
 
     private handlePlayerJoined(event: PlayerJoinedEvent) {
         logger.info(`[handlePlayerJoined] Player: ${event.displayName}, ActiveGroup: ${this.activeGroupId}, isBackfill: ${event.isBackfill}`);
-        
+
         this.currentPlayers.add(event.displayName);
-        
+
         if (!this.activeGroupId) {
             logger.debug(`[handlePlayerJoined] No active group, skipping greeting.`);
             return;
@@ -174,7 +174,7 @@ class OscAnnouncementService {
 
         const config = this.getGroupConfig(this.activeGroupId);
         logger.debug(`[handlePlayerJoined] Config: greetingEnabled=${config?.greetingEnabled}, greetingMessage=${!!config?.greetingMessage}`);
-        
+
         if (!config || !config.greetingEnabled || !config.greetingMessage) {
             logger.debug(`[handlePlayerJoined] Greeting disabled or no message, skipping.`);
             return;
@@ -211,16 +211,16 @@ class OscAnnouncementService {
             while (this.greetingQueue.length > 0) {
                 // Peek at first item
                 const event = this.greetingQueue[0];
-                
+
                 // Wait 5 seconds before processing (throttle)
                 await new Promise(resolve => setTimeout(resolve, 5000));
-                
+
                 // Verify we are still in the group and user is relevant
                 if (!this.activeGroupId) {
                     this.greetingQueue.shift(); // discard
                     continue;
                 }
-                
+
                 // Ensure player is still in the instance (if we are tracking current players)
                 if (!this.currentPlayers.has(event.displayName)) {
                     logger.debug(`Player ${event.displayName} left before greeting, skipping.`);
@@ -229,7 +229,7 @@ class OscAnnouncementService {
                 }
 
                 await this.performGreeting(event);
-                
+
                 // Remove processed item
                 this.greetingQueue.shift();
             }
@@ -242,7 +242,7 @@ class OscAnnouncementService {
 
     private async performGreeting(event: PlayerJoinedEvent) {
         if (!this.activeGroupId) return;
-        
+
         // Wait for group name if pending
         if (this.groupNamePromise) {
             await this.groupNamePromise;
@@ -252,7 +252,7 @@ class OscAnnouncementService {
         if (!currentConfig?.greetingEnabled) return;
 
         let message = currentConfig.greetingMessage;
-        
+
         try {
             const client = vrchatApiService.getClient();
             if (client && event.userId && this.activeGroupId) {
@@ -265,7 +265,7 @@ class OscAnnouncementService {
                         if (representingGroup) message = currentConfig.greetingMessageRep;
                     } catch { /* ignore */ }
                 }
-                
+
                 // 2. Check Membership (only if not already rep)
                 if (message === currentConfig.greetingMessage && currentConfig.greetingMessageMembers) {
                     try {
@@ -287,18 +287,18 @@ class OscAnnouncementService {
 
     private startPeriodicTimer() {
         if (!this.activeGroupId) return;
-        
+
         const config = this.getGroupConfig(this.activeGroupId);
         if (!config || !config.periodicEnabled || !config.periodicMessage || config.periodicIntervalMinutes <= 0) return;
 
         logger.info(`Starting periodic announcement every ${config.periodicIntervalMinutes}m for ${this.activeGroupId}`);
-        
+
         this.periodicTimer = setInterval(async () => {
             if (!this.activeGroupId) {
                 this.stopPeriodicTimer();
                 return;
             }
-            
+
             // Wait for name if still pending (unlikely after 15m but safe)
             if (this.groupNamePromise) {
                 await this.groupNamePromise;
@@ -336,15 +336,15 @@ class OscAnnouncementService {
         logger.info(`Sending OSC announcement: "${SAFE_TEXT}"`);
         oscService.send('/chatbox/input', [SAFE_TEXT, true, false])
             .catch(e => logger.debug('Failed to send OSC announcement', e)); // Message, Instant, No Sound
-        
+
         // Schedule clear if duration is set and > 0
         if (durationSeconds && durationSeconds > 0) {
-             this.clearMessageTimer = setTimeout(() => {
-                 logger.info('Clearing OSC announcement (duration expired)');
-                 oscService.send('/chatbox/input', ["", true, false])
+            this.clearMessageTimer = setTimeout(() => {
+                logger.info('Clearing OSC announcement (duration expired)');
+                oscService.send('/chatbox/input', ["", true, false])
                     .catch(e => logger.debug('Failed to clear OSC announcement', e));
-                 this.clearMessageTimer = null;
-             }, durationSeconds * 1000);
+                this.clearMessageTimer = null;
+            }, durationSeconds * 1000);
         }
     }
 
@@ -358,7 +358,7 @@ class OscAnnouncementService {
         const current = this.getGroupConfig(groupId);
         const updated = { ...current, ...config };
         this.store.set(`announcements.${groupId}`, updated);
-        
+
         // If this is the active group, restart timers
         if (this.activeGroupId === groupId) {
             this.stopPeriodicTimer();
@@ -366,7 +366,7 @@ class OscAnnouncementService {
                 this.startPeriodicTimer();
             }
         }
-        
+
         return updated;
     }
 }

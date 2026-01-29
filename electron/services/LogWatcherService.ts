@@ -12,6 +12,8 @@ import { windowService } from './WindowService';
 import { processService } from './ProcessService';
 // Pure parsing utilities available in LogParserService for testing
 
+import { serviceEventBus } from './ServiceEventBus';
+
 const store = new Store();
 
 
@@ -63,6 +65,7 @@ interface WatcherState {
   currentWorldName: string | null;
   currentLocation: string | null; // Full location string for proper tracking
   players: Map<string, PlayerJoinedEvent>; // keyed by displayName
+  pendingJoins: Map<string, { timer: NodeJS.Timeout; event: PlayerJoinedEvent }>;
 }
 
 // ============================================
@@ -91,7 +94,8 @@ class LogWatcherService extends EventEmitter {
     currentWorldId: null,
     currentWorldName: null,
     currentLocation: null,
-    players: new Map()
+    players: new Map(),
+    pendingJoins: new Map<string, { timer: NodeJS.Timeout; event: PlayerJoinedEvent }>()
   };
 
   /**
@@ -143,7 +147,7 @@ class LogWatcherService extends EventEmitter {
 
     // Reset state for new session
     this.currentFileSize = 0;
-    this.state = { currentWorldId: null, currentWorldName: null, currentLocation: null, players: new Map() };
+    this.state = { currentWorldId: null, currentWorldName: null, currentLocation: null, players: new Map(), pendingJoins: new Map() };
 
     this.findLatestLog();
 
@@ -343,7 +347,7 @@ class LogWatcherService extends EventEmitter {
           log.info(`[LogWatcher] Found new log file: ${latest.name}`);
           this.currentLogPath = latest.path;
           this.currentFileSize = 0;
-          this.state = { currentWorldId: null, currentWorldName: null, currentLocation: null, players: new Map() };
+          this.state = { currentWorldId: null, currentWorldName: null, currentLocation: null, players: new Map(), pendingJoins: new Map() };
         }
       }
     } catch (error) {
@@ -453,8 +457,9 @@ class LogWatcherService extends EventEmitter {
           isBackfill: true // Mark as backfill so we don't spam notifications
         };
         this.state.players.set(p.displayName, event);
+        this.state.pendingJoins.delete(p.displayName); // Clear any pending raw join
         this.emitToRenderer('log:player-joined', event);
-        this.emit('player-joined', event);
+        serviceEventBus.emit('player-joined', event);
         added++;
       }
     }
@@ -628,16 +633,58 @@ class LogWatcherService extends EventEmitter {
 
         displayName = displayName.trim();
 
+        // SANITIZATION: Strip "/ player=" and "(local)"
+        if (displayName.startsWith('/ player=')) {
+          displayName = displayName.substring(9).trim();
+        }
+        if (displayName.endsWith('(local)')) {
+          displayName = displayName.substring(0, displayName.length - 7).trim();
+        }
+
         if (displayName) {
           log.info(`[LogWatcher] MATCH Player Joined: ${displayName} (${userId || 'No ID'})`);
 
           const playerEvent: PlayerJoinedEvent = { displayName, userId, timestamp, isBackfill };
-          this.state.players.set(displayName, playerEvent);
-          this.emitToRenderer('log:player-joined', playerEvent);
-          this.emit('player-joined', playerEvent);
 
-          if (this.state.currentLocation && this.state.currentLocation.includes('~group(')) {
-            discordBroadcastService.updateGroupStatus(this.state.currentWorldName || 'Group Instance', this.state.players.size);
+          // DEDUPLICATION & EMISSION LOGIC
+          // If we already have a detailed join (with userId), just update and emit.
+          // If we have a raw join (no userId), wait 1.5s to see if a detailed one comes.
+
+          if (userId) {
+            // Detailed Join - Clear any pending raw join for this name
+            if (this.state.pendingJoins.has(displayName)) {
+              clearTimeout(this.state.pendingJoins.get(displayName)!.timer);
+              this.state.pendingJoins.delete(displayName);
+            }
+
+            this.state.players.set(displayName, playerEvent);
+            this.emitToRenderer('log:player-joined', playerEvent);
+            serviceEventBus.emit('player-joined', playerEvent);
+
+            if (this.state.currentLocation && this.state.currentLocation.includes('~group(')) {
+              discordBroadcastService.updateGroupStatus(this.state.currentWorldName || 'Group Instance', this.state.players.size);
+            }
+          } else {
+            // Raw Join - Buffer it
+            if (this.state.pendingJoins.has(displayName)) {
+              clearTimeout(this.state.pendingJoins.get(displayName)!.timer);
+            }
+
+            const timer = setTimeout(() => {
+              this.state.pendingJoins.delete(displayName);
+              // If it's still not in the player map, emit it now as a raw join
+              if (!this.state.players.has(displayName)) {
+                this.state.players.set(displayName, playerEvent);
+                this.emitToRenderer('log:player-joined', playerEvent);
+                serviceEventBus.emit('player-joined', playerEvent);
+
+                if (this.state.currentLocation && this.state.currentLocation.includes('~group(')) {
+                  discordBroadcastService.updateGroupStatus(this.state.currentWorldName || 'Group Instance', this.state.players.size);
+                }
+              }
+            }, 1500);
+
+            this.state.pendingJoins.set(displayName, { timer, event: playerEvent });
           }
         }
       }
@@ -666,6 +713,14 @@ class LogWatcherService extends EventEmitter {
 
         displayName = displayName.trim();
 
+        // SANITIZATION: Strip "/ player=" and "(local)"
+        if (displayName.startsWith('/ player=')) {
+          displayName = displayName.substring(9).trim();
+        }
+        if (displayName.endsWith('(local)')) {
+          displayName = displayName.substring(0, displayName.length - 7).trim();
+        }
+
         if (displayName) {
           log.info(`[LogWatcher] MATCH Player Left: ${displayName} (${userId || 'No ID'})`);
 
@@ -674,8 +729,9 @@ class LogWatcherService extends EventEmitter {
             this.state.players.delete(displayName);
             // Prefer the ID from the log, but fallback to known ID from state
             const finalId = userId || entry.userId;
-            this.emitToRenderer('log:player-left', { displayName, userId: finalId, timestamp });
-            this.emit('player-left', { displayName, userId: finalId, timestamp });
+            const leaveEvent = { displayName, userId: finalId, timestamp, isBackfill };
+            this.emitToRenderer('log:player-left', leaveEvent);
+            serviceEventBus.emit('player-left', leaveEvent);
 
             if (this.state.currentLocation && this.state.currentLocation.includes('~group(')) {
               discordBroadcastService.updateGroupStatus(this.state.currentWorldName || 'Group Instance', this.state.players.size);

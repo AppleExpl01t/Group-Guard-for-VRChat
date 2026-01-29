@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import log from 'electron-log';
 import { logWatcherService } from './LogWatcherService';
+import { serviceEventBus } from './ServiceEventBus';
 
 const logger = log.scope('PlayerLogService');
 
@@ -50,8 +51,8 @@ class PlayerLogService {
             }
         });
 
-        // Track player joins
-        logWatcherService.on('player-joined', (event: { displayName: string; userId?: string; timestamp: string; isBackfill?: boolean }) => {
+        // Track player joins via EventBus
+        serviceEventBus.on('player-joined', (event: { displayName: string; userId?: string; timestamp: string; isBackfill?: boolean }) => {
             if (!this.isInitialized) return;
 
             // Skip backfill events during hydration
@@ -75,8 +76,8 @@ class PlayerLogService {
             this.appendEntry(entry);
         });
 
-        // Track player leaves
-        logWatcherService.on('player-left', (event: { displayName: string; userId?: string; timestamp: string; isBackfill?: boolean }) => {
+        // Track player leaves via EventBus
+        serviceEventBus.on('player-left', (event: { displayName: string; userId?: string; timestamp: string; isBackfill?: boolean }) => {
             if (!this.isInitialized) return;
 
             if (event.isBackfill) {

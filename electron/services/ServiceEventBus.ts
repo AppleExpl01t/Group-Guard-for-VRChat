@@ -11,7 +11,9 @@ export type ServiceEventType =
     | 'group-verified'
     | 'friend-update'
     | 'friend-state-changed'
-    | 'social-feed-entry-added';
+    | 'social-feed-entry-added'
+    | 'player-joined'
+    | 'player-left';
 
 export interface ServiceEventPayloads {
     'groups-updated': { groups: { id: string;[key: string]: unknown }[] };
@@ -32,6 +34,18 @@ export interface ServiceEventPayloads {
         };
     };
     'social-feed-entry-added': { entry: any };
+    'player-joined': {
+        displayName: string;
+        userId?: string;
+        timestamp: string;
+        isBackfill?: boolean;
+    };
+    'player-left': {
+        displayName: string;
+        userId?: string;
+        timestamp: string;
+        isBackfill?: boolean;
+    };
 }
 
 class ServiceEventBus extends EventEmitter {

@@ -692,7 +692,16 @@ export interface ElectronAPI {
       };
       error?: string;
     }>;
+    getFriendsList: () => Promise<FriendListItem[]>;
   };
+}
+
+export interface FriendListItem extends FriendLocation {
+  encounterCount: number;
+  timeSpent: number;
+  lastSeen: string;
+  dateKnown: string;
+  friendScore: number;
 }
 
 declare global {
