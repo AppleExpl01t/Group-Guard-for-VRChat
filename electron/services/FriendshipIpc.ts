@@ -26,6 +26,11 @@ export function setupFriendshipHandlers() {
         windowService.broadcast('friendship:update', { type: 'friend-location', friend });
     });
 
+    serviceEventBus.on('friendship-relationship-changed', ({ event }) => {
+        logger.debug(`[ServiceBridge] Relationship changed for ${event.displayName}, broadcasting update`);
+        windowService.broadcast('friendship:update', { type: 'relationship', event });
+    });
+
     // Game Log (Instance History - World Changes)
     ipcMain.handle('friendship:get-game-log', async (_event, limit?: number) => {
         logger.debug(`[IPC] friendship:get-game-log called (limit: ${limit})`);

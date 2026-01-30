@@ -5,6 +5,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('electron', {
     log: (level: string, message: string) => ipcRenderer.send('log', level, message),
     getVersion: () => process.versions.electron,
+    openExternal: (url: string) => ipcRenderer.invoke('app:open-external', url),
 
     // Auth API
     login: (credentials: { username: string; password: string; rememberMe?: boolean }) =>

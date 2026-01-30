@@ -55,6 +55,7 @@ const ToggleButton = ({ enabled, onToggle }: { enabled: boolean; onToggle: () =>
 );
 
 export const LiveView: React.FC = () => {
+    console.log('[LiveView] Rendering...');
     // PERF FIX: Use individual selectors instead of destructuring entire store
     const selectedGroup = useGroupStore(state => state.selectedGroup);
     const isRoamingMode = useGroupStore(state => state.isRoamingMode);
@@ -252,64 +253,65 @@ export const LiveView: React.FC = () => {
     }, [selectedGroup, isRoamingMode, performScan, addLog]);
 
     // Live Event Listeners (Zero Latency)
+    // STABILITY FIX: Use refs for listeners to avoid re-subscribing on every render
+    const handlersRef = React.useRef({ handlePlayerJoined, handlePlayerLeft, updateEntity, addLog });
     useEffect(() => {
+        handlersRef.current = { handlePlayerJoined, handlePlayerLeft, updateEntity, addLog };
+    }, [handlePlayerJoined, handlePlayerLeft, updateEntity, addLog]);
+
+    useEffect(() => {
+        console.log('[LiveView] Main Effect: Mounting Listeners');
+
         // 1. Join Events (LogWatcher)
         const unsubJoin = window.electron.logWatcher.onPlayerJoined((event) => {
-            // Convert to store format
-            handlePlayerJoined({
+            handlersRef.current.handlePlayerJoined({
                 displayName: event.displayName,
                 userId: event.userId,
                 joinTime: new Date(event.timestamp).getTime()
             });
-            // Optional: Log it in the feed if it's new
-            // addLog(`[JOIN] ${event.displayName} (${event.userId || 'Unknown'})`, 'info');
         });
 
         // 2. Leave Events (LogWatcher)
         const unsubLeave = window.electron.logWatcher.onPlayerLeft((event) => {
-            handlePlayerLeft(event.displayName);
-            addLog(`[LEFT] ${event.displayName}`, 'warn');
+            handlersRef.current.handlePlayerLeft(event.displayName);
+            handlersRef.current.addLog(`[LEFT] ${event.displayName}`, 'warn');
         });
 
         // 3. Entity Metadata Updates (Enrichment Service)
         const unsubEntity = window.electron.instance.onEntityUpdate((updatedEntity: LiveEntity) => {
-            updateEntity(updatedEntity);
-            addLog(`[SCAN] Profile Resolved: ${updatedEntity.displayName} (Rank: ${updatedEntity.rank})`, 'info');
+            handlersRef.current.updateEntity(updatedEntity);
+            handlersRef.current.addLog(`[SCAN] Profile Resolved: ${updatedEntity.displayName} (Rank: ${updatedEntity.rank})`, 'info');
         });
 
         // 4. Log Watcher telemetry
         const unsubKick = window.electron.logWatcher.onVoteKick((event) => {
-            addLog(`[VOTE KICK] ${event.initiator} initiated vote kick against ${event.target}`, 'warn');
+            handlersRef.current.addLog(`[VOTE KICK] ${event.initiator} initiated vote kick against ${event.target}`, 'warn');
         });
 
         const unsubVideo = window.electron.logWatcher.onVideoPlay((event) => {
             const shortUrl = event.url.length > 50 ? event.url.substring(0, 47) + '...' : event.url;
-            addLog(`[VIDEO] Now Playing: ${shortUrl} (Req: ${event.requestedBy})`, 'info');
+            handlersRef.current.addLog(`[VIDEO] Now Playing: ${shortUrl} (Req: ${event.requestedBy})`, 'info');
         });
 
         // 5. World/Instance Changes
         const unsubLocation = window.electron.logWatcher.onLocation((event) => {
-            // Update store
             const instId = event.instanceId || '';
             const loc = event.location || `${event.worldId}:${instId}`;
             useInstanceMonitorStore.getState().setInstanceInfo(instId, loc);
             useInstanceMonitorStore.getState().setWorldId(event.worldId);
-
-            // Optionally trigger a fresh scan/fetch for image if needed, 
-            // but LogWatcher typically handles the data flow.
-            // The store clearing happens in setInstanceInfo logic.
-            addLog(`[WORLD] Moved to ${event.worldId}`, 'info');
+            handlersRef.current.addLog(`[WORLD] Moved to ${event.worldId}`, 'info');
         });
 
         const unsubWorldName = window.electron.logWatcher.onWorldName((event) => {
             useInstanceMonitorStore.getState().setWorldName(event.name);
-            addLog(`[WORLD] Entered: ${event.name}`, 'success');
+            handlersRef.current.addLog(`[WORLD] Entered: ${event.name}`, 'success');
         });
 
         // Ensure service is running
         window.electron.logWatcher.start();
 
         return () => {
+            console.log('[LiveView] Main Effect: Cleaning up Listeners');
             unsubJoin();
             unsubLeave();
             unsubEntity();
@@ -318,7 +320,7 @@ export const LiveView: React.FC = () => {
             unsubLocation();
             unsubWorldName();
         };
-    }, [handlePlayerJoined, handlePlayerLeft, updateEntity, addLog]);
+    }, []); // Run once on mount
 
     // Actions
     const handleRecruit = useCallback(async (userId: string, name: string) => {
@@ -1125,10 +1127,10 @@ export const LiveView: React.FC = () => {
                         />
                     )
                 }
-            </AnimatePresence >
+            </AnimatePresence>
 
             {/* AutoMod Alert Overlay */}
-            < AutoModAlertOverlay />
+            <AutoModAlertOverlay />
 
             {/* Add Flag Dialog */}
             <AddFlagDialog
@@ -1138,7 +1140,7 @@ export const LiveView: React.FC = () => {
             />
 
             {/* Operation Start Dialog */}
-            < OperationStartDialog
+            <OperationStartDialog
                 isOpen={operationDialog.isOpen}
                 onClose={() => setOperationDialog(prev => ({ ...prev, isOpen: false }))}
                 onConfirm={(speed) => {

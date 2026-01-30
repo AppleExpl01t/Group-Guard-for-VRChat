@@ -50,6 +50,14 @@ export const FriendsListView: React.FC = () => {
 
     useEffect(() => {
         fetchFriends();
+
+        // Add real-time update listener
+        if (window.electron?.friendship?.onUpdate) {
+            const unsubscribe = window.electron.friendship.onUpdate(() => {
+                fetchFriends();
+            });
+            return () => unsubscribe();
+        }
     }, [fetchFriends]);
 
     const handleRefresh = async () => {

@@ -8,6 +8,7 @@ import { socialFeedService } from './SocialFeedService';
 import { playerLogService } from './PlayerLogService';
 import { relationshipService } from './RelationshipService';
 import { serviceEventBus } from './ServiceEventBus';
+import { vrchatApiService } from './VRChatApiService';
 
 const logger = log.scope('FriendshipService');
 
@@ -20,6 +21,8 @@ class FriendshipService {
     private isInitialized = false;
     private currentUserId: string | null = null;
     private userDataDir: string | null = null;
+    private pollInterval: NodeJS.Timeout | null = null;
+    private POLL_INTERVAL_MS = 60 * 1000; // 1 minute
 
     // Sub-services (Placeholders for Phase 1)
     // private gameLogService: GameLogService;
@@ -110,6 +113,10 @@ class FriendshipService {
         relationshipService.initialize(this.userDataDir);
 
         this.isInitialized = true;
+
+        // Start background polling
+        this.startPolling();
+
         logger.info('FriendshipService initialized successfully.');
     }
 
@@ -130,11 +137,57 @@ class FriendshipService {
         relationshipService.shutdown();
 
         // 2. Clear State
+        this.stopPolling();
         this.currentUserId = null;
         this.userDataDir = null;
         this.isInitialized = false;
 
         logger.info('FriendshipService shutdown complete.');
+    }
+
+    private startPolling() {
+        this.stopPolling();
+
+        // Initial check after a small delay
+        setTimeout(() => this.pollOnlineFriends(), 10000);
+
+        this.pollInterval = setInterval(() => {
+            this.pollOnlineFriends();
+        }, this.POLL_INTERVAL_MS);
+    }
+
+    private stopPolling() {
+        if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+        }
+    }
+
+    private async pollOnlineFriends() {
+        if (!this.isInitialized || !vrchatApiService.isAuthenticated()) return;
+
+        logger.debug('Polling online friends for status updates...');
+        try {
+            const result = await vrchatApiService.getFriends(false);
+            if (result.success && result.data) {
+                for (const friend of result.data) {
+                    locationService.updateFriend({
+                        userId: friend.id,
+                        displayName: friend.displayName,
+                        userIcon: friend.userIcon as string | undefined,
+                        profilePicOverride: friend.profilePicOverride as string | undefined,
+                        currentAvatarThumbnailImageUrl: friend.currentAvatarThumbnailImageUrl as string | undefined,
+                        status: (friend.status as string) || 'active',
+                        location: (friend.location as string) || 'private',
+                        statusDescription: friend.statusDescription as string | undefined,
+                        representedGroup: (friend as any).representedGroup as string | undefined,
+                        // Mark as NOT offline since we polled from 'online' list
+                    });
+                }
+            }
+        } catch (e) {
+            logger.error('Failed to poll online friends:', e);
+        }
     }
 
     /**

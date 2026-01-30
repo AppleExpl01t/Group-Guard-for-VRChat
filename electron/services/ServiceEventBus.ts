@@ -12,6 +12,7 @@ export type ServiceEventType =
     | 'friend-update'
     | 'friend-state-changed'
     | 'social-feed-entry-added'
+    | 'friendship-relationship-changed'
     | 'player-joined'
     | 'player-left';
 
@@ -46,6 +47,7 @@ export interface ServiceEventPayloads {
         timestamp: string;
         isBackfill?: boolean;
     };
+    'friendship-relationship-changed': { event: any };
 }
 
 class ServiceEventBus extends EventEmitter {

@@ -45,6 +45,13 @@ export const SocialView: React.FC = () => {
 
     useEffect(() => {
         fetchEvents();
+
+        if (window.electron?.friendship?.onUpdate) {
+            const unsubscribe = window.electron.friendship.onUpdate(() => {
+                fetchEvents();
+            });
+            return () => unsubscribe();
+        }
     }, [fetchEvents]);
 
     const handleRefresh = async () => {

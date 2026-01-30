@@ -95,6 +95,13 @@ export const GameLogView: React.FC = () => {
 
     useEffect(() => {
         fetchLogs();
+
+        if (window.electron?.friendship?.onUpdate) {
+            const unsubscribe = window.electron.friendship.onUpdate(() => {
+                fetchLogs();
+            });
+            return () => unsubscribe();
+        }
     }, [fetchLogs]);
 
     const handleRefresh = () => {

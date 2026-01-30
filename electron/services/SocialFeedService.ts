@@ -36,6 +36,11 @@ class SocialFeedService {
             if (!this.isInitialized) return;
             this.handleStateChange(payload);
         });
+
+        serviceEventBus.on('friendship-relationship-changed', ({ event }) => {
+            if (!this.isInitialized) return;
+            this.handleRelationshipChange(event);
+        });
     }
 
     public initialize(userDataDir: string) {
@@ -106,6 +111,24 @@ class SocialFeedService {
             };
             this.appendEntry(entry);
         }
+    }
+
+    private handleRelationshipChange(event: any) {
+        const { userId, displayName, type, timestamp } = event;
+        const feedType = type === 'add' ? 'add' : (type === 'remove' ? 'remove' : null);
+
+        if (!feedType) return;
+
+        const entry: SocialFeedEntry = {
+            id: `${timestamp}-${Math.random().toString(36).substr(2, 5)}`,
+            type: feedType as any,
+            userId,
+            displayName,
+            timestamp,
+            details: type === 'add' ? 'Added as friend' : 'Removed from friends',
+            data: event
+        };
+        this.appendEntry(entry);
     }
 
     private appendEntry(entry: SocialFeedEntry) {

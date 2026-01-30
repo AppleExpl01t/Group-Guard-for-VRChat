@@ -323,6 +323,23 @@ ipcMain.handle('window:close', () => {
   mainWindow?.close();
 });
 
+// App External Bridge
+ipcMain.handle('app:open-external', async (_event, url: string) => {
+  const allowedProtocols = ['https:', 'vrchat:'];
+  try {
+    const parsedUrl = new URL(url);
+    if (allowedProtocols.includes(parsedUrl.protocol)) {
+      await shell.openExternal(url);
+      return { success: true };
+    }
+    logger.warn(`Blocked external URL with unauthorized protocol: ${url}`);
+    return { success: false, error: 'Unauthorized protocol' };
+  } catch (error) {
+    logger.error(`Failed to open external URL: ${url}`, error);
+    return { success: false, error: 'Invalid URL' };
+  }
+});
+
 // ========================================
 // APP LIFECYCLE
 // ========================================

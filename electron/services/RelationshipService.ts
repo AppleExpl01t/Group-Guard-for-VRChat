@@ -147,6 +147,10 @@ class RelationshipService {
                     };
                     this.appendEvent(event);
                     logger.info(`New friend detected: ${friend.displayName}`);
+
+                    // Emit to service bus so other services (like SocialFeed) and the UI can react
+                    const { serviceEventBus } = require('./ServiceEventBus');
+                    serviceEventBus.emit('friendship-relationship-changed', { event });
                 }
             }
 
@@ -163,6 +167,10 @@ class RelationshipService {
                     };
                     this.appendEvent(event);
                     logger.info(`Friend removed: ${friend.displayName}`);
+
+                    // Emit to service bus
+                    const { serviceEventBus } = require('./ServiceEventBus');
+                    serviceEventBus.emit('friendship-relationship-changed', { event });
                 }
             }
 

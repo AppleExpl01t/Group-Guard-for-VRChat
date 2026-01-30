@@ -127,7 +127,7 @@ export const useInstanceMonitorStore = create<InstanceMonitorState>((set) => ({
   updateEntity: (entity: LiveEntity) =>
     set((state) => {
       const index = state.liveScanResults.findIndex(e => e.id === entity.id || e.displayName === entity.displayName);
-      if (index === -1) return {}; // Warning: Update for unknown entity?
+      if (index === -1) return state; // Return current state instead of empty object
 
       const newResults = [...state.liveScanResults];
       // Merge updates
@@ -172,7 +172,9 @@ export const useInstanceMonitorStore = create<InstanceMonitorState>((set) => ({
         liveScanResults: []
       };
     }
-    return { currentInstanceId: id, currentLocation: location };
+    // If location string also didn't change, return state
+    if (state.currentLocation === location) return state;
+    return { currentLocation: location };
   }),
 
   setCurrentGroupId: (groupId) => set({ currentGroupId: groupId }),

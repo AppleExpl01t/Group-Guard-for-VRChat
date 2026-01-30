@@ -410,6 +410,7 @@ export interface AppSettings {
 export interface ElectronAPI {
   log: (level: 'info' | 'warn' | 'error', message: string) => void;
   getVersion: () => string;
+  openExternal: (url: string) => Promise<{ success: boolean; error?: string }>;
 
   // Auth API
   login: (credentials: LoginCredentials) => Promise<LoginResult>;

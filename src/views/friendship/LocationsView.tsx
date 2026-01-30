@@ -148,17 +148,13 @@ export const LocationsView: React.FC = () => {
         // Initial fetch - force API refresh to purge offline players on load
         fetchFriends(true);
 
-        // Listen for updates (passive updates from WebSocket)
+        // Listen for updates (passive updates from WebSocket or background poller)
         if (window.electron?.friendship?.onUpdate) {
             const unsubscribe = window.electron.friendship.onUpdate(() => {
                 fetchFriends();
             });
             return () => unsubscribe();
         }
-
-        // Auto-refresh every 15 seconds (active API refresh)
-        const interval = setInterval(() => fetchFriends(true), 15000);
-        return () => clearInterval(interval);
     }, [fetchFriends]);
 
     // Group friends by instance location
