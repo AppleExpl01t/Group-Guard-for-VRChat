@@ -47,6 +47,7 @@ class SocialFeedService {
         this.dbPath = path.join(userDataDir, 'social_feed.jsonl');
         this.isInitialized = true;
         this.lastStatus.clear();
+        this.cleanupLegacyEntries();
         logger.info(`SocialFeedService initialized. DB: ${this.dbPath}`);
     }
 
@@ -81,7 +82,15 @@ class SocialFeedService {
             }
         } else if (change.statusDescription && friend.status !== 'offline') {
             feedType = 'status';
-            details = `Status message: ${friend.statusDescription || 'Cleared'}`;
+            const oldDesc = previous?.statusDescription || '';
+            const newDesc = friend.statusDescription || '';
+
+            // Only log "Cleared" if there was something to clear
+            if (!newDesc && !oldDesc) {
+                return; // Ignore empty -> empty transition
+            }
+
+            details = `Status message: ${newDesc || 'Cleared'}`;
         } else if (change.representedGroup && friend.status !== 'offline') {
             feedType = 'status';
             details = `Now representing: ${friend.representedGroup || 'No Group'}`;
@@ -157,6 +166,39 @@ class SocialFeedService {
         } catch (e) {
             logger.error('Failed to read social feed:', e);
             return [];
+        }
+    }
+
+    private async cleanupLegacyEntries() {
+        if (!this.dbPath || !fs.existsSync(this.dbPath)) return;
+        try {
+            const content = await fs.promises.readFile(this.dbPath, 'utf-8');
+            const lines = content.trim().split('\n');
+            const newLines: string[] = [];
+
+            let removedCount = 0;
+
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const entry = JSON.parse(line) as SocialFeedEntry;
+                    if (entry.details === 'Status message: Cleared') {
+                        removedCount++;
+                        continue;
+                    }
+                    newLines.push(line);
+                } catch {
+                    newLines.push(line);
+                }
+            }
+
+            if (removedCount > 0) {
+                await fs.promises.writeFile(this.dbPath, newLines.join('\n') + '\n');
+                logger.info(`Cleaned up ${removedCount} spam 'Status message: Cleared' entries from social feed.`);
+            }
+
+        } catch (e) {
+            logger.error('Failed to cleanup legacy entries:', e);
         }
     }
 }

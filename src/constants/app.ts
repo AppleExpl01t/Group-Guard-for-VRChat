@@ -60,11 +60,11 @@ export const TRUST_RANK_LABELS: Record<string, string> = {
   known_user: 'Known User',
   trusted_user: 'Trusted User',
   veteran_user: 'Veteran',
-  system_trust_basic: 'User',
-  system_trust_known: 'Known User',
-  system_trust_trusted: 'Trusted User',
-  system_trust_veteran: 'Veteran',
-  system_trust_legend: 'Legendary',
+  system_trust_basic: 'New User',
+  system_trust_known: 'User',
+  system_trust_trusted: 'Known User',
+  system_trust_veteran: 'Trusted User',
+  system_trust_legend: 'Legend',
 };
 
 /**
@@ -73,10 +73,10 @@ export const TRUST_RANK_LABELS: Record<string, string> = {
 export function getTrustRankFromTags(tags: string[] = []): { label: string; color: string } {
   // Priority order for trust rank detection
   const rankPriority = [
-    { tag: 'system_trust_legend', label: 'Legendary', color: '#ffe716' },
-    { tag: 'system_trust_veteran', label: 'Veteran', color: '#8143e6' },
-    { tag: 'system_trust_trusted', label: 'Trusted', color: '#ff7b42' },
-    { tag: 'system_trust_known', label: 'Known', color: '#2bcf5c' },
+    { tag: 'system_trust_legend', label: 'Legend', color: '#ffe716' },
+    { tag: 'system_trust_veteran', label: 'Trusted', color: '#8143e6' },
+    { tag: 'system_trust_trusted', label: 'Known', color: '#ff7b42' },
+    { tag: 'system_trust_known', label: 'User', color: '#2bcf5c' },
     { tag: 'system_trust_basic', label: 'New User', color: '#1778ff' },
   ];
 

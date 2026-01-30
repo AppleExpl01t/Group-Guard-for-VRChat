@@ -20,10 +20,11 @@ const logger = log.scope('EntityEnrichmentService');
 // Trust rank levels in order from lowest to highest
 export const TRUST_RANKS = [
     'Visitor',
-    'User',      // 'New User' / 'Basic' 
-    'Known',
-    'Trusted',
-    'Veteran',
+    'New User',  // Was 'User'
+    'User',      // Was 'Known'
+    'Known',     // Was 'Trusted'
+    'Trusted',   // Was 'Veteran'
+    'Veteran',   // Wait, VRChat is Visitor -> New User -> User -> Known User -> Trusted User.
     'Legend'
 ] as const;
 
@@ -32,11 +33,11 @@ export type TrustRank = typeof TRUST_RANKS[number] | 'Unknown';
 // Tag to rank mapping
 const TRUST_TAG_MAP: Record<string, TrustRank> = {
     'system_trust_visitor': 'Visitor',
-    'system_trust_basic': 'User',
-    'system_trust_known': 'Known',
-    'system_trust_trusted': 'Trusted',
-    'system_trust_veteran': 'Veteran',
-    'system_trust_legend': 'Legend'
+    'system_trust_basic': 'New User',  // Blue
+    'system_trust_known': 'User',      // Green
+    'system_trust_trusted': 'Known',   // Orange
+    'system_trust_veteran': 'Trusted', // Purple
+    'system_trust_legend': 'Legend'   // Gold/Legend
 };
 
 // Ordered tags from highest to lowest (for priority matching)
@@ -127,6 +128,7 @@ export interface LiveEntity {
         encounters: number;
         timeSpent: number;
     };
+    isAgeVerified?: boolean;
 }
 
 // ...
@@ -277,7 +279,8 @@ export async function processFetchQueue(groupId?: string): Promise<void> {
                     avatarUrl: userData?.userIcon || userData?.profilePicOverride || userData?.currentAvatarThumbnailImageUrl || '',
                     lastUpdated: Date.now(),
                     friendStatus: friendDetails.isFriend ? 'friend' : 'none',
-                    friendScore: friendDetails.score
+                    friendScore: friendDetails.score,
+                    isAgeVerified: tags.includes('system_age_verified_group') || (userData as any).ageVerificationStatus === '18+'
                 };
 
                 entityCache.set(cacheKey, entity);

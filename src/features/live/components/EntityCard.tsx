@@ -1,7 +1,7 @@
 import React from 'react';
 import { Users, UserPlus, Gavel, Tag } from 'lucide-react';
 import { NeonButton } from '../../../components/ui/NeonButton';
-import { AppShieldIcon } from '../../../components/ui/AppShieldIcon';
+import { TrustRankBadge, AgeVerifiedBadge } from '../../../components/ui/UserBadges';
 import type { LiveEntity } from '../../../stores/instanceMonitorStore';
 import { useUserProfileStore } from '../../../stores/userProfileStore';
 import styles from '../LiveView.module.css';
@@ -63,16 +63,7 @@ const EntityCardComponent: React.FC<EntityCardProps> = ({
         return `${Math.floor(hours / 24)}d ago`;
     };
 
-    const getRankColor = (rank: string) => {
-        const r = rank.toLowerCase();
-        // VRChat standard colors
-        if (r.includes('trusted') || r.includes('veteran') || r.includes('purple')) return { bg: 'rgba(168, 85, 247, 0.2)', text: '#d8b4fe', border: 'rgba(168, 85, 247, 0.3)' };
-        if (r.includes('known') || r.includes('orange')) return { bg: 'rgba(249, 115, 22, 0.2)', text: '#ffedd5', border: 'rgba(249, 115, 22, 0.3)' };
-        if (r.includes('user') || r.includes('green')) return { bg: 'rgba(34, 197, 94, 0.2)', text: '#dcfce7', border: 'rgba(34, 197, 94, 0.3)' };
-        if (r.includes('new') || r.includes('blue')) return { bg: 'rgba(59, 130, 246, 0.2)', text: '#dbeafe', border: 'rgba(59, 130, 246, 0.3)' };
-        if (r.includes('visitor') || r.includes('gray')) return { bg: 'rgba(156, 163, 175, 0.2)', text: '#f3f4f6', border: 'rgba(156, 163, 175, 0.3)' };
-        return { bg: 'rgba(255, 255, 255, 0.1)', text: '#94a3b8', border: 'rgba(255, 255, 255, 0.15)' };
-    };
+
 
     return (
         <div
@@ -110,34 +101,28 @@ const EntityCardComponent: React.FC<EntityCardProps> = ({
                     >
                         {entity.displayName}
                     </div>
-                    <div className={styles.entityMeta}>
+                    <div className={styles.entityMeta} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                         {!readOnly ? (
-                            <>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
                                 <span style={{
                                     color: entity.isGroupMember ? 'var(--color-primary)' : '#fca5a5',
-                                    fontWeight: 'bold'
+                                    fontWeight: 'bold',
+                                    fontSize: '0.75rem'
                                 }}>
                                     {entity.isGroupMember ? 'MEMBER' : 'NON-MEMBER'}
                                 </span>
-                                <span className={styles.rankBadge} style={{
-                                    backgroundColor: getRankColor(entity.rank).bg,
-                                    color: getRankColor(entity.rank).text,
-                                    border: `1px solid ${getRankColor(entity.rank).border}`
-                                }}>
-                                    {entity.rank}
-                                </span>
                                 {entity.friendStatus === 'friend' && (
                                     <>
-                                        <span>•</span>
-                                        <span style={{ color: '#86efac', fontWeight: 'bold' }}>FRIEND</span>
+                                        <span style={{ margin: '0 4px', opacity: 0.5 }}>•</span>
+                                        <span style={{ color: '#86efac', fontWeight: 'bold', fontSize: '0.75rem' }}>FRIEND</span>
                                         {entity.friendScore && entity.friendScore > 0 && (
-                                            <span style={{ fontSize: '0.8em', opacity: 0.8, marginLeft: '4px' }}>
+                                            <span style={{ fontSize: '0.75rem', opacity: 0.8, marginLeft: '4px' }}>
                                                 ({entity.friendScore})
                                             </span>
                                         )}
                                     </>
                                 )}
-                            </>
+                            </div>
                         ) : (
                             <span style={{ color: 'var(--color-text-dim)' }}>
                                 {((entity as any).leftAt || entity.status === 'left' || entity.status === 'kicked')
@@ -145,6 +130,11 @@ const EntityCardComponent: React.FC<EntityCardProps> = ({
                                     : 'Recently Detected'}
                             </span>
                         )}
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <TrustRankBadge tags={undefined} fallbackRank={entity.rank} />
+                            <AgeVerifiedBadge isVerified={entity.isAgeVerified} />
+                        </div>
                     </div>
                 </div>
             </div>
@@ -206,7 +196,7 @@ const EntityCardComponent: React.FC<EntityCardProps> = ({
                         onClick={(e) => { e.stopPropagation(); onKick(entity.id, entity.displayName); }}
                         title="Kick from Instance"
                     >
-                        <AppShieldIcon size={14} />
+                        <Gavel size={14} />
                     </NeonButton>
                 )}
             </div>
@@ -240,6 +230,7 @@ export const EntityCard = React.memo(EntityCardComponent, (prev, next) => {
         e1.rank === e2.rank &&
         e1.avatarUrl === e2.avatarUrl &&
         e1.friendStatus === e2.friendStatus &&
-        e1.friendScore === e2.friendScore
+        e1.friendScore === e2.friendScore &&
+        e1.isAgeVerified === e2.isAgeVerified
     );
 });

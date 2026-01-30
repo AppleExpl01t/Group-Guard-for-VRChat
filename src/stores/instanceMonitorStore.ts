@@ -21,6 +21,7 @@ export interface LiveEntity {
     encounters: number;
     timeSpent: number;
   };
+  isAgeVerified?: boolean;
 }
 
 export interface InstanceMonitorState {
@@ -169,7 +170,8 @@ export const useInstanceMonitorStore = create<InstanceMonitorState>((set) => ({
         currentWorldId: null,
         currentWorldName: null,
         players: {},
-        liveScanResults: []
+        liveScanResults: [],
+        history: [] // Reset graph history
       };
     }
     // If location string also didn't change, return state
