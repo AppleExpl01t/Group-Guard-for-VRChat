@@ -791,8 +791,10 @@ export const vrchatApiService = {
                 });
 
                 // Use the lower-level data or handle various SDK response formats
-                const chunk = (Array.isArray(response.data) ? response.data :
-                    (response.data && Array.isArray((response.data as any).data) ? (response.data as any).data : [])) as VRCFriend[];
+                const responseData = response.data as Record<string, unknown> | unknown[];
+                const chunk = (Array.isArray(responseData) ? responseData :
+                    (responseData && typeof responseData === 'object' && Array.isArray((responseData as Record<string, unknown>).data) 
+                        ? (responseData as Record<string, unknown>).data : [])) as VRCFriend[];
 
                 if (chunk.length === 0) break;
 

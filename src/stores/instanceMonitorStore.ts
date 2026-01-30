@@ -72,7 +72,7 @@ export const useInstanceMonitorStore = create<InstanceMonitorState>()(
       handlePlayerJoined: (player: LivePlayerInfo) =>
         set((state) => {
           const existingIndex = state.liveScanResults.findIndex(e => e.displayName === player.displayName);
-          let newResults = [...state.liveScanResults];
+          const newResults = [...state.liveScanResults];
 
           if (existingIndex >= 0) {
             newResults[existingIndex] = {
@@ -173,8 +173,24 @@ export const useInstanceMonitorStore = create<InstanceMonitorState>()(
       setInstanceImage: (url) => set({ instanceImageUrl: url }),
       clearInstance: () => set({ players: {}, currentWorldId: null, currentWorldName: null, currentInstanceId: null, currentLocation: null, liveScanResults: [] }),
       updateLiveScan: (newEntities) => set((state) => {
+        const newEntityIds = new Set(newEntities.map(e => e.id));
         const nextMap = new Map<string, LiveEntity>();
-        state.liveScanResults.forEach(e => nextMap.set(e.id, e));
+        
+        // Keep existing entities but mark those NOT in the fresh scan as 'left'
+        state.liveScanResults.forEach(e => {
+          if (newEntityIds.has(e.id)) {
+            // Entity is still present, will be updated below
+            nextMap.set(e.id, e);
+          } else if (e.status === 'active' || e.status === 'joining') {
+            // Entity was active but is now gone - mark as left
+            nextMap.set(e.id, { ...e, status: 'left', lastUpdated: Date.now() });
+          } else {
+            // Entity was already left/kicked, keep as-is
+            nextMap.set(e.id, e);
+          }
+        });
+        
+        // Merge in the fresh scan data (these are definitely active)
         newEntities.forEach(r => nextMap.set(r.id, { ...(nextMap.get(r.id) || {}), ...r, status: 'active' }));
         return { liveScanResults: Array.from(nextMap.values()) };
       }),
