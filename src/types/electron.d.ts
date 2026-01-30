@@ -447,9 +447,9 @@ export interface ElectronAPI {
   getGroupBans: (groupId: string) => Promise<{ success: boolean; bans?: GroupBan[]; error?: string }>;
   getGroupInstances: (groupId: string) => Promise<{ success: boolean; instances?: VRChatInstance[]; error?: string }>;
   getAllActiveInstances: () => Promise<{ success: boolean; instances?: VRChatInstance[]; error?: string }>;
-  onGroupsUpdated: (callback: (data: { groups: any[] }) => void) => () => void;
+  onGroupsUpdated: (callback: (data: { groups: VRChatGroup[] }) => void) => () => void;
   onGroupsCacheReady: (callback: (data: { groupIds: string[] }) => void) => () => void;
-  onGroupVerified: (callback: (data: { group: any }) => void) => () => void;
+  onGroupVerified: (callback: (data: { group: VRChatGroup }) => void) => () => void;
   banUser: (groupId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
   unbanUser: (groupId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
 
@@ -493,6 +493,8 @@ export interface ElectronAPI {
     onGameClosed: (callback: () => void) => () => void;
     onVoteKick: (callback: (event: { target: string; initiator: string; timestamp: string }) => void) => () => void;
     onVideoPlay: (callback: (event: { url: string; requestedBy: string; timestamp: string }) => void) => () => void;
+    onHydrationStart: (callback: (event: { fileName: string }) => void) => () => void;
+    onHydrationComplete: (callback: (event: { lineCount: number }) => void) => () => void;
   };
 
   // Database API for local logging

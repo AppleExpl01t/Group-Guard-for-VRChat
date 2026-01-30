@@ -154,6 +154,16 @@ contextBridge.exposeInMainWorld('electron', {
             ipcRenderer.on('log:video-play', handler);
             return () => ipcRenderer.removeListener('log:video-play', handler);
         },
+        onHydrationStart: (callback: (event: { fileName: string }) => void) => {
+            const handler = (_event: Electron.IpcRendererEvent, data: { fileName: string }) => callback(data);
+            ipcRenderer.on('log:hydration-start', handler);
+            return () => ipcRenderer.removeListener('log:hydration-start', handler);
+        },
+        onHydrationComplete: (callback: (event: { lineCount: number }) => void) => {
+            const handler = (_event: Electron.IpcRendererEvent, data: { lineCount: number }) => callback(data);
+            ipcRenderer.on('log:hydration-complete', handler);
+            return () => ipcRenderer.removeListener('log:hydration-complete', handler);
+        },
     },
 
     database: {

@@ -1,4 +1,3 @@
-
 import { app, BrowserWindow, ipcMain } from 'electron';
 import log from 'electron-log';
 import fs from 'fs';
@@ -8,14 +7,27 @@ import { EventEmitter } from 'events';
 import Store from 'electron-store';
 import { oscService } from './OscService';
 import { discordBroadcastService } from './DiscordBroadcastService';
-import { windowService } from './WindowService';
 import { processService } from './ProcessService';
-// Pure parsing utilities available in LogParserService for testing
-
 import { serviceEventBus } from './ServiceEventBus';
 
+const fsPromises = fs.promises;
 const store = new Store();
 
+// ============================================
+// CONSTANTS & REGEX (Performance Optimization)
+// ============================================
+
+// Regex Definitions - Compiled once
+const RE_JOINING = /(?:Joining|Entering)\s+(wrld_[a-zA-Z0-9-]+):([^\s]+)/;
+const RE_ENTERING = /Entering Room:\s+(.+)/;
+const RE_AVATAR = /\[Avatar\] Loading Avatar:\s+(avtr_[a-f0-9-]{36})/;
+const RE_VOTE_KICK = /A vote kick has been initiated against\s+(.+)\s+by\s+(.+?),\s+do you agree\?/;
+const RE_VIDEO = /Started video load for URL:\s+(.+?)(?:,\s+requested by\s+(.+))?$/;
+const RE_NOTIFY = /Received Notification: <Notification from username:(.+?), sender user id:(usr_[a-f0-9-]{36}).+?type:\s*([a-zA-Z]+), id:\s*(not_[a-f0-9-]{36}),.+?message:\s*"(.+?)"/;
+const RE_NOTIFY_RECEIVER = /to\s+(usr_[a-f0-9-]{36})/;
+const RE_SWITCH_AVATAR = /\[Behaviour\] Switching\s+(.+?)\s+to avatar\s+(.+)/;
+const RE_PLAYER_JOINED = /OnPlayerJoined\s+(?:\[[^\]]+\]\s*)?/;
+const RE_PLAYER_LEFT = /OnPlayerLeft\s+/;
 
 // ============================================
 // TYPES
@@ -149,7 +161,7 @@ class LogWatcherService extends EventEmitter {
     this.currentFileSize = 0;
     this.state = { currentWorldId: null, currentWorldName: null, currentLocation: null, players: new Map(), pendingJoins: new Map() };
 
-    this.findLatestLog();
+    await this.findLatestLog();
 
     // SMART SYNC: Fetch current location from API
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -222,9 +234,6 @@ class LogWatcherService extends EventEmitter {
     }, 1000);
 
     const checkActivity = async () => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { checkOnlineStatus } = require('./AuthService');
-
       // SEEK TIMEOUT CHECK (CRITICAL for reliability)
       if (this.seekingInstanceId) {
         if (Date.now() - this.seekingStartTime > 12000) {
@@ -321,28 +330,35 @@ class LogWatcherService extends EventEmitter {
     return path.join(localLow, 'VRChat', 'VRChat');
   }
 
-  private findLatestLog() {
+  private async findLatestLog() {
     try {
       const logDir = this.getLogDirectory();
-      if (!fs.existsSync(logDir)) {
+      try {
+        await fsPromises.access(logDir);
+      } catch {
         log.warn(`[LogWatcher] VRChat log directory not found: ${logDir}`);
         return;
       }
 
-      const files = fs.readdirSync(logDir)
-        .filter(f => f.startsWith('output_log_') && f.endsWith('.txt'))
-        .map(f => {
-          const fullPath = path.join(logDir, f);
-          return {
+      const files = await fsPromises.readdir(logDir);
+      const logFiles = files.filter(f => f.startsWith('output_log_') && f.endsWith('.txt'));
+      
+      if (logFiles.length === 0) return;
+
+      const fileStats = await Promise.all(logFiles.map(async f => {
+         const fullPath = path.join(logDir, f);
+         const stat = await fsPromises.stat(fullPath);
+         return {
             name: f,
             path: fullPath,
-            stat: fs.statSync(fullPath)
-          };
-        })
-        .sort((a, b) => b.stat.mtime.getTime() - a.stat.mtime.getTime());
+            stat
+         };
+      }));
 
-      if (files.length > 0) {
-        const latest = files[0];
+      const sorted = fileStats.sort((a, b) => b.stat.mtime.getTime() - a.stat.mtime.getTime());
+
+      if (sorted.length > 0) {
+        const latest = sorted[0];
         if (latest.path !== this.currentLogPath) {
           log.info(`[LogWatcher] Found new log file: ${latest.name}`);
           this.currentLogPath = latest.path;
@@ -363,9 +379,13 @@ class LogWatcherService extends EventEmitter {
     if (!this.currentLogPath || this.isProcessing) return;
 
     try {
-      if (!fs.existsSync(this.currentLogPath)) return;
+      try {
+          await fsPromises.access(this.currentLogPath);
+      } catch {
+          return;
+      }
 
-      const stat = fs.statSync(this.currentLogPath);
+      const stat = await fsPromises.stat(this.currentLogPath);
       if (stat.size > this.currentFileSize) {
         this.isProcessing = true;
 
@@ -374,6 +394,7 @@ class LogWatcherService extends EventEmitter {
         if (isInitialRead) {
           this.isHydrating = true;
           log.info(`[LogWatcher] Initial hydration started for ${path.basename(this.currentLogPath)} (${(stat.size / 1024 / 1024).toFixed(2)} MB)`);
+          this.emitToRenderer('log:hydration-start', { fileName: path.basename(this.currentLogPath) });
         }
 
         const stream = fs.createReadStream(this.currentLogPath, {
@@ -406,6 +427,7 @@ class LogWatcherService extends EventEmitter {
           log.info(`[LogWatcher] Initial hydration complete. Processed ${lineCount} lines.`);
           // Sync final state to all windows
           BrowserWindow.getAllWindows().forEach(win => this.emitStateToWindow(win));
+          this.emitToRenderer('log:hydration-complete', { lineCount });
         }
       }
     } catch (err) {
@@ -476,20 +498,12 @@ class LogWatcherService extends EventEmitter {
   private parseLine(line: string) {
     if (!line || !line.trim()) return;
 
-    // Regex Definitions
-    const reJoining = /(?:Joining|Entering)\s+(wrld_[a-zA-Z0-9-]+):([^\s]+)/;
-
-    const reEntering = /Entering Room:\s+(.+)/;
-    const reAvatar = /\[Avatar\] Loading Avatar:\s+(avtr_[a-f0-9-]{36})/;
-    const reVoteKick = /A vote kick has been initiated against\s+(.+)\s+by\s+(.+?),\s+do you agree\?/;
-    const reVideo = /Started video load for URL:\s+(.+?)(?:,\s+requested by\s+(.+))?$/;
-
     // SMART SYNC FILTER
     if (this.seekingInstanceId) {
       const getBaseId = (id: string) => id.split('~')[0];
       const targetBase = getBaseId(this.seekingInstanceId as string);
 
-      const match = line.match(reJoining);
+      const match = line.match(RE_JOINING);
 
       if (match) {
         const logId = `${match[1]}:${match[2]}`;
@@ -552,7 +566,7 @@ class LogWatcherService extends EventEmitter {
     }
 
     // 1. World Location
-    const joinMatch = line.match(reJoining);
+    const joinMatch = line.match(RE_JOINING);
     if (joinMatch) {
       const worldId = joinMatch[1];
       const fullInstanceString = joinMatch[2];
@@ -593,14 +607,14 @@ class LogWatcherService extends EventEmitter {
     }
 
     // 2. Avatar
-    const avatarMatch = line.match(reAvatar);
+    const avatarMatch = line.match(RE_AVATAR);
     if (avatarMatch) {
       this.emitToRenderer('log:avatar', { avatarId: avatarMatch[1], timestamp });
       this.emit('avatar', { avatarId: avatarMatch[1], timestamp });
     }
 
     // 3. Entering Room (Name)
-    const enterMatch = line.match(reEntering);
+    const enterMatch = line.match(RE_ENTERING);
     if (enterMatch) {
       const worldName = enterMatch[1].trim();
       this.state.currentWorldName = worldName;
@@ -613,8 +627,7 @@ class LogWatcherService extends EventEmitter {
 
     // 4. Player Joined
     if (line.includes('OnPlayerJoined')) {
-      const rePrefix = /OnPlayerJoined\s+(?:\[[^\]]+\]\s*)?/;
-      const match = line.match(rePrefix);
+      const match = line.match(RE_PLAYER_JOINED);
       if (match) {
         // Extract everything after the prefix
         const restOfLine = line.substring(match.index! + match[0].length);
@@ -664,7 +677,9 @@ class LogWatcherService extends EventEmitter {
             }
 
             this.state.players.set(displayName, playerEvent);
-            this.emitToRenderer('log:player-joined', playerEvent);
+            if (!this.isHydrating) {
+              this.emitToRenderer('log:player-joined', playerEvent);
+            }
             serviceEventBus.emit('player-joined', playerEvent);
 
             if (this.state.currentLocation && this.state.currentLocation.includes('~group(')) {
@@ -681,7 +696,9 @@ class LogWatcherService extends EventEmitter {
               // If it's still not in the player map, emit it now as a raw join
               if (!this.state.players.has(displayName)) {
                 this.state.players.set(displayName, playerEvent);
-                this.emitToRenderer('log:player-joined', playerEvent);
+                if (!this.isHydrating) {
+                  this.emitToRenderer('log:player-joined', playerEvent);
+                }
                 serviceEventBus.emit('player-joined', playerEvent);
 
                 if (this.state.currentLocation && this.state.currentLocation.includes('~group(')) {
@@ -698,8 +715,7 @@ class LogWatcherService extends EventEmitter {
 
     // 5. Player Left
     if (line.includes('OnPlayerLeft')) {
-      const rePrefix = /OnPlayerLeft\s+/;
-      const match = line.match(rePrefix);
+      const match = line.match(RE_PLAYER_LEFT);
       if (match) {
         // Extract everything after the prefix (name + optional ID)
         const restOfLine = line.substring(match.index! + match[0].length);
@@ -741,7 +757,9 @@ class LogWatcherService extends EventEmitter {
             // Prefer the ID from the log, but fallback to known ID from state
             const finalId = userId || entry.userId;
             const leaveEvent = { displayName, userId: finalId, timestamp, isBackfill };
-            this.emitToRenderer('log:player-left', leaveEvent);
+            if (!this.isHydrating) {
+              this.emitToRenderer('log:player-left', leaveEvent);
+            }
             serviceEventBus.emit('player-left', leaveEvent);
 
             if (this.state.currentLocation && this.state.currentLocation.includes('~group(')) {
@@ -753,7 +771,7 @@ class LogWatcherService extends EventEmitter {
     }
 
     // 6. Vote Kick
-    const voteMatch = line.match(reVoteKick);
+    const voteMatch = line.match(RE_VOTE_KICK);
     if (voteMatch) {
       const event: VoteKickEvent = { target: voteMatch[1].trim(), initiator: voteMatch[2].trim(), timestamp, isBackfill };
       this.emitToRenderer('log:vote-kick', event);
@@ -761,7 +779,7 @@ class LogWatcherService extends EventEmitter {
     }
 
     // 7. Video Play
-    const videoMatch = line.match(reVideo);
+    const videoMatch = line.match(RE_VIDEO);
     if (videoMatch) {
       const event: VideoPlayEvent = { url: videoMatch[1].trim(), requestedBy: videoMatch[2] ? videoMatch[2].trim() : 'Unknown', timestamp, isBackfill };
       this.emitToRenderer('log:video-play', event);
@@ -771,10 +789,9 @@ class LogWatcherService extends EventEmitter {
     // 8. Notifications
     // Pattern: Received Notification: <Notification from username:(.+?), sender user id:(usr_[a-f0-9-]{36}) .+? type: ([a-zA-Z]+), id: (not_[a-f0-9-]{36}), .+? message: "(.+?)"
     if (line.includes('Received Notification:')) {
-      const reNotify = /Received Notification: <Notification from username:(.+?), sender user id:(usr_[a-f0-9-]{36}).+?type:\s*([a-zA-Z]+), id:\s*(not_[a-f0-9-]{36}),.+?message:\s*"(.+?)"/;
-      const match = line.match(reNotify);
+      const match = line.match(RE_NOTIFY);
       if (match) {
-        const receiverMatch = line.match(/to\s+(usr_[a-f0-9-]{36})/); // sometimes "to usr_..." is present
+        const receiverMatch = line.match(RE_NOTIFY_RECEIVER); // sometimes "to usr_..." is present
         const event = {
           senderUsername: match[1],
           senderUserId: match[2],
@@ -793,59 +810,48 @@ class LogWatcherService extends EventEmitter {
     // 9. Avatar Loading/Switching (Behavior)
     // Pattern: [Behaviour] Switching (.+) to avatar (.+)
     if (line.includes('[Behaviour] Switching')) {
-      const reSwitch = /\[Behaviour\] Switching\s+(.+?)\s+to avatar\s+(.+)/;
-      const match = line.match(reSwitch);
+      const match = line.match(RE_SWITCH_AVATAR);
       if (match) {
         const event = {
           displayName: match[1],
-          avatarName: match[2],
+          avatarId: match[2],
           timestamp,
           isBackfill
         };
-        this.emitToRenderer('log:avatar-switch', event);
-        this.emit('avatar-switch', event);
-      }
-    }
+        this.emitToRenderer('log:switch-avatar', event);
+        this.emit('switch-avatar', event);
 
-    // 10. Sticker Spawn
-    // Pattern: [StickersManager] User (usr_...) (...) spawned sticker (inv_...)
-    if (line.includes('[StickersManager] User')) {
-      const reSticker = /\[StickersManager\] User\s+(usr_[a-f0-9-]{36})\s+\((.+?)\)\s+spawned sticker\s+(inv_[a-f0-9-]{36})/;
-      const match = line.match(reSticker);
-      if (match) {
-        const event = {
-          userId: match[1],
-          displayName: match[2],
-          stickerId: match[3],
-          timestamp,
-          isBackfill
-        };
-        this.emitToRenderer('log:sticker-spawn', event);
-        this.emit('sticker-spawn', event);
+        // Update player model if present
+        if (this.state.players.has(event.displayName)) {
+          // logic update if needed
+        }
       }
     }
   }
 
+  // Purely for testability
   private emitToRenderer(channel: string, data: unknown) {
-    if (this.isHydrating) return;
-    windowService.broadcast(channel, data);
+    try {
+      import('electron').then(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows().forEach(win => {
+          if (!win.isDestroyed()) {
+            win.webContents.send(channel, data);
+          }
+        });
+      });
+    } catch { /* ignore */ }
   }
 }
 
 export const logWatcherService = new LogWatcherService();
 
-/**
- * Sets up IPC handlers for the log watcher service
- */
 export function setupLogWatcherHandlers() {
-  ipcMain.handle('log-watcher:start', async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    logWatcherService.start(win || undefined);
-    return { success: true };
+  ipcMain.handle('log-watcher:start', () => {
+    logWatcherService.start();
   });
 
   ipcMain.handle('log-watcher:stop', () => {
     logWatcherService.stop();
-    return { success: true };
   });
 }
+

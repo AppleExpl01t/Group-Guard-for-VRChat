@@ -32,6 +32,7 @@ export interface InstanceMonitorState {
   currentLocation: string | null; // worldId:instanceId
   currentGroupId: string | null;
   instanceImageUrl: string | null;
+  isHydrating: boolean; // True during initial log hydration
   players: Record<string, LivePlayerInfo>; // Keyed by displayName
   liveScanResults: LiveEntity[]; // Persisted scan results with history
   history: { timestamp: number; count: number }[]; // Player count history
@@ -52,6 +53,7 @@ export interface InstanceMonitorState {
   clearLiveScan: () => void;
   setCurrentGroupId: (groupId: string | null) => void;
   setEntityStatus: (id: string, status: LiveEntity['status']) => void;
+  setHydrating: (isHydrating: boolean) => void;
 }
 
 
@@ -64,6 +66,7 @@ export const useInstanceMonitorStore = create<InstanceMonitorState>()(
       currentLocation: null,
       currentGroupId: null,
       instanceImageUrl: null,
+      isHydrating: false,
       players: {},
       liveScanResults: [],
       history: [],
@@ -72,7 +75,7 @@ export const useInstanceMonitorStore = create<InstanceMonitorState>()(
       handlePlayerJoined: (player: LivePlayerInfo) =>
         set((state) => {
           const existingIndex = state.liveScanResults.findIndex(e => e.displayName === player.displayName);
-          let newResults = [...state.liveScanResults];
+          const newResults = [...state.liveScanResults];
 
           if (existingIndex >= 0) {
             newResults[existingIndex] = {
@@ -181,7 +184,8 @@ export const useInstanceMonitorStore = create<InstanceMonitorState>()(
       clearLiveScan: () => set({ liveScanResults: [] }),
       setEntityStatus: (id, status) => set((state) => ({
         liveScanResults: state.liveScanResults.map(e => e.id === id ? { ...e, status } : e)
-      }))
+      })),
+      setHydrating: (isHydrating) => set({ isHydrating }),
     }),
     {
       name: 'instance-monitor-storage', // unique name

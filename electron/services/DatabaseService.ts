@@ -90,7 +90,7 @@ class DatabaseService {
             try {
                 await this.prisma.$executeRaw`ALTER TABLE ScannedUser ADD COLUMN flags TEXT`;
                 logger.info('Applied auto-migration: Added flags column to ScannedUser');
-            } catch (e) {
+            } catch {
                 // Ignore if column already exists
             }
 
@@ -171,13 +171,12 @@ class DatabaseService {
         });
     }
 
+
     public async createAutoModLog(data: {
         timestamp: Date, user: string, userId: string, groupId: string,
         action: string, reason: string, module: string, details?: string
     }) {
-        // Cast to any to avoid TS error until client is regenerated
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return (this.getClient() as any).autoModLog.create({
+        return this.getClient().autoModLog.create({
             data: {
                 ...data,
                 id: crypto.randomUUID() // Ensure we generate ID if prisma middleware doesn't
@@ -186,16 +185,14 @@ class DatabaseService {
     }
 
     public async getAutoModLogs(groupId?: string) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return (this.getClient() as any).autoModLog.findMany({
+        return this.getClient().autoModLog.findMany({
             where: groupId ? { groupId } : undefined,
             orderBy: { timestamp: 'desc' }
         });
     }
 
     public async clearAutoModLogs() {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return (this.getClient() as any).autoModLog.deleteMany({});
+        return this.getClient().autoModLog.deleteMany({});
     }
 
     public async getSessions(groupIdFilter?: string) {
@@ -235,33 +232,32 @@ class DatabaseService {
         flags?: string[]; // Add flags support
     }) {
         try {
-            // Check if user exists
-            const existing = await this.getClient().$queryRaw`
-              SELECT id, timesEncountered FROM ScannedUser WHERE id = ${user.id}
-          ` as { id: string; timesEncountered: number }[];
-
-            const flagsJson = user.flags ? JSON.stringify(user.flags) : null;
-
-            if (existing.length > 0) {
-                // Update existing user
-                await this.getClient().$executeRaw`
-                  UPDATE ScannedUser 
-                  SET displayName = ${user.displayName},
-                      rank = ${user.rank || null},
-                      thumbnailUrl = ${user.thumbnailUrl || null},
-                      groupId = ${user.groupId || null},
-                      lastSeenAt = ${new Date().toISOString()},
-                      timesEncountered = ${existing[0].timesEncountered + 1},
-                      flags = COALESCE(${flagsJson}, flags)
-                  WHERE id = ${user.id}
-              `;
-            } else {
-                // Insert new user
-                await this.getClient().$executeRaw`
-                  INSERT INTO ScannedUser (id, displayName, rank, thumbnailUrl, groupId, firstSeenAt, lastSeenAt, timesEncountered, flags)
-                  VALUES (${user.id}, ${user.displayName}, ${user.rank || null}, ${user.thumbnailUrl || null}, ${user.groupId || null}, ${new Date().toISOString()}, ${new Date().toISOString()}, 1, ${flagsJson})
-              `;
-            }
+            const flagsJson = user.flags ? JSON.stringify(user.flags) : undefined;
+            
+            await this.getClient().scannedUser.upsert({
+                where: { id: user.id },
+                update: {
+                    displayName: user.displayName,
+                    rank: user.rank,
+                    thumbnailUrl: user.thumbnailUrl,
+                    groupId: user.groupId,
+                    lastSeenAt: new Date(),
+                    timesEncountered: { increment: 1 },
+                    // Only update flags if provided, otherwise keep existing
+                    ...(flagsJson ? { flags: flagsJson } : {}) 
+                },
+                create: {
+                    id: user.id,
+                    displayName: user.displayName,
+                    rank: user.rank,
+                    thumbnailUrl: user.thumbnailUrl,
+                    groupId: user.groupId,
+                    firstSeenAt: new Date(),
+                    lastSeenAt: new Date(),
+                    timesEncountered: 1,
+                    flags: flagsJson
+                }
+            });
             return true;
         } catch (error) {
             logger.error('Failed to upsert scanned user:', error);

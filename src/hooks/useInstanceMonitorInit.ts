@@ -15,6 +15,7 @@ export function useInstanceMonitorInit(isAuthenticated: boolean) {
   const clearInstance = useInstanceMonitorStore(state => state.clearInstance);
   const clearLiveScan = useInstanceMonitorStore(state => state.clearLiveScan);
   const setCurrentGroupId = useInstanceMonitorStore(state => state.setCurrentGroupId);
+  const setHydrating = useInstanceMonitorStore(state => state.setHydrating);
 
   const { isRoamingMode, exitRoamingMode } = useGroupStore();
 
@@ -39,6 +40,15 @@ export function useInstanceMonitorInit(isAuthenticated: boolean) {
       .catch((err) => {
         console.error("Failed to get current group:", err);
       });
+
+    // Hydration event listeners
+    const cleanupHydrationStart = window.electron.logWatcher.onHydrationStart(() => {
+      setHydrating(true);
+    });
+
+    const cleanupHydrationComplete = window.electron.logWatcher.onHydrationComplete(() => {
+      setHydrating(false);
+    });
 
     // Setup event listeners
     const cleanupJoined = window.electron.logWatcher.onPlayerJoined((event) => {
@@ -116,6 +126,8 @@ export function useInstanceMonitorInit(isAuthenticated: boolean) {
     window.electron.logWatcher.start();
 
     return () => {
+      cleanupHydrationStart();
+      cleanupHydrationComplete();
       cleanupJoined();
       cleanupLeft();
       cleanupLocation();
@@ -134,6 +146,7 @@ export function useInstanceMonitorInit(isAuthenticated: boolean) {
     setInstanceInfo,
     setInstanceImage,
     setCurrentGroupId,
+    setHydrating,
     clearLiveScan,
     exitRoamingMode,
   ]);
