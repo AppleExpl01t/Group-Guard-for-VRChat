@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import log from 'electron-log';
 import { gameLogService } from './GameLogService';
-import { locationService } from './LocationService';
+import { locationService, FriendLocation } from './LocationService';
 import { socialFeedService } from './SocialFeedService';
 import { playerLogService } from './PlayerLogService';
 import { relationshipService } from './RelationshipService';
@@ -33,6 +33,37 @@ class FriendshipService {
     }
 
     private setupEventListeners() {
+        // Listen for Relationship Changes (New Friends, Removed Friends, Name Changes)
+        serviceEventBus.on('friendship-relationship-changed', ({ event }) => {
+            if (!this.isInitialized) return;
+
+            if (event.type === 'add') {
+                logger.info(`New friend added: ${event.displayName} (${event.userId}). Priming location cache.`);
+                locationService.updateFriend({
+                    userId: event.userId,
+                    displayName: event.displayName,
+                    status: 'offline',
+                    location: 'offline',
+                    userIcon: event.avatarUrl
+                });
+            } else if (event.type === 'remove') {
+                logger.info(`Friend removed: ${event.displayName} (${event.userId}). Removing from location cache.`);
+                locationService.removeFriend(event.userId);
+            } else if (event.type === 'name_change') {
+                logger.info(`Friend name change: ${event.previousName} -> ${event.displayName}. Updating cache.`);
+                locationService.updateFriend({
+                    userId: event.userId,
+                    displayName: event.displayName
+                });
+            } else if (event.type === 'avatar_change') {
+                logger.info(`Friend avatar change detected: ${event.displayName}. Updating cache.`);
+                locationService.updateFriend({
+                    userId: event.userId,
+                    currentAvatarThumbnailImageUrl: event.avatarUrl
+                });
+            }
+        });
+
         // Listen for Friend Updates via ServiceEventBus (from Pipeline)
         serviceEventBus.on('friend-update', (payload) => {
             if (!this.isInitialized) return;
@@ -120,6 +151,9 @@ class FriendshipService {
                 socialFeedService.initialize(this.userDataDir);
                 playerLogService.initialize(this.userDataDir);
                 relationshipService.initialize(this.userDataDir);
+                // eslint-disable-next-line @typescript-eslint/no-require-imports
+                const { timeTrackingService } = require('./TimeTrackingService');
+                timeTrackingService.initialize(this.userDataDir);
 
                 this.isInitialized = true;
 
@@ -152,6 +186,9 @@ class FriendshipService {
         socialFeedService.shutdown();
         playerLogService.shutdown();
         relationshipService.shutdown();
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { timeTrackingService } = require('./TimeTrackingService');
+        timeTrackingService.shutdown();
 
         // 2. Clear State
         this.stopPolling();
@@ -165,8 +202,11 @@ class FriendshipService {
     private startPolling() {
         this.stopPolling();
 
-        // Initial check after a small delay
-        setTimeout(() => this.pollOnlineFriends(), 10000);
+        // Initial checks after a small delay
+        setTimeout(() => {
+            this.pollFullFriendsList(); // Full sync (online + offline) on startup
+            this.pollOnlineFriends(); // online-only poller
+        }, 10000);
 
         this.pollInterval = setInterval(() => {
             this.pollOnlineFriends();
@@ -220,6 +260,40 @@ class FriendshipService {
         return this.userDataDir;
     }
 
+    private async pollFullFriendsList() {
+        if (!this.isInitialized || !vrchatApiService.isAuthenticated()) return;
+
+        logger.info('Performing full friends sync (online + offline)...');
+        try {
+            const [onlineResult, offlineResult] = await Promise.all([
+                vrchatApiService.getFriends(false),
+                vrchatApiService.getFriends(true)
+            ]);
+
+            if (onlineResult.success && offlineResult.success) {
+                const allApiFriends = [...(onlineResult.data || []), ...(offlineResult.data || [])];
+                const apiFriends: FriendLocation[] = allApiFriends.map(f => ({
+                    userId: f.id,
+                    displayName: f.displayName,
+                    status: f.status || 'offline',
+                    location: f.location || 'offline',
+                    lastUpdated: new Date().toISOString(),
+                    userIcon: f.userIcon as string,
+                    profilePicOverride: f.profilePicOverride as string,
+                    currentAvatarThumbnailImageUrl: f.currentAvatarThumbnailImageUrl as string,
+                    statusDescription: f.statusDescription as string,
+                    representedGroup: (f as any).representedGroup as string,
+                    currentAvatarId: (f as any).currentAvatarRequestId || (f as any).currentAvatarId as string
+                }));
+
+                locationService.setFriends(apiFriends);
+                logger.info(`Full friends sync complete. ${apiFriends.length} friends updated.`);
+            }
+        } catch (e) {
+            logger.error('Failed to perform full friends sync:', e);
+        }
+    }
+
     /**
      * Aggregates data from multiple services to provide a comprehensive friend list with stats.
      */
@@ -235,22 +309,13 @@ class FriendshipService {
         const { timeTrackingService } = require('./TimeTrackingService');
         const bulkStats = await timeTrackingService.getBulkFriendStats(userIds);
 
-        // Keep relationship events for "Date Known" logic (still useful from logs? or DB relation?)
-        // For now, keep using RelationshipService events as they track "Added Friend" date accurately
-        const relationshipEvents = await relationshipService.getRecentEvents(2000);
-        const firstAddedMap = new Map<string, string>();
-
-        [...relationshipEvents].reverse().forEach(event => {
-            if (event.type === 'add' && !firstAddedMap.has(event.userId)) {
-                firstAddedMap.set(event.userId, event.timestamp);
-            }
-        });
-
         const now = new Date();
 
         return friends.map((friend: any) => {
-            const stats = bulkStats.get(friend.userId) || { encounterCount: 0, timeSpent: 0, lastSeen: '' };
-            const dateKnown = firstAddedMap.get(friend.userId) || '';
+            const stats = bulkStats.get(friend.userId) || { encounterCount: 0, timeSpent: 0, lastSeen: '', friendSince: null };
+
+            // Use the optimized "friendSince" from DB, fall back to empty string for UI compatibility
+            const dateKnown = stats.friendSince ? stats.friendSince.toISOString() : '';
 
             // Calculate Friend Score (0-100 Normalization)
             // 1. Time Factor (Max 40 pts) - Goal: 100 Hours (6000 mins)

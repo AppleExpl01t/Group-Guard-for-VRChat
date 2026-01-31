@@ -27,7 +27,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     onClose,
     openUserProfile,
     openWorldProfile,
-    openGroupProfile
+    openGroupProfile,
+    openAvatarProfile
 }) => {
     if (!profile) return null;
 
@@ -37,6 +38,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             onClose={onClose}
             openWorldProfile={openWorldProfile}
             openGroupProfile={openGroupProfile}
+            openAvatarProfile={openAvatarProfile}
         />;
     }
 

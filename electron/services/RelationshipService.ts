@@ -8,11 +8,12 @@ const logger = log.scope('RelationshipService');
 export interface RelationshipEvent {
     id: string;
     timestamp: string;
-    type: 'add' | 'remove' | 'name_change';
+    type: 'add' | 'remove' | 'name_change' | 'avatar_change';
     userId: string;
     displayName: string;
     previousName?: string; // For name changes
     avatarUrl?: string;
+    previousAvatarUrl?: string; // For avatar changes
 }
 
 interface FriendSnapshot {
@@ -151,6 +152,14 @@ class RelationshipService {
                     // Emit to service bus so other services (like SocialFeed) and the UI can react
                     const { serviceEventBus } = require('./ServiceEventBus');
                     serviceEventBus.emit('friendship-relationship-changed', { event });
+
+                    // PERSISTENCE: Save "Friend Since" date to Authoritative Database
+                    try {
+                        const { timeTrackingService } = require('./TimeTrackingService');
+                        timeTrackingService.updateFriendSince(friend.userId, now);
+                    } catch (e) {
+                        logger.error('Failed to update friendSince in DB:', e);
+                    }
                 }
             }
 
@@ -189,6 +198,25 @@ class RelationshipService {
                     };
                     this.appendEvent(event);
                     logger.info(`Name change detected: ${previous.displayName} → ${current.displayName}`);
+                }
+
+                // Check for AVATAR CHANGES (same userId, different avatarUrl)
+                if (previous && previous.avatarUrl !== current.avatarUrl) {
+                    const event: RelationshipEvent = {
+                        id: `${now}-${Math.random().toString(36).substr(2, 5)}`,
+                        timestamp: now,
+                        type: 'avatar_change',
+                        userId: current.userId,
+                        displayName: current.displayName,
+                        avatarUrl: current.avatarUrl,
+                        previousAvatarUrl: previous.avatarUrl
+                    };
+                    this.appendEvent(event);
+                    logger.info(`Avatar change detected in background for: ${current.displayName}`);
+
+                    // Emit to service bus
+                    const { serviceEventBus } = require('./ServiceEventBus');
+                    serviceEventBus.emit('friendship-relationship-changed', { event });
                 }
             }
 

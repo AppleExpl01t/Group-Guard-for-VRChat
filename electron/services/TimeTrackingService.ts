@@ -2,6 +2,8 @@ import { databaseService } from './DatabaseService';
 import log from 'electron-log';
 import { serviceEventBus } from './ServiceEventBus';
 import { locationService } from './LocationService';
+import path from 'path';
+import fs from 'fs';
 
 const logger = log.scope('TimeTrackingService');
 
@@ -12,6 +14,7 @@ const logger = log.scope('TimeTrackingService');
  */
 class TimeTrackingService {
     private isInitialized = false;
+    private userDataDir: string | null = null;
     private heartbeatInterval: NodeJS.Timeout | null = null;
     private readonly HEARTBEAT_MS = 60 * 1000; // 1 Minute
 
@@ -20,12 +23,26 @@ class TimeTrackingService {
 
     constructor() { }
 
-    public initialize() {
+    public async initialize(userDataDir: string) {
         if (this.isInitialized) return;
+        if (!userDataDir) {
+            logger.error('TimeTrackingService initialize called with empty userDataDir!');
+            return;
+        }
 
-        logger.info('Initializing TimeTrackingService...');
+        logger.info(`Initializing TimeTrackingService. Data Dir: ${userDataDir}`);
+        this.userDataDir = userDataDir;
         this.isInitialized = true;
         this.startHeartbeat();
+
+        // Perform one-time legacy log migration in the background
+        setTimeout(() => {
+            if (this.userDataDir) {
+                this.migrateLegacyRelationDates(this.userDataDir).catch(e => {
+                    logger.error('Background migration failed:', e);
+                });
+            }
+        }, 15000); // 15s delay to let DB settle
     }
 
     public shutdown() {
@@ -231,7 +248,7 @@ class TimeTrackingService {
     /**
      * Bulk fetch for Friend List View.
      */
-    public async getBulkFriendStats(userIds: string[]): Promise<Map<string, { timeSpent: number; encounterCount: number; lastSeen: Date; createdAt: Date }>> {
+    public async getBulkFriendStats(userIds: string[]): Promise<Map<string, { timeSpent: number; encounterCount: number; lastSeen: Date; createdAt: Date; friendSince: Date | null }>> {
         if (!this.isInitialized || userIds.length === 0) return new Map();
 
         const map = new Map();
@@ -249,13 +266,112 @@ class TimeTrackingService {
                     timeSpent: row.timeSpentMinutes * 60 * 1000, // Convert minutes to ms for frontend compatibility
                     encounterCount: row.encounterCount,
                     lastSeen: row.lastSeen,
-                    createdAt: row.createdAt || new Date() // Fallback if old data is null
+                    createdAt: row.createdAt || new Date(), // Fallback if old data is null
+                    friendSince: row.friendSince || null
                 });
             }
         } catch (e) {
             logger.error('Failed to fetch bulk stats:', e);
         }
         return map;
+    }
+
+    /**
+     * Updates the "Friend Since" date for a user in the database.
+     * This is an authoritative, one-way update (only if not already set).
+     */
+    public async updateFriendSince(userId: string, date: Date | string) {
+        if (!this.isInitialized) return;
+
+        try {
+            const client = databaseService.getClient();
+            const friendSince = date instanceof Date ? date : new Date(date);
+
+            // Fetch existing to see if we need to update
+            // @ts-ignore
+            const existing = await (client as any).friendStats.findUnique({
+                where: { userId }
+            });
+
+            if (existing && existing.friendSince) {
+                // Already has a date, don't overwrite the original "Added" date
+                return;
+            }
+
+            // Upsert with the date
+            // @ts-ignore
+            await (client as any).friendStats.upsert({
+                where: { userId },
+                create: {
+                    userId,
+                    displayName: 'Unknown',
+                    timeSpentMinutes: 0,
+                    encounterCount: 0,
+                    lastSeen: new Date(),
+                    friendSince: friendSince,
+                    createdAt: new Date()
+                },
+                update: {
+                    friendSince: friendSince
+                }
+            });
+
+            logger.info(`Updated friendSince date for ${userId}: ${friendSince.toISOString()}`);
+        } catch (e) {
+            logger.error(`Failed to update friendSince for ${userId}:`, e);
+        }
+    }
+
+    /**
+     * Migration Utility: Reads the entire legacy relationships.jsonl ONCE,
+     * extracts "Added" dates, and saves them to the DB.
+     * This eliminates the need to parse the log every time the Friend List opens.
+     */
+    private async migrateLegacyRelationDates(userDataDir: string) {
+        if (!userDataDir) return;
+        const logPath = path.join(userDataDir, 'relationships.jsonl');
+
+        if (!fs.existsSync(logPath)) return;
+
+        logger.info('Starting one-time legacy relation date migration...');
+
+        try {
+            const content = fs.readFileSync(logPath, 'utf-8');
+            const lines = content.trim().split('\n');
+
+            // Map of userId -> Earliest ADD date
+            const addedDates = new Map<string, string>();
+
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const event = JSON.parse(line);
+                    if (event.type === 'add' && event.userId && event.timestamp) {
+                        // Keep the earliest one found (log is chronologically ordered, but we reverse it later?)
+                        // Log is appended, so first seen is oldest.
+                        if (!addedDates.has(event.userId)) {
+                            addedDates.set(event.userId, event.timestamp);
+                        }
+                    }
+                } catch { /* ignore broken lines */ }
+            }
+
+            if (addedDates.size === 0) {
+                logger.info('No legacy "add" events found to migrate.');
+                return;
+            }
+
+            logger.info(`Found ${addedDates.size} friends to migrate from legacy logs.`);
+
+            // Perform batch update to DB
+            for (const [userId, timestamp] of addedDates.entries()) {
+                await this.updateFriendSince(userId, timestamp);
+            }
+
+            logger.info('Legacy relation date migration complete.');
+        } catch (e) {
+            logger.error('Failed to parse legacy relationship log for migration:', e);
+        }
     }
 }
 
