@@ -7,6 +7,8 @@ import { useUserBatchFetcher } from '../../hooks/useUserBatchFetcher';
 import { TrustRankBadge, AgeVerifiedBadge, VRCPlusBadge } from '../../components/ui/UserBadges';
 import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
 import { useNotificationStore } from '../../stores/notificationStore';
+import { Loader2 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import type { FriendListItem } from '../../types/electron';
 
 type FilterType = 'all' | 'online' | 'offline' | 'favorite';
@@ -33,24 +35,34 @@ export const FriendsListView: React.FC = () => {
     const { users, fetchUsers } = useUserBatchFetcher();
     const { profile, openUserProfile, openWorldProfile, openGroupProfile, closeProfile } = useProfileModal();
     const addNotification = useNotificationStore(state => state.addNotification);
+
+    // Recalibration States
     const [showRecalibrateConfirm, setShowRecalibrateConfirm] = useState(false);
+    const [recalibrating, setRecalibrating] = useState(false);
+    const [recalibrationResult, setRecalibrationResult] = useState<{ processedFiles: number; totalMinutesAdded: number } | null>(null);
 
     const handleRecalibrate = async () => {
-        setLoading(true);
-        setShowRecalibrateConfirm(false);
+        setRecalibrating(true);
+        // Do NOT close modal yet - we show progress inside it
         try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const result = await (window.electron as any).logScanner.scan();
 
+            // Show result in modal
+            setRecalibrationResult(result);
+
+            // Still show notification for redundant feedback
             addNotification({
                 type: 'success',
                 title: 'Recalibration Complete',
-                message: `Corrected encounter counts and scanned ${result.processedFiles} log files. Added ${result.totalMinutesAdded} mins of history.`,
-                duration: 6000
+                message: `Added ${result.totalMinutesAdded} minutes from ${result.processedFiles} files.`,
+                duration: 5000
             });
 
             handleRefresh();
         } catch (e) {
+            setShowRecalibrateConfirm(false); // Close on error to show error toast clearly? Or show error in modal?
+            // For now, close and show toast
             addNotification({
                 type: 'error',
                 title: 'Recalibration Failed',
@@ -59,8 +71,14 @@ export const FriendsListView: React.FC = () => {
             });
             console.error(e);
         } finally {
-            setLoading(false);
+            setRecalibrating(false);
         }
+    };
+
+    const closeRecalibrationModal = () => {
+        if (recalibrating) return; // Prevent closing while busy
+        setShowRecalibrateConfirm(false);
+        setRecalibrationResult(null); // Reset for next time
     };
 
     // Mutuals data fetched on-demand per page
@@ -243,9 +261,19 @@ export const FriendsListView: React.FC = () => {
                         variant="secondary"
                         size="sm"
                         onClick={() => setShowRecalibrateConfirm(true)}
-                        disabled={loading}
+                        disabled={loading || recalibrating}
                     >
-                        📚 Manual Recalibration
+                        {recalibrating ? (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <motion.div
+                                    animate={{ rotate: 360 }}
+                                    transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+                                >
+                                    <Loader2 size={14} />
+                                </motion.div>
+                                Scanning...
+                            </span>
+                        ) : '📚 Manual Recalibration'}
                     </NeonButton>
                 </div>
             </LogFilterBar>
@@ -458,15 +486,27 @@ export const FriendsListView: React.FC = () => {
                 openGroupProfile={openGroupProfile}
             />
 
-            {/* Recalibration Confirmation Modal */}
+            {/* Recalibration Modal (Handles Confirmation, Loading, and Success) */}
             <ConfirmationModal
                 isOpen={showRecalibrateConfirm}
-                onClose={() => setShowRecalibrateConfirm(false)}
-                onConfirm={handleRecalibrate}
-                title="Recalibrate Encounter Stats"
-                message="This will scan your local Instance History (player_log.jsonl) and overwite any inflated encounter counts with the strict, accurate join counts from your history. This fixes 'bugged' encounter numbers. It will also scan text logs for any new history."
-                confirmLabel="Start Recalibration"
-                variant="warning"
+                onClose={recalibrationResult ? closeRecalibrationModal : () => setShowRecalibrateConfirm(false)}
+                onConfirm={recalibrationResult ? closeRecalibrationModal : handleRecalibrate}
+
+                // Content changes based on state
+                title={recalibrationResult ? "Recalibration Complete" : "Recalibrate Encounter Stats"}
+                message={
+                    recalibrationResult
+                        ? `Process complete! Scanned ${recalibrationResult.processedFiles} files and corrected history. Added ${recalibrationResult.totalMinutesAdded} minutes of tracked time.`
+                        : "This will scan your local Instance History (player_log.jsonl) and overwrite current encounter counts with strict, accurate join counts. It also imports new history from text logs."
+                }
+
+                // Style changes
+                variant={recalibrationResult ? 'success' : 'warning'}
+                confirmLabel={recalibrationResult ? "Close" : "Start Recalibration"}
+
+                // State props
+                isLoading={recalibrating}
+                hideCancel={!!recalibrationResult} // Hide cancel when showing success
             />
         </GlassPanel >
     );
