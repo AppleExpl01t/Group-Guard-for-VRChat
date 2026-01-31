@@ -201,13 +201,18 @@ export const useInstanceMonitorStore = create<InstanceMonitorState>()(
     }),
     {
       name: 'instance-monitor-storage', // unique name
+      version: 2, // Bump version to force migration and clear stale persisted state
       partialize: (state) => ({
-        // Only persist graph history and maybe location context
+        // ONLY persist graph history - session state (instance, world, players) should NOT be persisted
+        // as this causes stale "roaming in instance" UI when app restarts with game closed
         history: state.history,
-        currentInstanceId: state.currentInstanceId,
-        currentWorldName: state.currentWorldName,
-        liveScanResults: state.liveScanResults
       }),
+      // Migration from v1 -> v2: Clear all stale session fields that were incorrectly persisted
+      migrate: (persistedState) => {
+        // Return only the history, discarding any stale session fields
+        const state = persistedState as { history?: unknown[] };
+        return { history: state?.history || [] };
+      },
     }
   )
 );

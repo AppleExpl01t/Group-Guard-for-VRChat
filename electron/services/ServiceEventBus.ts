@@ -16,7 +16,8 @@ export type ServiceEventType =
     | 'player-joined'
     | 'player-left'
     | 'location'
-    | 'friend-stats-updated';
+    | 'friend-stats-updated'
+    | 'game-closed';
 
 export interface ServiceEventPayloads {
     'location': {
@@ -34,8 +35,8 @@ export interface ServiceEventPayloads {
     'group-verified': { group: { id: string;[key: string]: unknown } };
     'friend-update': { type: string; content: Record<string, unknown>; timestamp: string };
     'friend-state-changed': {
-        friend: any;
-        previous: any;
+        friend: unknown;
+        previous: unknown;
         change: {
             status: boolean;
             location: boolean;
@@ -44,7 +45,7 @@ export interface ServiceEventPayloads {
             avatar: boolean;
         };
     };
-    'social-feed-entry-added': { entry: any };
+    'social-feed-entry-added': { entry: unknown };
     'player-joined': {
         displayName: string;
         userId?: string;
@@ -57,7 +58,8 @@ export interface ServiceEventPayloads {
         timestamp: string;
         isBackfill?: boolean;
     };
-    'friendship-relationship-changed': { event: any };
+    'friendship-relationship-changed': { event: unknown };
+    'game-closed': Record<string, never>;
 }
 
 class ServiceEventBus extends EventEmitter {

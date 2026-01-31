@@ -1,9 +1,7 @@
-import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import log from 'electron-log';
 import { serviceEventBus } from './ServiceEventBus';
-import { windowService } from './WindowService';
 
 const logger = log.scope('LocationService');
 
@@ -35,7 +33,7 @@ class LocationService {
 
     constructor() {
         // Listen for self location updates
-        serviceEventBus.on('location', (event: any) => {
+        serviceEventBus.on('location', (event) => {
             if (event.location) {
                 this.selfLocation = {
                     location: event.location,
@@ -43,6 +41,12 @@ class LocationService {
                     instanceId: event.instanceId
                 };
             }
+        });
+
+        // Listen for game-closed to clear self location (prevents stale state)
+        serviceEventBus.on('game-closed', () => {
+            this.selfLocation = null;
+            logger.info('Game closed, cleared self location.');
         });
     }
 

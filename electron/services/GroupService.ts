@@ -141,7 +141,12 @@ export function setupGroupHandlers() {
             });
 
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const allInstances = (response.data || response) as any[];
+            let allInstances = (response.data || response) as any[];
+
+            // Handle API returning { instances: [] } wrapper instead of direct array
+            if (!Array.isArray(allInstances) && allInstances && Array.isArray((allInstances as any).instances)) {
+                allInstances = (allInstances as any).instances;
+            }
 
             if (!Array.isArray(allInstances)) {
                 logger.warn('[GroupService] getAllActiveInstances returned non-array:', allInstances);

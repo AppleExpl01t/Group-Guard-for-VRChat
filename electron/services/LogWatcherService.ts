@@ -90,6 +90,10 @@ class LogWatcherService extends EventEmitter {
   private seekingInstanceId: string | null = null;
   private seekingStartTime: number = 0;
 
+  // Process state - prevents UI events (location, players) when game is not running
+  // Log parsing still happens for cache updates, but UI won't show stale "roaming" state
+  private gameRunning: boolean = false;
+
   private state: WatcherState = {
     currentWorldId: null,
     currentWorldName: null,
@@ -151,35 +155,51 @@ class LogWatcherService extends EventEmitter {
 
     this.findLatestLog();
 
-    // SMART SYNC: Fetch current location from API
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { fetchCurrentLocationFromApi } = require('./AuthService');
+    // CRITICAL FIX: Check if game is running FIRST before trusting API state
+    // This prevents stale "roaming in instance" state when app starts with game closed
+    const isGameRunning = await processService.checkProcess();
+    this.gameRunning = isGameRunning; // Track for use during log parsing
+    log.info(`[LogWatcher] Startup Process Check: VRChat Running = ${isGameRunning}`);
 
-    try {
-      const apiLoc = await fetchCurrentLocationFromApi();
-      if (apiLoc) {
-        this.seekingInstanceId = apiLoc;
-        this.seekingStartTime = Date.now();
-        log.info(`[LogWatcher] Smart Sync: Force-anchoring context to API location: ${apiLoc}`);
+    if (!isGameRunning) {
+      // Game is NOT running - do NOT trust API state, emit game-closed to clear any stale UI
+      // Log parsing will still happen for cache updates, but UI events are suppressed
+      log.info('[LogWatcher] Game not running on startup. Skipping API location sync to prevent stale state.');
+      this.emitToRenderer('log:game-closed', {});
+      this.emit('game-closed', {});
+      serviceEventBus.emit('game-closed', {});
+    } else {
+      // Game IS running - proceed with Smart Sync
+      // SMART SYNC: Fetch current location from API
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { fetchCurrentLocationFromApi } = require('./AuthService');
 
-        // IMMEDIATE STATE ANCHORING: Fix the state once and for all on startup
-        const worldId = apiLoc.split(':')[0];
-        this.state.currentWorldId = worldId;
-        this.state.currentLocation = apiLoc;
-        this.state.players.clear(); // Clear any potentially stale cached players
+      try {
+        const apiLoc = await fetchCurrentLocationFromApi();
+        if (apiLoc) {
+          this.seekingInstanceId = apiLoc;
+          this.seekingStartTime = Date.now();
+          log.info(`[LogWatcher] Smart Sync: Force-anchoring context to API location: ${apiLoc}`);
 
-        // Inform the renderer immediately so the UI shows Roaming Mode right away
-        this.emitToRenderer('log:location', { worldId, instanceId: apiLoc, location: apiLoc, timestamp: new Date().toISOString() });
+          // IMMEDIATE STATE ANCHORING: Fix the state once and for all on startup
+          const worldId = apiLoc.split(':')[0];
+          this.state.currentWorldId = worldId;
+          this.state.currentLocation = apiLoc;
+          this.state.players.clear(); // Clear any potentially stale cached players
 
-        // SYNC INTER-SERVICE: Inform InstanceLoggerService so it can update currentGroupId
-        this.emit('location', { worldId, instanceId: apiLoc, location: apiLoc, timestamp: new Date().toISOString() });
+          // Inform the renderer immediately so the UI shows Roaming Mode right away
+          this.emitToRenderer('log:location', { worldId, instanceId: apiLoc, location: apiLoc, timestamp: new Date().toISOString() });
 
-        // Trigger a background reconciliation to pull the current player list from API
-        // This ensures the Roaming Card is fully populated even before the log catches up
-        this.reconcileWithApi(apiLoc);
+          // SYNC INTER-SERVICE: Inform InstanceLoggerService so it can update currentGroupId
+          this.emit('location', { worldId, instanceId: apiLoc, location: apiLoc, timestamp: new Date().toISOString() });
+
+          // Trigger a background reconciliation to pull the current player list from API
+          // This ensures the Roaming Card is fully populated even before the log catches up
+          this.reconcileWithApi(apiLoc);
+        }
+      } catch (e) {
+        log.warn('[LogWatcher] Smart Sync check failed', e);
       }
-    } catch (e) {
-      log.warn('[LogWatcher] Smart Sync check failed', e);
     }
 
     // RESTORE STATE from Store
@@ -221,9 +241,24 @@ class LogWatcherService extends EventEmitter {
       this.readNewContent();
     }, 1000);
 
+    // Listen for process status changes to update gameRunning flag
+    processService.on('status-changed', (isRunning: boolean) => {
+      const wasRunning = this.gameRunning;
+      this.gameRunning = isRunning;
+      log.info(`[LogWatcher] Process status changed: ${wasRunning} -> ${isRunning}`);
+      
+      if (!isRunning && wasRunning) {
+        // Game just closed - emit game-closed event
+        this.handleGameClosed();
+      } else if (isRunning && !wasRunning) {
+        // Game just opened - will pick up location from log parsing
+        log.info('[LogWatcher] Game opened, UI events now enabled.');
+      }
+    });
+
     const checkActivity = async () => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { checkOnlineStatus } = require('./AuthService');
+      const { fetchCurrentLocationFromApi } = require('./AuthService');
 
       // SEEK TIMEOUT CHECK (CRITICAL for reliability)
       if (this.seekingInstanceId) {
@@ -301,13 +336,18 @@ class LogWatcherService extends EventEmitter {
     if (this.state.currentWorldName) {
       window.webContents.send('log:world-name', { name: this.state.currentWorldName, timestamp });
     }
-    if (this.state.currentWorldId) {
+    // CRITICAL: Only sync location if game is actually running
+    // This prevents hydrated state from causing stale "roaming" UI
+    if (this.state.currentWorldId && this.gameRunning) {
       window.webContents.send('log:location', {
         worldId: this.state.currentWorldId,
         instanceId: this.state.currentLocation, // Send full location as instanceId fallback
         location: this.state.currentLocation,
         timestamp
       });
+    } else if (this.state.currentWorldId && !this.gameRunning) {
+      log.info('[LogWatcher] Game not running, sending game-closed instead of stale location');
+      window.webContents.send('log:game-closed', {});
     }
 
     for (const player of this.state.players.values()) {
@@ -427,6 +467,7 @@ class LogWatcherService extends EventEmitter {
 
     this.emitToRenderer('log:game-closed', {});
     this.emit('game-closed', {});
+    serviceEventBus.emit('game-closed', {}); // Propagate to all services for cross-service cleanup
 
     discordBroadcastService.setIdle();
   }
@@ -575,19 +616,25 @@ class LogWatcherService extends EventEmitter {
         this.state.currentLocation = location;
         this.state.currentWorldName = null; // Clear name until the next 'Entering Room' entry
 
-        // Inform UI to clear its local player list and update world
-        this.emitToRenderer('log:location', { worldId, instanceId, location, timestamp });
-        this.emit('location', { worldId, instanceId, location, timestamp });
-        serviceEventBus.emit('location', { worldId, instanceId, location, timestamp });
+        // CRITICAL: Only emit UI events if game is actually running
+        // This prevents stale "roaming" state when parsing historical logs after game closed
+        if (this.gameRunning) {
+          // Inform UI to clear its local player list and update world
+          this.emitToRenderer('log:location', { worldId, instanceId, location, timestamp });
+          this.emit('location', { worldId, instanceId, location, timestamp });
+          serviceEventBus.emit('location', { worldId, instanceId, location, timestamp });
 
-        // INSTANT RECONCILE: Immediately pull the fresh user list from the API for the NEW instance
-        // This is the "failsafe" to ensure the Roaming Card is correct even if logs are slow
-        this.reconcileWithApi(location);
+          // INSTANT RECONCILE: Immediately pull the fresh user list from the API for the NEW instance
+          // This is the "failsafe" to ensure the Roaming Card is correct even if logs are slow
+          this.reconcileWithApi(location);
 
-        if (location.includes('~group(')) {
-          discordBroadcastService.updateGroupStatus("Group Instance", 0);
+          if (location.includes('~group(')) {
+            discordBroadcastService.updateGroupStatus("Group Instance", 0);
+          } else {
+            discordBroadcastService.setIdle();
+          }
         } else {
-          discordBroadcastService.setIdle();
+          log.info(`[LogWatcher] Game not running, skipping UI location event for cache-only processing.`);
         }
       }
     }

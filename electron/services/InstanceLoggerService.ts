@@ -26,6 +26,14 @@ class InstanceLoggerService {
         return groupAuthorizationService.isGroupAllowed(groupId);
     }
     constructor() {
+        // Explicitly clear ephemeral state on construction (prevents stale state on hot reload)
+        this.currentSessionId = null;
+        this.currentWorldId = null;
+        this.currentInstanceId = null;
+        this.currentLocationString = null;
+        this.currentWorldName = null;
+        this.currentGroupId = null;
+
         this.setupListeners();
     }
 
