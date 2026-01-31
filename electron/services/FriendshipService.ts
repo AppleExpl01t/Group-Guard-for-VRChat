@@ -22,7 +22,7 @@ class FriendshipService {
     private currentUserId: string | null = null;
     private userDataDir: string | null = null;
     private pollInterval: NodeJS.Timeout | null = null;
-    private POLL_INTERVAL_MS = 60 * 1000; // 1 minute
+    private POLL_INTERVAL_MS = 15 * 1000; // 15 seconds
 
     // Sub-services (Placeholders for Phase 1)
     // private gameLogService: GameLogService;
@@ -195,7 +195,7 @@ class FriendshipService {
                         profilePicOverride: friend.profilePicOverride as string | undefined,
                         currentAvatarThumbnailImageUrl: friend.currentAvatarThumbnailImageUrl as string | undefined,
                         status: (friend.status as string) || 'active',
-                        location: (friend.location as string) || 'private',
+                        location: (friend.location as string) || '',
                         statusDescription: friend.statusDescription as string | undefined,
                         representedGroup: (friend as any).representedGroup as string | undefined,
                         // Cast friend to any because typed interface might be missing it, but API returns it
@@ -278,13 +278,24 @@ class FriendshipService {
                 // but we could use it as a tiebreaker or display field.
             }
 
+            // CRITICAL: Check local instance presence from LogWatcher
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const { logWatcherService } = require('./LogWatcherService');
+            // We can't access state directly if it's private, but getPlayers() is public
+            const localPlayers = logWatcherService.getPlayers();
+            // Check by ID (robust) or Name (fallback)
+            const isLocalInstance = localPlayers.some((p: any) =>
+                (p.userId && p.userId === friend.userId)
+            );
+
             return {
                 ...friend,
                 encounterCount: stats.encounterCount,
                 timeSpent: stats.timeSpent,
                 lastSeen: stats.lastSeen,
                 dateKnown,
-                friendScore: score
+                friendScore: score,
+                isLocalInstance
             };
         });
     }

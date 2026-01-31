@@ -227,7 +227,7 @@ export const FriendsListView: React.FC = () => {
                             }
                         }}
                     >
-                        📚 Scan Old Logs
+                        📚 Recalibrate & Scan Logs
                     </NeonButton>
                 </div>
             </LogFilterBar>
@@ -377,9 +377,9 @@ export const FriendsListView: React.FC = () => {
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
                                                 {formatDuration(friend.timeSpent)}
                                                 {/* Active Pulse Indicator */}
-                                                {friend.status?.toLowerCase() !== 'offline' && (
+                                                {friend.isLocalInstance && (
                                                     <div
-                                                        title="Tracking active time..."
+                                                        title="Tracking active time (In Instance)"
                                                         style={{
                                                             width: '6px',
                                                             height: '6px',

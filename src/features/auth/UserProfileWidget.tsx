@@ -6,8 +6,8 @@ const getTrustRank = (tags: string[] = []) => {
   if (tags.includes('admin_moderator')) return { label: 'Admin', color: '#ff0000' };
   if (tags.includes('system_trust_veteran')) return { label: 'Trusted', color: '#8134ef' };
   if (tags.includes('system_trust_trusted')) return { label: 'Known', color: '#ff7b00' };
-  if (tags.includes('system_trust_known')) return { label: 'User', color: '#2bcf5c' };
   if (tags.includes('system_trust_basic')) return { label: 'New User', color: '#1778ff' };
+  if (tags.includes('system_trust_known')) return { label: 'User', color: '#2bcf5c' };
   return { label: 'Visitor', color: '#cccccc' };
 };
 
@@ -41,17 +41,17 @@ export const UserProfileWidget: React.FC = () => {
     }}>
       {/* Avatar with Status Activity Ring */}
       <div style={{ position: 'relative' }}>
-        <img 
-          src={user.userIcon || user.currentAvatarThumbnailImageUrl} 
+        <img
+          src={user.userIcon || user.currentAvatarThumbnailImageUrl}
           alt="Avatar"
-          style={{ 
-            width: '80px', 
-            height: '80px', 
+          style={{
+            width: '80px',
+            height: '80px',
             borderRadius: '20px',
             objectFit: 'cover',
             border: `3px solid ${trustRank.color}`,
             boxShadow: `0 0 20px ${trustRank.color}40`
-          }} 
+          }}
         />
         <div style={{
           position: 'absolute',
@@ -77,13 +77,13 @@ export const UserProfileWidget: React.FC = () => {
         }}>
           {user.displayName}
         </h3>
-        
+
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.8rem' }}>
-          <span style={{ 
-            fontSize: '0.7rem', 
-            background: trustRank.color, 
-            color: 'white', 
-            padding: '2px 8px', 
+          <span style={{
+            fontSize: '0.7rem',
+            background: trustRank.color,
+            color: 'white',
+            padding: '2px 8px',
             borderRadius: '4px',
             fontWeight: 600,
             textShadow: '0 0 2px rgba(0,0,0,0.5)'
@@ -105,34 +105,34 @@ export const UserProfileWidget: React.FC = () => {
 
         {/* Full Status Description */}
         {user.statusDescription && (
-           <div style={{
-             fontSize: '0.85rem',
-             color: 'var(--color-primary)',
-             background: 'var(--color-surface-elevated)',
-             padding: '0.5rem',
-             borderRadius: '8px',
-             lineHeight: '1.4',
-             fontStyle: 'italic',
-             marginBottom: '0.5rem',
-             wordBreak: 'break-word'
-           }}>
-             "{user.statusDescription}"
-           </div>
+          <div style={{
+            fontSize: '0.85rem',
+            color: 'var(--color-primary)',
+            background: 'var(--color-surface-elevated)',
+            padding: '0.5rem',
+            borderRadius: '8px',
+            lineHeight: '1.4',
+            fontStyle: 'italic',
+            marginBottom: '0.5rem',
+            wordBreak: 'break-word'
+          }}>
+            "{user.statusDescription}"
+          </div>
         )}
 
         {user.bio && (
-           <div style={{
-             marginTop: '0.5rem',
-             fontSize: '0.75rem',
-             color: 'var(--color-text-dim)',
-             lineHeight: '1.3',
-             display: '-webkit-box',
-             WebkitLineClamp: 3,
-             WebkitBoxOrient: 'vertical',
-             overflow: 'hidden'
-           }}>
-             {user.bio}
-           </div>
+          <div style={{
+            marginTop: '0.5rem',
+            fontSize: '0.75rem',
+            color: 'var(--color-text-dim)',
+            lineHeight: '1.3',
+            display: '-webkit-box',
+            WebkitLineClamp: 3,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden'
+          }}>
+            {user.bio}
+          </div>
         )}
       </div>
     </GlassPanel>

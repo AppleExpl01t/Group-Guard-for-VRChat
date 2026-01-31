@@ -28,6 +28,9 @@ export class LogScannerService {
         let processedFiles = 0;
 
         try {
+            // PHASE 1: Recalibrate Encounter Counts (Fix Inflation)
+            await this.recalibrateFromPlayerLog();
+
             const logDir = this.getLogDirectory();
             if (!fs.existsSync(logDir)) {
                 logger.warn('VRChat log directory not found.');
@@ -235,6 +238,45 @@ export class LogScannerService {
             }
         }
         return addedMinutes;
+    }
+    private async recalibrateFromPlayerLog(): Promise<number> {
+        logger.info('[Recalibration] Starting strict correction from Instance History...');
+
+        // 1. Get raw entries from PlayerLogService (Source of Truth)
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { playerLogService } = require('./PlayerLogService');
+        const entries: any[] = await playerLogService.getAllEntries();
+
+        // 2. Aggregate
+        const stats = new Map<string, number>(); // UserId -> Count
+        for (const entry of entries) {
+            if (entry.type === 'join' && entry.userId) {
+                stats.set(entry.userId, (stats.get(entry.userId) || 0) + 1);
+            }
+        }
+
+        // 3. Commit to DB (Force Update)
+        const client = databaseService.getClient();
+        let updated = 0;
+
+        for (const [userId, count] of stats.entries()) {
+            // We use 'update' to overwrite the inflated value
+            // Only update friends we know about to avoid cluttering DB with randoms if preferred,
+            // but for accuracy we should fix everyone we have stats for.
+            try {
+                // @ts-ignore
+                await client.friendStats.update({
+                    where: { userId },
+                    data: { encounterCount: count }
+                });
+                updated++;
+            } catch {
+                // User might not exist in FriendStats yet (e.g. random player log entry), ignore
+            }
+        }
+
+        logger.info(`[Recalibration] Corrected encounter counts for ${updated} users.`);
+        return updated;
     }
 }
 

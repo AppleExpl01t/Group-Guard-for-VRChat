@@ -274,6 +274,16 @@ class LogWatcherService extends EventEmitter {
       }
 
       if (this.state.currentWorldId || this.state.currentLocation) {
+        // ACTIVE POLLING: Reconcile every minute to remove "Ghost Players" (missed leave logs)
+        // This ensures Time Tracking and "Green Dot" indicators are strictly accurate.
+        if (this.state.currentLocation) {
+          this.reconcileWithApi(this.state.currentLocation).catch(err => {
+            log.warn('[LogWatcher] Periodic reconcile failed:', err);
+          });
+        }
+
+        // Inactivity Check for Offline Status (Keep 5 min timeout for location staleness check if needed, 
+        // but reconcile handles the player list now)
         if (Date.now() - this.lastActivityTime > 300000) {
           try {
             const apiLoc = await fetchCurrentLocationFromApi();
@@ -288,9 +298,6 @@ class LogWatcherService extends EventEmitter {
               const timestamp = new Date().toISOString();
               this.emitToRenderer('log:location', { worldId, instanceId: apiLoc, location: apiLoc, timestamp });
               this.reconcileWithApi(apiLoc);
-            } else if (!apiLoc && this.state.currentLocation) {
-              // Optional: Check if we should mark as offline, but ProcessService is better for this
-              log.info('[LogWatcher] Inactivity Sync: API reports OFFLINE but state is active. Trusting ProcessService for exit.');
             }
           } catch { /* ignore */ }
         }
@@ -491,8 +498,13 @@ class LogWatcherService extends EventEmitter {
       return;
     }
 
+    // 1. ADD MISSING PLAYERS
     let added = 0;
+    const apiPlayerIds = new Set<string>();
+
     for (const p of apiPlayers) {
+      apiPlayerIds.add(p.id);
+
       // Check by userId (preferred) or Display Name
       const exists = Array.from(this.state.players.values()).some(existing =>
         (existing.userId && existing.userId === p.id) ||
@@ -520,14 +532,61 @@ class LogWatcherService extends EventEmitter {
         added++;
       }
     }
-    if (added > 0) {
-      log.info(`[LogWatcher] Synced ${added} missing players from API.`);
+
+    // 2. REMOVE GHOST PLAYERS (Players in state but not in API)
+    // Only perform this if API returned a valid non-empty list (to avoid wiping state on API error)
+    let removed = 0;
+    if (apiPlayers.length > 0) {
+      const currentPlayers = Array.from(this.state.players.entries());
+      for (const [displayName, player] of currentPlayers) {
+        // Skip players without IDs (raw joins) as they might be resolving
+        // Also skip IF the API list works purely on IDs and we have a name match? 
+        // No, API list has both.
+
+        // If player has ID, check existence in API set
+        if (player.userId) {
+          if (!apiPlayerIds.has(player.userId)) {
+            // CONFIRMED GHOST
+            this.removeGhostPlayer(displayName, player);
+            removed++;
+          }
+        } else {
+          // If no ID, check by display name in apiPlayers
+          const nameExists = apiPlayers.some((ap: any) => ap.displayName === displayName);
+          if (!nameExists) {
+            // CONFIRMED GHOST
+            this.removeGhostPlayer(displayName, player);
+            removed++;
+          }
+        }
+      }
+    }
+
+    if (added > 0 || removed > 0) {
+      log.info(`[LogWatcher] Reconcile complete: Added ${added}, Removed ${removed} (Ghosts).`);
       if (this.state.currentLocation && this.state.currentLocation.includes('~group(')) {
         discordBroadcastService.updateGroupStatus(this.state.currentWorldName || 'Group Instance', this.state.players.size);
       }
     } else {
-      log.debug('[LogWatcher] API sync complete: No missing players.');
+      log.debug('[LogWatcher] Reconcile complete: State matches API.');
     }
+  }
+
+  private removeGhostPlayer(displayName: string, player: PlayerJoinedEvent) {
+    log.info(`[LogWatcher] Removing Ghost Player: ${displayName} (${player.userId || 'No ID'})`);
+    this.state.players.delete(displayName);
+
+    this.emitToRenderer('log:player-left', {
+      displayName,
+      userId: player.userId,
+      timestamp: new Date().toISOString()
+    });
+
+    serviceEventBus.emit('player-left', {
+      displayName,
+      userId: player.userId,
+      timestamp: new Date().toISOString()
+    });
   }
 
   private parseLine(line: string) {

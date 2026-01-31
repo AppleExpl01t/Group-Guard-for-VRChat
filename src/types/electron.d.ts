@@ -769,6 +769,7 @@ export interface FriendListItem extends FriendLocation {
   isVRCPlus?: boolean;
   isAgeVerified?: boolean;
   platform?: string;
+  isLocalInstance?: boolean;
 }
 
 declare global {

@@ -233,6 +233,27 @@ class PlayerLogService {
     }
 
     /**
+     * Reads ALL player log entries efficiently (Streaming/Full Read).
+     * Used for Recalibration.
+     */
+    public async getAllEntries(): Promise<PlayerLogEntry[]> {
+        if (!this.dbPath || !fs.existsSync(this.dbPath)) return [];
+        try {
+            // Given standard usage, file is typically < 100MB, so full read is acceptable for now.
+            // Future optimization: Stream read if > 500MB
+            const content = await fs.promises.readFile(this.dbPath, 'utf-8');
+            return content.split('\n')
+                .map(line => {
+                    try { return JSON.parse(line) as PlayerLogEntry; } catch { return null; }
+                })
+                .filter((e): e is PlayerLogEntry => e !== null);
+        } catch (e) {
+            logger.error('Failed to read all player logs:', e);
+            return [];
+        }
+    }
+
+    /**
      * Reads the last N player log entries.
      * Supports filtering by date range or search term.
      */
