@@ -13,6 +13,7 @@ import { processService } from './ProcessService';
 // Pure parsing utilities available in LogParserService for testing
 
 import { serviceEventBus } from './ServiceEventBus';
+import { locationService } from './LocationService';
 
 const store = new Store();
 
@@ -26,6 +27,8 @@ export interface LogEvent {
   timestamp: string;
   data: Record<string, string>;
 }
+
+// ... existing types ...
 
 export interface PlayerJoinedEvent {
   displayName: string;
@@ -90,6 +93,9 @@ class LogWatcherService extends EventEmitter {
   private seekingInstanceId: string | null = null;
   private seekingStartTime: number = 0;
 
+  // Heuristic for associating avatar switches (displayName) with avatar loading (avtr_id)
+  private pendingAvatarSwitches = new Map<string, { avatarName: string; timestamp: number }>();
+
   private state: WatcherState = {
     currentWorldId: null,
     currentWorldName: null,
@@ -106,10 +112,32 @@ class LogWatcherService extends EventEmitter {
   }
 
   /**
+   * DEDUPLICATION: Returns set of filenames that have been processed/tracked.
+   */
+  public getProcessedFiles(): Set<string> {
+    const list = store.get('processed_logs', []) as string[];
+    return new Set(list);
+  }
+
+  /**
+   * DEDUPLICATION: Marks a file as processed.
+   */
+  public markFileAsProcessed(filename: string) {
+    const list = store.get('processed_logs', []) as string[];
+    if (!list.includes(filename)) {
+      list.push(filename);
+      // Limit size to prevent infinite growth (keep last 5000 logs ~150KB)
+      if (list.length > 5000) list.shift();
+      store.set('processed_logs', list);
+    }
+  }
+
+  /**
    * Start watching. Validates directory, finds latest log, and starts trailing.
    * If callerWindow is provided, syncs current state to it immediately.
    */
   start(callerWindow?: BrowserWindow) {
+    // ... existing start logic ...
     if (callerWindow && !callerWindow.isDestroyed()) {
       this.emitStateToWindow(callerWindow);
     }
@@ -126,9 +154,10 @@ class LogWatcherService extends EventEmitter {
     processService.on('status-changed', (isRunning) => {
       if (!isRunning) {
         log.info('[LogWatcher] ProcessService reports VRChat closed. Clearing state.');
+        // Handle Game Closed - Clear State
         this.handleGameClosed();
       } else {
-        log.info('[LogWatcher] ProcessService reports VRChat running.');
+        log.debug('[LogWatcher] ProcessService reports VRChat running.');
       }
     });
 
@@ -245,6 +274,16 @@ class LogWatcherService extends EventEmitter {
       }
 
       if (this.state.currentWorldId || this.state.currentLocation) {
+        // ACTIVE POLLING: Reconcile every minute to remove "Ghost Players" (missed leave logs)
+        // This ensures Time Tracking and "Green Dot" indicators are strictly accurate.
+        if (this.state.currentLocation) {
+          this.reconcileWithApi(this.state.currentLocation).catch(err => {
+            log.warn('[LogWatcher] Periodic reconcile failed:', err);
+          });
+        }
+
+        // Inactivity Check for Offline Status (Keep 5 min timeout for location staleness check if needed, 
+        // but reconcile handles the player list now)
         if (Date.now() - this.lastActivityTime > 300000) {
           try {
             const apiLoc = await fetchCurrentLocationFromApi();
@@ -259,9 +298,6 @@ class LogWatcherService extends EventEmitter {
               const timestamp = new Date().toISOString();
               this.emitToRenderer('log:location', { worldId, instanceId: apiLoc, location: apiLoc, timestamp });
               this.reconcileWithApi(apiLoc);
-            } else if (!apiLoc && this.state.currentLocation) {
-              // Optional: Check if we should mark as offline, but ProcessService is better for this
-              log.info('[LogWatcher] Inactivity Sync: API reports OFFLINE but state is active. Trusting ProcessService for exit.');
             }
           } catch { /* ignore */ }
         }
@@ -295,7 +331,13 @@ class LogWatcherService extends EventEmitter {
   }
 
   private emitStateToWindow(window: BrowserWindow) {
-    log.info('[LogWatcher] Syncing state to renderer...');
+    // Prevent partial syncs during hydration which cause UI duplicates
+    if (this.isHydrating) {
+      log.info('[LogWatcher] Skipping state sync - Hydration in progress');
+      return;
+    }
+
+    log.debug('[LogWatcher] Syncing state to renderer...');
     const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19).replace(/-/g, '.');
 
     if (this.state.currentWorldName) {
@@ -348,6 +390,9 @@ class LogWatcherService extends EventEmitter {
           this.currentLogPath = latest.path;
           this.currentFileSize = 0;
           this.state = { currentWorldId: null, currentWorldName: null, currentLocation: null, players: new Map(), pendingJoins: new Map() };
+
+          // DEDUPLICATION: Mark this new live file as processed so Scanner ignores it
+          this.markFileAsProcessed(latest.name);
         }
       }
     } catch (error) {
@@ -373,7 +418,7 @@ class LogWatcherService extends EventEmitter {
         const isInitialRead = this.currentFileSize === 0;
         if (isInitialRead) {
           this.isHydrating = true;
-          log.info(`[LogWatcher] Initial hydration started for ${path.basename(this.currentLogPath)} (${(stat.size / 1024 / 1024).toFixed(2)} MB)`);
+          log.debug(`[LogWatcher] Initial hydration started for ${path.basename(this.currentLogPath)} (${(stat.size / 1024 / 1024).toFixed(2)} MB)`);
         }
 
         const stream = fs.createReadStream(this.currentLogPath, {
@@ -401,9 +446,14 @@ class LogWatcherService extends EventEmitter {
 
         this.currentFileSize = stat.size;
 
+        // persist latest timestamp after bulk read to improve performance
+        if (this.lastProcessedTimestamp > 0) {
+          store.set('lastLogTimestamp', this.lastProcessedTimestamp);
+        }
+
         if (this.isHydrating) {
           this.isHydrating = false;
-          log.info(`[LogWatcher] Initial hydration complete. Processed ${lineCount} lines.`);
+          log.debug(`[LogWatcher] Initial hydration complete. Processed ${lineCount} lines.`);
           // Sync final state to all windows
           BrowserWindow.getAllWindows().forEach(win => this.emitStateToWindow(win));
         }
@@ -436,12 +486,25 @@ class LogWatcherService extends EventEmitter {
     // Lazy load dependencies
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { fetchInstancePlayers } = require('./AuthService');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { groupAuthorizationService } = require('./GroupAuthorizationService');
 
-    log.info(`[LogWatcher] Reconciling players for ${location} via API...`);
+    log.debug(`[LogWatcher] Syncing instance state via API: ${location}`);
     const apiPlayers = await fetchInstancePlayers(location);
 
+    // CONCURRENCY CHECK: Ensure we are still in the same world
+    if (this.state.currentLocation !== location) {
+      log.warn(`[LogWatcher] Reconcile aborted: Context changed during fetch (Req: ${location}, Curr: ${this.state.currentLocation})`);
+      return;
+    }
+
+    // 1. ADD MISSING PLAYERS
     let added = 0;
+    const apiPlayerIds = new Set<string>();
+
     for (const p of apiPlayers) {
+      apiPlayerIds.add(p.id);
+
       // Check by userId (preferred) or Display Name
       const exists = Array.from(this.state.players.values()).some(existing =>
         (existing.userId && existing.userId === p.id) ||
@@ -460,17 +523,70 @@ class LogWatcherService extends EventEmitter {
         this.state.pendingJoins.delete(p.displayName); // Clear any pending raw join
         this.emitToRenderer('log:player-joined', event);
         serviceEventBus.emit('player-joined', event);
+
+        // SCORE CALIBRATION: Record Encounter (Reconciled from API)
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { timeTrackingService } = require('./TimeTrackingService');
+        timeTrackingService.recordEncounter(p.id);
+
         added++;
       }
     }
-    if (added > 0) {
-      log.info(`[LogWatcher] Reconcile complete. Added ${added} missing players from API.`);
+
+    // 2. REMOVE GHOST PLAYERS (Players in state but not in API)
+    // Only perform this if API returned a valid non-empty list (to avoid wiping state on API error)
+    let removed = 0;
+    if (apiPlayers.length > 0) {
+      const currentPlayers = Array.from(this.state.players.entries());
+      for (const [displayName, player] of currentPlayers) {
+        // Skip players without IDs (raw joins) as they might be resolving
+        // Also skip IF the API list works purely on IDs and we have a name match? 
+        // No, API list has both.
+
+        // If player has ID, check existence in API set
+        if (player.userId) {
+          if (!apiPlayerIds.has(player.userId)) {
+            // CONFIRMED GHOST
+            this.removeGhostPlayer(displayName, player);
+            removed++;
+          }
+        } else {
+          // If no ID, check by display name in apiPlayers
+          const nameExists = apiPlayers.some((ap: any) => ap.displayName === displayName);
+          if (!nameExists) {
+            // CONFIRMED GHOST
+            this.removeGhostPlayer(displayName, player);
+            removed++;
+          }
+        }
+      }
+    }
+
+    if (added > 0 || removed > 0) {
+      log.info(`[LogWatcher] Reconcile complete: Added ${added}, Removed ${removed} (Ghosts).`);
       if (this.state.currentLocation && this.state.currentLocation.includes('~group(')) {
         discordBroadcastService.updateGroupStatus(this.state.currentWorldName || 'Group Instance', this.state.players.size);
       }
     } else {
-      log.info('[LogWatcher] Reconcile complete. No missing players found.');
+      log.debug('[LogWatcher] Reconcile complete: State matches API.');
     }
+  }
+
+  private removeGhostPlayer(displayName: string, player: PlayerJoinedEvent) {
+    log.info(`[LogWatcher] Removing Ghost Player: ${displayName} (${player.userId || 'No ID'})`);
+    this.state.players.delete(displayName);
+
+    this.emitToRenderer('log:player-left', {
+      displayName,
+      userId: player.userId,
+      timestamp: new Date().toISOString()
+    });
+
+    serviceEventBus.emit('player-left', {
+      displayName,
+      userId: player.userId,
+      timestamp: new Date().toISOString()
+    });
   }
 
   private parseLine(line: string) {
@@ -545,10 +661,9 @@ class LogWatcherService extends EventEmitter {
     // isBackfill check for Notifications
     const isBackfill = this.lastActivityTime < this.lastProcessedTimestamp;
 
-    // Actually update processed timestamp if this is newer
+    // actually update processed timestamp if this is newer
     if (parsedTime > this.lastProcessedTimestamp) {
       this.lastProcessedTimestamp = parsedTime;
-      store.set('lastLogTimestamp', parsedTime); // persist
     }
 
     // 1. World Location
@@ -559,15 +674,17 @@ class LogWatcherService extends EventEmitter {
       const instanceId = fullInstanceString;
       const location = `${worldId}:${fullInstanceString}`;
 
-      log.info(`[LogWatcher] MATCH Joining: ${location}`);
+      log.debug(`[LogWatcher] Joining World: ${location}`);
 
-      // DEBUG: Fetch API location to compare
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { fetchCurrentLocationFromApi } = require('./AuthService');
-      fetchCurrentLocationFromApi().catch((err: unknown) => log.error('[DEBUG_COMPARE] Failed to fetch API location', err));
+      // DEBUG: Fetch API location to compare (Only when not hydrating)
+      if (!this.isHydrating && !isBackfill) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { fetchCurrentLocationFromApi } = require('./AuthService');
+        fetchCurrentLocationFromApi().catch(() => { }); // Fallback silently
+      }
 
       if (this.state.currentLocation !== location) {
-        log.info(`[LogWatcher] Location CHANGED to ${location}. Purging old instance cache.`);
+        log.debug(`[LogWatcher] Location transitioned to ${location}`);
 
         // FORCED PURGE: Completely clear presence state for the OLD world
         this.state.players.clear();
@@ -577,12 +694,15 @@ class LogWatcherService extends EventEmitter {
 
         // Inform UI to clear its local player list and update world
         this.emitToRenderer('log:location', { worldId, instanceId, location, timestamp });
+
+        // UNGUARDED: Always emit location for backend state synchronization (PlayerLogService)
         this.emit('location', { worldId, instanceId, location, timestamp });
         serviceEventBus.emit('location', { worldId, instanceId, location, timestamp });
 
-        // INSTANT RECONCILE: Immediately pull the fresh user list from the API for the NEW instance
-        // This is the "failsafe" to ensure the Roaming Card is correct even if logs are slow
-        this.reconcileWithApi(location);
+        // INSTANT RECONCILE: Immediately pull the fresh user list (Only when not hydrating)
+        if (!this.isHydrating && !isBackfill) {
+          this.reconcileWithApi(location);
+        }
 
         if (location.includes('~group(')) {
           discordBroadcastService.updateGroupStatus("Group Instance", 0);
@@ -595,8 +715,38 @@ class LogWatcherService extends EventEmitter {
     // 2. Avatar
     const avatarMatch = line.match(reAvatar);
     if (avatarMatch) {
-      this.emitToRenderer('log:avatar', { avatarId: avatarMatch[1], timestamp });
-      this.emit('avatar', { avatarId: avatarMatch[1], timestamp });
+      const avatarId = avatarMatch[1];
+      this.emitToRenderer('log:avatar', { avatarId, timestamp });
+      if (!isBackfill) {
+        this.emit('avatar', { avatarId, timestamp });
+
+        // HEURISTIC: Find the most recent "Switching" event to associate with this ID
+        let bestMatch: { displayName: string; avatarName: string; timestamp: number } | null = null;
+        for (const [displayName, data] of this.pendingAvatarSwitches.entries()) {
+          if (!bestMatch || data.timestamp > bestMatch.timestamp) {
+            bestMatch = { displayName, ...data };
+          }
+        }
+
+        // Only associate if the switch happened within 10 seconds of this load log
+        if (bestMatch && this.lastActivityTime - bestMatch.timestamp < 10000) {
+          const { displayName, avatarName } = bestMatch;
+          const player = this.state.players.get(displayName);
+          if (player && player.userId) {
+            log.info(`[LogWatcher] Associated avatar ${avatarId} (${avatarName}) with user ${displayName} (${player.userId})`);
+
+            // Update LocationService - this will trigger a SocialFeed entry via 'friend-state-changed'
+            locationService.updateFriend({
+              userId: player.userId,
+              currentAvatarId: avatarId,
+              avatarName: avatarName
+            });
+
+            // Remove from pending so we don't re-associate with the next loading log (e.g. if someone else joins)
+            this.pendingAvatarSwitches.delete(displayName);
+          }
+        }
+      }
     }
 
     // 3. Entering Room (Name)
@@ -605,6 +755,7 @@ class LogWatcherService extends EventEmitter {
       const worldName = enterMatch[1].trim();
       this.state.currentWorldName = worldName;
       this.emitToRenderer('log:world-name', { name: worldName, timestamp });
+      // UNGUARDED: Always emit world-name for backend state synchronization
       this.emit('world-name', { name: worldName, timestamp });
       if (this.state.currentLocation && this.state.currentLocation.includes('~group(')) {
         discordBroadcastService.updateGroupStatus(worldName, this.state.players.size);
@@ -648,7 +799,10 @@ class LogWatcherService extends EventEmitter {
         }
 
         if (displayName) {
-          log.info(`[LogWatcher] MATCH Player Joined: ${displayName} (${userId || 'No ID'})`);
+          // Suppress historical logs during startup
+          if (!this.isHydrating) {
+            log.info(`[LogWatcher] Player Joined: ${displayName}${userId ? ` (${userId})` : ''}`);
+          }
 
           const playerEvent: PlayerJoinedEvent = { displayName, userId, timestamp, isBackfill };
 
@@ -665,7 +819,15 @@ class LogWatcherService extends EventEmitter {
 
             this.state.players.set(displayName, playerEvent);
             this.emitToRenderer('log:player-joined', playerEvent);
-            serviceEventBus.emit('player-joined', playerEvent);
+
+            if (!isBackfill) {
+              serviceEventBus.emit('player-joined', playerEvent);
+
+              // SCORE CALIBRATION: Record Encounter
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
+              const { timeTrackingService } = require('./TimeTrackingService');
+              timeTrackingService.recordEncounter(userId);
+            }
 
             if (this.state.currentLocation && this.state.currentLocation.includes('~group(')) {
               discordBroadcastService.updateGroupStatus(this.state.currentWorldName || 'Group Instance', this.state.players.size);
@@ -682,7 +844,9 @@ class LogWatcherService extends EventEmitter {
               if (!this.state.players.has(displayName)) {
                 this.state.players.set(displayName, playerEvent);
                 this.emitToRenderer('log:player-joined', playerEvent);
-                serviceEventBus.emit('player-joined', playerEvent);
+                if (!isBackfill) {
+                  serviceEventBus.emit('player-joined', playerEvent);
+                }
 
                 if (this.state.currentLocation && this.state.currentLocation.includes('~group(')) {
                   discordBroadcastService.updateGroupStatus(this.state.currentWorldName || 'Group Instance', this.state.players.size);
@@ -733,7 +897,10 @@ class LogWatcherService extends EventEmitter {
         }
 
         if (displayName) {
-          log.info(`[LogWatcher] MATCH Player Left: ${displayName} (${userId || 'No ID'})`);
+          // Suppress historical logs during startup
+          if (!this.isHydrating) {
+            log.info(`[LogWatcher] Player Left: ${displayName}${userId ? ` (${userId})` : ''}`);
+          }
 
           if (this.state.players.has(displayName)) {
             const entry = this.state.players.get(displayName)!;
@@ -757,7 +924,9 @@ class LogWatcherService extends EventEmitter {
     if (voteMatch) {
       const event: VoteKickEvent = { target: voteMatch[1].trim(), initiator: voteMatch[2].trim(), timestamp, isBackfill };
       this.emitToRenderer('log:vote-kick', event);
-      this.emit('vote-kick', event);
+      if (!isBackfill) {
+        this.emit('vote-kick', event);
+      }
     }
 
     // 7. Video Play
@@ -765,7 +934,9 @@ class LogWatcherService extends EventEmitter {
     if (videoMatch) {
       const event: VideoPlayEvent = { url: videoMatch[1].trim(), requestedBy: videoMatch[2] ? videoMatch[2].trim() : 'Unknown', timestamp, isBackfill };
       this.emitToRenderer('log:video-play', event);
-      this.emit('video-play', event);
+      if (!isBackfill) {
+        this.emit('video-play', event);
+      }
     }
 
     // 8. Notifications
@@ -786,7 +957,9 @@ class LogWatcherService extends EventEmitter {
           isBackfill
         };
         this.emitToRenderer('log:notification', event);
-        this.emit('notification', event);
+        if (!isBackfill) {
+          this.emit('notification', event);
+        }
       }
     }
 
@@ -796,14 +969,33 @@ class LogWatcherService extends EventEmitter {
       const reSwitch = /\[Behaviour\] Switching\s+(.+?)\s+to avatar\s+(.+)/;
       const match = line.match(reSwitch);
       if (match) {
+        const displayName = match[1];
+        const avatarName = match[2];
+
+        // Store for heuristic association
+        this.pendingAvatarSwitches.set(displayName, {
+          avatarName,
+          timestamp: this.lastActivityTime
+        });
+
+        // Cleanup old ones (>1 min)
+        const now = this.lastActivityTime;
+        for (const [key, val] of this.pendingAvatarSwitches.entries()) {
+          if (now - val.timestamp > 60000) {
+            this.pendingAvatarSwitches.delete(key);
+          }
+        }
+
         const event = {
-          displayName: match[1],
-          avatarName: match[2],
+          displayName,
+          avatarName,
           timestamp,
           isBackfill
         };
         this.emitToRenderer('log:avatar-switch', event);
-        this.emit('avatar-switch', event);
+        if (!isBackfill) {
+          this.emit('avatar-switch', event);
+        }
       }
     }
 
@@ -821,13 +1013,21 @@ class LogWatcherService extends EventEmitter {
           isBackfill
         };
         this.emitToRenderer('log:sticker-spawn', event);
-        this.emit('sticker-spawn', event);
+        if (!isBackfill) {
+          this.emit('sticker-spawn', event);
+        }
       }
     }
   }
 
   private emitToRenderer(channel: string, data: unknown) {
-    if (this.isHydrating) return;
+    // Prevent partial syncs during hydration which cause UI duplicates
+    // CRITICAL: We MUST allow location updates through so the Roaming Mode card appears immediately.
+    const ALWAYS_ALLOWED_CHANNELS = ['log:location', 'log:world-name', 'log:game-closed', 'log:cam-adjust', 'log:avatar', 'log:avatar-switch'];
+
+    if (this.isHydrating && !ALWAYS_ALLOWED_CHANNELS.includes(channel)) {
+      return;
+    }
     windowService.broadcast(channel, data);
   }
 }

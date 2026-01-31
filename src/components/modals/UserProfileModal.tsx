@@ -30,6 +30,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     const [stats, setStats] = useState<LocalStats | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [copiedField, setCopiedField] = useState<string | null>(null);
+    const [isTracked, setIsTracked] = useState(false);
 
     // Notes
     const [note, setNote] = useState('');
@@ -42,6 +43,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             if (!userId) return;
             setLoading(true);
             setError(null);
+            setIsTracked(false); // Reset tracking state on load
             try {
                 // 1. Fetch Complete LiveOps Data
                 const profileResult = await window.electron.userProfile.getCompleteData(userId);
@@ -91,6 +93,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         // Listen for real-time stats updates
         const removeListener = window.electron.friendship.onStatsUpdate((data) => {
             if (data.userIds.includes(userId)) {
+                // If we get an update, it means they are being tracked RIGHT NOW
+                setIsTracked(true);
+
                 setStats(prev => {
                     if (!prev) return null;
                     return {
@@ -148,8 +153,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         const r = (trustLevel || '').toLowerCase();
         if (r.includes('trusted') || r.includes('veteran')) return '#8b2cdb'; // Purple
         if (r.includes('known')) return '#ff7b42';   // Orange
-        if (r.includes('user')) return '#2bcf5c';    // Green
         if (r.includes('new')) return '#1778ff';     // Blue
+        if (r.includes('user')) return '#2bcf5c';    // Green
         if (r.includes('visitor')) return '#cccccc'; // Gray
         if (r.includes('legend')) return '#ffd700';  // Gold
         return '#666666';
@@ -381,7 +386,19 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                                             <span>{formatDate(stats.lastSeen)}</span>
                                         </div>
                                         <div className={styles.field}>
-                                            <label>Time Together</label>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <label style={{ margin: 0 }}>Time Together</label>
+                                                {isTracked && (
+                                                    <span style={{
+                                                        width: '6px',
+                                                        height: '6px',
+                                                        borderRadius: '50%',
+                                                        background: '#22c55e',
+                                                        boxShadow: '0 0 5px #22c55e',
+                                                        display: 'inline-block'
+                                                    }} title="Tracking now" />
+                                                )}
+                                            </div>
                                             <span>{formatDuration(stats.timeSpent)}</span>
                                         </div>
                                         <div className={styles.field}>

@@ -40,7 +40,7 @@ export function setupFriendshipHandlers() {
     ipcMain.handle('friendship:get-game-log', async (_event, limit?: number) => {
         logger.debug(`[IPC] friendship:get-game-log called (limit: ${limit})`);
         try {
-            const entries = await gameLogService.getRecentEntries(limit || 100);
+            const entries = await gameLogService.getRecentEntries(limit || 20000);
             logger.debug(`[IPC] friendship:get-game-log returning ${entries.length} entries`);
             return entries;
         } catch (e) {
@@ -90,7 +90,10 @@ export function setupFriendshipHandlers() {
                             lastUpdated: new Date().toISOString(),
                             userIcon: f.userIcon as string,
                             profilePicOverride: f.profilePicOverride as string,
-                            currentAvatarThumbnailImageUrl: f.currentAvatarThumbnailImageUrl as string
+                            currentAvatarThumbnailImageUrl: f.currentAvatarThumbnailImageUrl as string,
+                            statusDescription: f.statusDescription as string,
+                            representedGroup: (f as any).representedGroup as string,
+                            currentAvatarId: (f as any).currentAvatarRequestId || (f as any).currentAvatarId as string
                         }));
 
                         // Update LocationService with fetched data
@@ -114,7 +117,7 @@ export function setupFriendshipHandlers() {
     ipcMain.handle('friendship:get-social-feed', async (_event, limit?: number) => {
         logger.debug(`[IPC] friendship:get-social-feed called (limit: ${limit})`);
         try {
-            const entries = await socialFeedService.getRecentEntries(limit || 100);
+            const entries = await socialFeedService.getRecentEntries(limit || 20000);
             logger.debug(`[IPC] friendship:get-social-feed returning ${entries.length} entries`);
             return entries;
         } catch (e) {
@@ -164,7 +167,10 @@ export function setupFriendshipHandlers() {
                     lastUpdated: new Date().toISOString(),
                     userIcon: f.userIcon as string,
                     profilePicOverride: f.profilePicOverride as string,
-                    currentAvatarThumbnailImageUrl: f.currentAvatarThumbnailImageUrl as string
+                    currentAvatarThumbnailImageUrl: f.currentAvatarThumbnailImageUrl as string,
+                    statusDescription: f.statusDescription as string,
+                    representedGroup: (f as any).representedGroup as string,
+                    currentAvatarId: (f as any).currentAvatarRequestId || (f as any).currentAvatarId as string
                 }));
 
                 locationService.setFriends(apiFriends);
@@ -183,7 +189,7 @@ export function setupFriendshipHandlers() {
         logger.debug(`[IPC] friendship:get-relationship-events called (limit: ${limit})`);
         try {
             const { relationshipService } = await import('./RelationshipService');
-            const entries = await relationshipService.getRecentEvents(limit || 100);
+            const entries = await relationshipService.getRecentEvents(limit || 20000);
             logger.debug(`[IPC] friendship:get-relationship-events returning ${entries.length} entries`);
             return entries;
         } catch (e) {

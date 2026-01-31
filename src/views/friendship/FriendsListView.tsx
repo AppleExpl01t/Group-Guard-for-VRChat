@@ -5,6 +5,10 @@ import { ProfileModal, useProfileModal } from '../../components/ProfileModal';
 import { LogFilterBar } from '../../components/ui/LogFilterBar';
 import { useUserBatchFetcher } from '../../hooks/useUserBatchFetcher';
 import { TrustRankBadge, AgeVerifiedBadge, VRCPlusBadge } from '../../components/ui/UserBadges';
+import { ConfirmationModal } from '../../components/ui/ConfirmationModal';
+import { useNotificationStore } from '../../stores/notificationStore';
+import { Loader2 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import type { FriendListItem } from '../../types/electron';
 
 type FilterType = 'all' | 'online' | 'offline' | 'favorite';
@@ -30,6 +34,52 @@ export const FriendsListView: React.FC = () => {
 
     const { users, fetchUsers } = useUserBatchFetcher();
     const { profile, openUserProfile, openWorldProfile, openGroupProfile, closeProfile } = useProfileModal();
+    const addNotification = useNotificationStore(state => state.addNotification);
+
+    // Recalibration States
+    const [showRecalibrateConfirm, setShowRecalibrateConfirm] = useState(false);
+    const [recalibrating, setRecalibrating] = useState(false);
+    const [recalibrationResult, setRecalibrationResult] = useState<{ processedFiles: number; totalMinutesAdded: number } | null>(null);
+
+    const handleRecalibrate = async () => {
+        setRecalibrating(true);
+        // Do NOT close modal yet - we show progress inside it
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const result = await (window.electron as any).logScanner.scan();
+
+            // Show result in modal
+            setRecalibrationResult(result);
+
+            // Still show notification for redundant feedback
+            addNotification({
+                type: 'success',
+                title: 'Recalibration Complete',
+                message: `Added ${result.totalMinutesAdded} minutes from ${result.processedFiles} files.`,
+                duration: 5000
+            });
+
+            handleRefresh();
+        } catch (e) {
+            setShowRecalibrateConfirm(false); // Close on error to show error toast clearly? Or show error in modal?
+            // For now, close and show toast
+            addNotification({
+                type: 'error',
+                title: 'Recalibration Failed',
+                message: 'Check the developer console for details.',
+                duration: 5000
+            });
+            console.error(e);
+        } finally {
+            setRecalibrating(false);
+        }
+    };
+
+    const closeRecalibrationModal = () => {
+        if (recalibrating) return; // Prevent closing while busy
+        setShowRecalibrateConfirm(false);
+        setRecalibrationResult(null); // Reset for next time
+    };
 
     // Mutuals data fetched on-demand per page
     const [mutuals, setMutuals] = useState<Record<string, { friends: number; groups: number }>>({});
@@ -178,8 +228,9 @@ export const FriendsListView: React.FC = () => {
                 onRefresh={handleRefresh}
                 refreshing={refreshing}
             >
+
                 {/* Status Filters */}
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                     {([
                         { value: 'all', label: 'All' },
                         { value: 'online', label: '🟢 Online' },
@@ -202,188 +253,230 @@ export const FriendsListView: React.FC = () => {
                             {f.label}
                         </button>
                     ))}
+
+                    <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', margin: '0 0.5rem' }} />
+
+                    {/* Retro Scan Button */}
+                    <NeonButton
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setShowRecalibrateConfirm(true)}
+                        disabled={loading || recalibrating}
+                    >
+                        {recalibrating ? (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <motion.div
+                                    animate={{ rotate: 360 }}
+                                    transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+                                >
+                                    <Loader2 size={14} />
+                                </motion.div>
+                                Scanning...
+                            </span>
+                        ) : '📚 Manual Recalibration'}
+                    </NeonButton>
                 </div>
             </LogFilterBar>
 
-            {/* Table */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '0' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                        <tr style={{
-                            color: 'rgba(255,255,255,0.7)',
-                            fontSize: '0.7rem',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                            position: 'sticky',
-                            top: 0,
-                            background: 'var(--glass-bg, #1a1a1a)',
-                            zIndex: 10
-                        }}>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)', minWidth: '220px' }}>User</th>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '80px' }}>Rank</th>
-                            <th style={{ textAlign: 'center', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '80px', cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => { setSortBy('friendScore'); setSortAscending(!sortAscending); }}>Score{sortBy === 'friendScore' && (sortAscending ? '↑' : '↓')}</th>
-                            <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '60px' }} title="Mutual Friends">Friends</th>
-                            <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '60px' }} title="Mutual Groups">Groups</th>
-                            <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '55px' }} title="Platform">Plat</th>
-                            <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '50px' }} title="VRC+ Subscriber">VRC+</th>
-                            <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '45px' }} title="Age Verified (18+)">18+</th>
-                            <th style={{ textAlign: 'center', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '60px' }}>Joins</th>
-                            <th style={{ textAlign: 'center', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '80px' }}>Time</th>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '90px', cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => { setSortBy('dateKnown'); setSortAscending(!sortAscending); }}>Since{sortBy === 'dateKnown' && (sortAscending ? '↑' : '↓')}</th>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)', cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => { setSortBy('lastSeen'); setSortAscending(!sortAscending); }}>Last Seen{sortBy === 'lastSeen' && (sortAscending ? '↑' : '↓')}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {loading && friends.length === 0 ? (
-                            Array.from({ length: 15 }).map((_, i) => (
-                                <tr key={`skeleton-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                                    <td colSpan={11} style={{ padding: '0.65rem 1rem' }}>
-                                        <div style={{ height: '24px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                </tr>
-                            ))
-                        ) : paginatedFriends.map(friend => {
-                            const userImage = friend.profilePicOverride || friend.userIcon || friend.currentAvatarThumbnailImageUrl;
-                            return (
-                                <tr
-                                    key={friend.userId}
-                                    style={{
-                                        borderBottom: '1px solid rgba(255,255,255,0.03)',
-                                        transition: 'background 0.15s ease'
-                                    }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                >
-                                    {/* User Column */}
-                                    <td style={{ padding: '0.65rem 1rem' }}>
-                                        <div
-                                            style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}
-                                            onClick={() => openUserProfile(friend.userId, friend.displayName)}
-                                        >
-                                            <div style={{
-                                                width: '32px',
-                                                height: '32px',
-                                                borderRadius: '50%',
-                                                border: `2px solid ${getStatusColor(friend.status)}`,
-                                                overflow: 'hidden',
-                                                background: '#000',
-                                                flexShrink: 0
+            {/* Table Container - Uses Absolute Fill to force scroll within available space */}
+            <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+                <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', padding: '0' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                            <tr style={{
+                                color: 'rgba(255,255,255,0.7)',
+                                fontSize: '0.7rem',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                position: 'sticky',
+                                top: 0,
+                                background: 'var(--glass-bg, #1a1a1a)',
+                                zIndex: 10
+                            }}>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)', minWidth: '220px' }}>User</th>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '80px' }}>Rank</th>
+                                <th style={{ textAlign: 'center', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '80px', cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => { setSortBy('friendScore'); setSortAscending(!sortAscending); }}>Score{sortBy === 'friendScore' && (sortAscending ? '↑' : '↓')}</th>
+                                <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '60px' }} title="Mutual Friends">Friends</th>
+                                <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '60px' }} title="Mutual Groups">Groups</th>
+                                <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '55px' }} title="Platform">Plat</th>
+                                <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '50px' }} title="VRC+ Subscriber">VRC+</th>
+                                <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '45px' }} title="Age Verified (18+)">18+</th>
+                                <th style={{ textAlign: 'center', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '60px' }}>Joins</th>
+                                <th style={{ textAlign: 'center', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '80px' }}>Time</th>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '90px', cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => { setSortBy('dateKnown'); setSortAscending(!sortAscending); }}>Since{sortBy === 'dateKnown' && (sortAscending ? '↑' : '↓')}</th>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)', cursor: 'pointer', whiteSpace: 'nowrap' }} onClick={() => { setSortBy('lastSeen'); setSortAscending(!sortAscending); }}>Last Seen{sortBy === 'lastSeen' && (sortAscending ? '↑' : '↓')}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {loading && friends.length === 0 ? (
+                                Array.from({ length: 15 }).map((_, i) => (
+                                    <tr key={`skeleton-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                        <td colSpan={11} style={{ padding: '0.65rem 1rem' }}>
+                                            <div style={{ height: '24px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                        </td>
+                                    </tr>
+                                ))
+                            ) : paginatedFriends.map(friend => {
+                                const userImage = friend.profilePicOverride || friend.userIcon || friend.currentAvatarThumbnailImageUrl;
+                                return (
+                                    <tr
+                                        key={friend.userId}
+                                        style={{
+                                            borderBottom: '1px solid rgba(255,255,255,0.03)',
+                                            transition: 'background 0.15s ease'
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        {/* User Column */}
+                                        <td style={{ padding: '0.65rem 1rem' }}>
+                                            <div
+                                                style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}
+                                                onClick={() => openUserProfile(friend.userId, friend.displayName)}
+                                            >
+                                                <div style={{
+                                                    width: '32px',
+                                                    height: '32px',
+                                                    borderRadius: '50%',
+                                                    border: `2px solid ${getStatusColor(friend.status)}`,
+                                                    overflow: 'hidden',
+                                                    background: '#000',
+                                                    flexShrink: 0
+                                                }}>
+                                                    {userImage ? (
+                                                        <img src={userImage} alt={friend.displayName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                    ) : (
+                                                        <div style={{ width: '100%', height: '100%', background: '#222', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>👤</div>
+                                                    )}
+                                                </div>
+                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                    <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-text-main)' }}>{friend.displayName}</span>
+                                                    <span style={{ fontSize: '0.65rem', color: getStatusColor(friend.status) }}>{friend.status}</span>
+                                                </div>
+                                            </div>
+                                        </td>
+
+                                        {/* Rank */}
+                                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                                            <TrustRankBadge
+                                                tags={users.get(friend.userId)?.tags}
+                                                fallbackRank={users.get(friend.userId)?.tags ? undefined : 'Visitor'}
+                                            />
+                                        </td>
+
+                                        {/* Friend Score */}
+                                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>
+                                            <span style={{
+                                                fontWeight: 800,
+                                                color: 'var(--color-primary)',
+                                                fontSize: '0.85rem',
+                                                textShadow: '0 0 10px rgba(var(--color-primary-rgb), 0.3)'
                                             }}>
-                                                {userImage ? (
-                                                    <img src={userImage} alt={friend.displayName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                ) : (
-                                                    <div style={{ width: '100%', height: '100%', background: '#222', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>👤</div>
+                                                {friend.friendScore.toLocaleString()}
+                                            </span>
+                                        </td>
+
+                                        {/* Mutual Friends */}
+                                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center', fontSize: '0.8rem', color: 'var(--color-text-dim)' }}>
+                                            {mutuals[friend.userId] ? (
+                                                <span title={`${mutuals[friend.userId].friends} mutual friends`}>
+                                                    {mutuals[friend.userId].friends}
+                                                </span>
+                                            ) : (
+                                                <span style={{ opacity: 0.4 }}>—</span>
+                                            )}
+                                        </td>
+
+                                        {/* Mutual Groups */}
+                                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center', fontSize: '0.8rem', color: 'var(--color-text-dim)' }}>
+                                            {mutuals[friend.userId] ? (
+                                                <span title={`${mutuals[friend.userId].groups} mutual groups`}>
+                                                    {mutuals[friend.userId].groups}
+                                                </span>
+                                            ) : (
+                                                <span style={{ opacity: 0.4 }}>—</span>
+                                            )}
+                                        </td>
+
+                                        {/* Platform */}
+                                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center', fontSize: '0.9rem' }} title={users.get(friend.userId)?.last_platform || 'Unknown'}>
+                                            {getPlatformIcon(users.get(friend.userId)?.last_platform)}
+                                        </td>
+
+                                        {/* VRC+ */}
+                                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>
+                                            <VRCPlusBadge isVRCPlus={users.get(friend.userId)?.tags?.includes('system_supporter')} />
+                                        </td>
+
+                                        {/* 18+ Age Verified */}
+                                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>
+                                            <AgeVerifiedBadge isVerified={users.get(friend.userId)?.ageVerificationStatus === '18+'} />
+                                        </td>
+
+                                        {/* Joins */}
+                                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.75rem' }}>
+                                            {friend.encounterCount}
+                                        </td>
+
+                                        {/* Time */}
+                                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.75rem' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                                {formatDuration(friend.timeSpent)}
+                                                {/* Active Pulse Indicator */}
+                                                {friend.isLocalInstance && (
+                                                    <div
+                                                        title="Tracking active time (In Instance)"
+                                                        style={{
+                                                            width: '6px',
+                                                            height: '6px',
+                                                            borderRadius: '50%',
+                                                            background: '#22c55e',
+                                                            boxShadow: '0 0 5px #22c55e',
+                                                            animation: 'pulse 2s infinite'
+                                                        }}
+                                                    />
                                                 )}
                                             </div>
-                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--color-text-main)' }}>{friend.displayName}</span>
-                                                <span style={{ fontSize: '0.65rem', color: getStatusColor(friend.status) }}>{friend.status}</span>
-                                            </div>
-                                        </div>
-                                    </td>
+                                        </td>
 
-                                    {/* Rank */}
-                                    <td style={{ padding: '0.65rem 0.5rem' }}>
-                                        <TrustRankBadge
-                                            tags={users.get(friend.userId)?.tags}
-                                            fallbackRank={users.get(friend.userId)?.tags ? undefined : 'Visitor'}
-                                        />
-                                    </td>
+                                        {/* Known Since */}
+                                        <td style={{ padding: '0.65rem 0.5rem', color: 'var(--color-text-dim)', fontSize: '0.75rem' }}>
+                                            {formatDate(friend.dateKnown)}
+                                        </td>
 
-                                    {/* Friend Score */}
-                                    <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>
-                                        <span style={{
-                                            fontWeight: 800,
-                                            color: 'var(--color-primary)',
-                                            fontSize: '0.85rem',
-                                            textShadow: '0 0 10px rgba(var(--color-primary-rgb), 0.3)'
-                                        }}>
-                                            {friend.friendScore.toLocaleString()}
-                                        </span>
-                                    </td>
-
-                                    {/* Mutual Friends */}
-                                    <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center', fontSize: '0.8rem', color: 'var(--color-text-dim)' }}>
-                                        {mutuals[friend.userId] ? (
-                                            <span title={`${mutuals[friend.userId].friends} mutual friends`}>
-                                                {mutuals[friend.userId].friends}
-                                            </span>
-                                        ) : (
-                                            <span style={{ opacity: 0.4 }}>—</span>
-                                        )}
-                                    </td>
-
-                                    {/* Mutual Groups */}
-                                    <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center', fontSize: '0.8rem', color: 'var(--color-text-dim)' }}>
-                                        {mutuals[friend.userId] ? (
-                                            <span title={`${mutuals[friend.userId].groups} mutual groups`}>
-                                                {mutuals[friend.userId].groups}
-                                            </span>
-                                        ) : (
-                                            <span style={{ opacity: 0.4 }}>—</span>
-                                        )}
-                                    </td>
-
-                                    {/* Platform */}
-                                    <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center', fontSize: '0.9rem' }} title={users.get(friend.userId)?.last_platform || 'Unknown'}>
-                                        {getPlatformIcon(users.get(friend.userId)?.last_platform)}
-                                    </td>
-
-                                    {/* VRC+ */}
-                                    <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>
-                                        <VRCPlusBadge isVRCPlus={users.get(friend.userId)?.tags?.includes('system_supporter')} />
-                                    </td>
-
-                                    {/* 18+ Age Verified */}
-                                    <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>
-                                        <AgeVerifiedBadge isVerified={users.get(friend.userId)?.ageVerificationStatus === '18+'} />
-                                    </td>
-
-                                    {/* Joins */}
-                                    <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.75rem' }}>
-                                        {friend.encounterCount}
-                                    </td>
-
-                                    {/* Time */}
-                                    <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.75rem' }}>
-                                        {formatDuration(friend.timeSpent)}
-                                    </td>
-
-                                    {/* Known Since */}
-                                    <td style={{ padding: '0.65rem 0.5rem', color: 'var(--color-text-dim)', fontSize: '0.75rem' }}>
-                                        {formatDate(friend.dateKnown)}
-                                    </td>
-
-                                    {/* Last Seen */}
-                                    <td style={{ padding: '0.65rem 1rem', color: 'var(--color-text-dim)', fontSize: '0.75rem' }}>
-                                        {friend.status.toLowerCase() !== 'offline' ? (
-                                            <span style={{ color: '#22c55e', fontWeight: 600 }}>Currently Online</span>
-                                        ) : (
-                                            formatDate(friend.lastSeen)
-                                        )}
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
+                                        {/* Last Seen */}
+                                        <td style={{ padding: '0.65rem 1rem', color: 'var(--color-text-dim)', fontSize: '0.75rem' }}>
+                                            {friend.status.toLowerCase() !== 'offline' ? (
+                                                <span style={{ color: '#22c55e', fontWeight: 600 }}>Currently Online</span>
+                                            ) : (
+                                                formatDate(friend.lastSeen)
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             {/* Pagination */}
-            {totalPages > 1 && (
-                <div style={{
-                    padding: '0.75rem 1rem',
-                    borderTop: '1px solid var(--border-color)',
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    gap: '0.5rem'
-                }}>
-                    <NeonButton variant="ghost" size="sm" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>← Prev</NeonButton>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-dim)' }}>Page {page + 1} of {totalPages}</span>
-                    <NeonButton variant="ghost" size="sm" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>Next →</NeonButton>
-                </div>
-            )}
+            {
+                totalPages > 1 && (
+                    <div style={{
+                        padding: '0.75rem 1rem',
+                        borderTop: '1px solid var(--border-color)',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        gap: '0.5rem'
+                    }}>
+                        <NeonButton variant="ghost" size="sm" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>← Prev</NeonButton>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-dim)' }}>Page {page + 1} of {totalPages}</span>
+                        <NeonButton variant="ghost" size="sm" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>Next →</NeonButton>
+                    </div>
+                )
+            }
 
             <ProfileModal
                 profile={profile}
@@ -392,6 +485,29 @@ export const FriendsListView: React.FC = () => {
                 openWorldProfile={openWorldProfile}
                 openGroupProfile={openGroupProfile}
             />
-        </GlassPanel>
+
+            {/* Recalibration Modal (Handles Confirmation, Loading, and Success) */}
+            <ConfirmationModal
+                isOpen={showRecalibrateConfirm}
+                onClose={recalibrationResult ? closeRecalibrationModal : () => setShowRecalibrateConfirm(false)}
+                onConfirm={recalibrationResult ? closeRecalibrationModal : handleRecalibrate}
+
+                // Content changes based on state
+                title={recalibrationResult ? "Recalibration Complete" : "Recalibrate Encounter Stats"}
+                message={
+                    recalibrationResult
+                        ? `Process complete! Scanned ${recalibrationResult.processedFiles} files and corrected history. Added ${recalibrationResult.totalMinutesAdded} minutes of tracked time.`
+                        : "This will scan your local Instance History (player_log.jsonl) and overwrite current encounter counts with strict, accurate join counts. It also imports new history from text logs."
+                }
+
+                // Style changes
+                variant={recalibrationResult ? 'success' : 'warning'}
+                confirmLabel={recalibrationResult ? "Close" : "Start Recalibration"}
+
+                // State props
+                isLoading={recalibrating}
+                hideCancel={!!recalibrationResult} // Hide cancel when showing success
+            />
+        </GlassPanel >
     );
 };

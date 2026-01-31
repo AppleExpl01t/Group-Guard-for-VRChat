@@ -230,170 +230,173 @@ export const GameLogView: React.FC = () => {
             </LogFilterBar>
 
             {/* Table */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '0' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                        <tr style={{
-                            color: 'rgba(255,255,255,0.7)',
-                            fontSize: '0.7rem',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                            position: 'sticky',
-                            top: 0,
-                            background: 'var(--glass-bg, #1a1a1a)',
-                            zIndex: 10
-                        }}>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)', minWidth: '110px' }}>Date</th>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '120px' }}>Type</th>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '180px' }}>User</th>
-                            <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '50px' }}>18+</th>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '100px' }}>Rank</th>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)' }}>World</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {loading && logs.length === 0 ? (
-                            // SKELETON LOADER
-                            Array.from({ length: 10 }).map((_, i) => (
-                                <tr key={`skeleton-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                                    <td style={{ padding: '0.65rem 1rem' }}>
-                                        <div style={{ height: '14px', width: '80px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                    <td style={{ padding: '0.65rem 0.5rem' }}>
-                                        <div style={{ height: '14px', width: '100px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                    <td style={{ padding: '0.65rem 0.5rem' }}>
-                                        <div style={{ height: '14px', width: '30px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                    <td style={{ padding: '0.65rem 0.5rem' }}>
-                                        <div style={{ height: '14px', width: '60px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                    <td style={{ padding: '0.65rem 0.5rem' }}>
-                                        <div style={{ height: '14px', width: '100px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                    <td style={{ padding: '0.65rem 1rem' }}>
-                                        <div style={{ height: '14px', width: '150px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                </tr>
-                            ))
-                        ) : filteredLogs.length === 0 ? (
-                            <tr>
-                                <td colSpan={6} style={{ textAlign: 'center', padding: '3rem 1rem' }}>
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                                        <span style={{ fontSize: '2rem' }}>🎮</span>
-                                        <span style={{ color: 'var(--color-text-dim)', fontWeight: 600 }}>No player encounters found.</span>
-                                        <span style={{ color: 'var(--color-text-dim)', fontSize: '0.8rem' }}>
-                                            Try adjusting your filters or date range.
-                                        </span>
-                                    </div>
-                                </td>
+            {/* Table Container - Uses Absolute Fill to force scroll within available space */}
+            <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+                <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', padding: '0' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                            <tr style={{
+                                color: 'rgba(255,255,255,0.7)',
+                                fontSize: '0.7rem',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                position: 'sticky',
+                                top: 0,
+                                background: 'var(--glass-bg, #1a1a1a)',
+                                zIndex: 10
+                            }}>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)', minWidth: '110px' }}>Date</th>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '120px' }}>Type</th>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '180px' }}>User</th>
+                                <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '50px' }}>18+</th>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '100px' }}>Rank</th>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)' }}>World</th>
                             </tr>
-                        ) : (
-                            paginatedLogs.map((entry) => {
-                                const worldName = getWorldName(entry);
-                                return (
-                                    <tr
-                                        key={entry.id}
-                                        style={{
-                                            borderBottom: '1px solid rgba(255,255,255,0.03)',
-                                            transition: 'background 0.15s ease'
-                                        }}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                    >
-                                        <td style={{
-                                            padding: '0.65rem 1rem',
-                                            fontFamily: 'monospace',
-                                            fontSize: '0.7rem',
-                                            color: 'var(--color-text-dim)'
-                                        }}>
-                                            {formatDate(entry.timestamp)}
+                        </thead>
+                        <tbody>
+                            {loading && logs.length === 0 ? (
+                                // SKELETON LOADER
+                                Array.from({ length: 10 }).map((_, i) => (
+                                    <tr key={`skeleton-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                        <td style={{ padding: '0.65rem 1rem' }}>
+                                            <div style={{ height: '14px', width: '80px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
                                         </td>
-                                        <td style={{
-                                            padding: '0.65rem 0.5rem',
-                                            fontSize: '0.75rem'
-                                        }}>
-                                            <span style={{ marginRight: '0.3rem' }}>{getTypeIcon(entry.type)}</span>
-                                            <span style={{
-                                                color: entry.type === 'join' ? '#22c55e' : '#ef4444',
-                                                fontWeight: 500
-                                            }}>
-                                                {getTypeLabel(entry.type)}
-                                            </span>
+                                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                                            <div style={{ height: '14px', width: '100px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
                                         </td>
-                                        <td style={{
-                                            padding: '0.65rem 0.5rem',
-                                            fontWeight: 600,
-                                            fontSize: '0.85rem',
-                                            maxWidth: '180px'
-                                        }}>
-                                            <span
-                                                style={{
-                                                    ...clickableStyle,
-                                                    color: 'var(--color-primary)',
-                                                    whiteSpace: 'nowrap',
-                                                    overflow: 'hidden',
-                                                    textOverflow: 'ellipsis',
-                                                    display: 'inline-block',
-                                                    maxWidth: '100%'
-                                                }}
-                                                onClick={() => entry.userId && openUserProfile(entry.userId, entry.displayName)}
-                                                onMouseEnter={(e) => e.currentTarget.style.textDecorationColor = 'var(--color-primary)'}
-                                                onMouseLeave={(e) => e.currentTarget.style.textDecorationColor = 'transparent'}
-                                            >
-                                                {entry.displayName}
-                                            </span>
+                                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                                            <div style={{ height: '14px', width: '30px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
                                         </td>
-                                        <td style={{
-                                            padding: '0.65rem 0.5rem',
-                                            textAlign: 'center'
-                                        }}>
-                                            {entry.userId && (
-                                                <AgeVerifiedBadge isVerified={users.get(entry.userId)?.ageVerified} />
-                                            )}
+                                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                                            <div style={{ height: '14px', width: '60px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
                                         </td>
-                                        <td style={{
-                                            padding: '0.65rem 0.5rem'
-                                        }}>
-                                            {entry.userId && (
-                                                <TrustRankBadge
-                                                    tags={users.get(entry.userId)?.tags}
-                                                    fallbackRank={users.get(entry.userId)?.tags ? undefined : 'Visitor'}
-                                                />
-                                            )}
+                                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                                            <div style={{ height: '14px', width: '100px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
                                         </td>
-                                        <td style={{
-                                            padding: '0.65rem 1rem',
-                                            fontSize: '0.75rem',
-                                            maxWidth: '200px',
-                                            whiteSpace: 'nowrap',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis'
-                                        }} title={worldName}>
-                                            <span
-                                                style={{
-                                                    ...clickableStyle,
-                                                    color: 'var(--color-text-dim)'
-                                                }}
-                                                onClick={() => entry.worldId && openWorldProfile(entry.worldId, worldName)}
-                                                onMouseEnter={(e) => {
-                                                    e.currentTarget.style.color = 'var(--color-primary)';
-                                                    e.currentTarget.style.textDecorationColor = 'var(--color-primary)';
-                                                }}
-                                                onMouseLeave={(e) => {
-                                                    e.currentTarget.style.color = 'var(--color-text-dim)';
-                                                    e.currentTarget.style.textDecorationColor = 'transparent';
-                                                }}
-                                            >
-                                                {worldName}
-                                            </span>
+                                        <td style={{ padding: '0.65rem 1rem' }}>
+                                            <div style={{ height: '14px', width: '150px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
                                         </td>
                                     </tr>
-                                );
-                            })
-                        )}
-                    </tbody>
-                </table>
+                                ))
+                            ) : filteredLogs.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ fontSize: '2rem' }}>🎮</span>
+                                            <span style={{ color: 'var(--color-text-dim)', fontWeight: 600 }}>No player encounters found.</span>
+                                            <span style={{ color: 'var(--color-text-dim)', fontSize: '0.8rem' }}>
+                                                Try adjusting your filters or date range.
+                                            </span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ) : (
+                                paginatedLogs.map((entry) => {
+                                    const worldName = getWorldName(entry);
+                                    return (
+                                        <tr
+                                            key={entry.id}
+                                            style={{
+                                                borderBottom: '1px solid rgba(255,255,255,0.03)',
+                                                transition: 'background 0.15s ease'
+                                            }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                            <td style={{
+                                                padding: '0.65rem 1rem',
+                                                fontFamily: 'monospace',
+                                                fontSize: '0.7rem',
+                                                color: 'var(--color-text-dim)'
+                                            }}>
+                                                {formatDate(entry.timestamp)}
+                                            </td>
+                                            <td style={{
+                                                padding: '0.65rem 0.5rem',
+                                                fontSize: '0.75rem'
+                                            }}>
+                                                <span style={{ marginRight: '0.3rem' }}>{getTypeIcon(entry.type)}</span>
+                                                <span style={{
+                                                    color: entry.type === 'join' ? '#22c55e' : '#ef4444',
+                                                    fontWeight: 500
+                                                }}>
+                                                    {getTypeLabel(entry.type)}
+                                                </span>
+                                            </td>
+                                            <td style={{
+                                                padding: '0.65rem 0.5rem',
+                                                fontWeight: 600,
+                                                fontSize: '0.85rem',
+                                                maxWidth: '180px'
+                                            }}>
+                                                <span
+                                                    style={{
+                                                        ...clickableStyle,
+                                                        color: 'var(--color-primary)',
+                                                        whiteSpace: 'nowrap',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        display: 'inline-block',
+                                                        maxWidth: '100%'
+                                                    }}
+                                                    onClick={() => entry.userId && openUserProfile(entry.userId, entry.displayName)}
+                                                    onMouseEnter={(e) => e.currentTarget.style.textDecorationColor = 'var(--color-primary)'}
+                                                    onMouseLeave={(e) => e.currentTarget.style.textDecorationColor = 'transparent'}
+                                                >
+                                                    {entry.displayName}
+                                                </span>
+                                            </td>
+                                            <td style={{
+                                                padding: '0.65rem 0.5rem',
+                                                textAlign: 'center'
+                                            }}>
+                                                {entry.userId && (
+                                                    <AgeVerifiedBadge isVerified={users.get(entry.userId)?.ageVerified} />
+                                                )}
+                                            </td>
+                                            <td style={{
+                                                padding: '0.65rem 0.5rem'
+                                            }}>
+                                                {entry.userId && (
+                                                    <TrustRankBadge
+                                                        tags={users.get(entry.userId)?.tags}
+                                                        fallbackRank={users.get(entry.userId)?.tags ? undefined : 'Visitor'}
+                                                    />
+                                                )}
+                                            </td>
+                                            <td style={{
+                                                padding: '0.65rem 1rem',
+                                                fontSize: '0.75rem',
+                                                maxWidth: '200px',
+                                                whiteSpace: 'nowrap',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis'
+                                            }} title={worldName}>
+                                                <span
+                                                    style={{
+                                                        ...clickableStyle,
+                                                        color: 'var(--color-text-dim)'
+                                                    }}
+                                                    onClick={() => entry.worldId && openWorldProfile(entry.worldId, worldName)}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.color = 'var(--color-primary)';
+                                                        e.currentTarget.style.textDecorationColor = 'var(--color-primary)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.color = 'var(--color-text-dim)';
+                                                        e.currentTarget.style.textDecorationColor = 'transparent';
+                                                    }}
+                                                >
+                                                    {worldName}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             {/* Pagination */}

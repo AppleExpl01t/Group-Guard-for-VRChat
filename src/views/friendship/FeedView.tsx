@@ -34,7 +34,7 @@ export const FeedView: React.FC = () => {
     const [worldCache, setWorldCache] = useState<Map<string, WorldInfo>>(new Map());
     const { users, fetchUsers } = useUserBatchFetcher();
 
-    const { profile, openUserProfile, openWorldProfile, openGroupProfile, closeProfile } = useProfileModal();
+    const { profile, openUserProfile, openWorldProfile, openGroupProfile, openAvatarProfile, closeProfile } = useProfileModal();
 
     const fetchFeed = useCallback(async () => {
         try {
@@ -260,176 +260,197 @@ export const FeedView: React.FC = () => {
             </LogFilterBar>
 
             {/* Table */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '0' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                        <tr style={{
-                            color: 'rgba(255,255,255,0.7)',
-                            fontSize: '0.7rem',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                            position: 'sticky',
-                            top: 0,
-                            background: 'var(--glass-bg, #1a1a1a)',
-                            zIndex: 10
-                        }}>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)', minWidth: '110px' }}>Date</th>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '90px' }}>Type</th>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '180px' }}>User</th>
-                            <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '50px' }}>18+</th>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '100px' }}>Rank</th>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)' }}>Detail</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {loading && feed.length === 0 ? (
-                            // Skeleton Loader
-                            Array.from({ length: 10 }).map((_, i) => (
-                                <tr key={`skeleton-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                                    <td style={{ padding: '0.65rem 1rem' }}>
-                                        <div style={{ height: '14px', width: '80px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                    <td style={{ padding: '0.65rem 0.5rem' }}>
-                                        <div style={{ height: '14px', width: '40px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                    <td style={{ padding: '0.65rem 0.5rem' }}>
-                                        <div style={{ height: '14px', width: '30px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                    <td style={{ padding: '0.65rem 0.5rem' }}>
-                                        <div style={{ height: '14px', width: '60px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                    <td style={{ padding: '0.65rem 0.5rem' }}>
-                                        <div style={{ height: '14px', width: '100px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                    <td style={{ padding: '0.65rem 1rem' }}>
-                                        <div style={{ height: '14px', width: '150px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+            {/* Table Container - Uses Absolute Fill to force scroll within available space */}
+            <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+                <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', padding: '0' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                            <tr style={{
+                                color: 'rgba(255,255,255,0.7)',
+                                fontSize: '0.7rem',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                position: 'sticky',
+                                top: 0,
+                                background: 'var(--glass-bg, #1a1a1a)',
+                                zIndex: 10
+                            }}>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)', minWidth: '110px' }}>Date</th>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '90px' }}>Type</th>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '180px' }}>User</th>
+                                <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '50px' }}>18+</th>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '100px' }}>Rank</th>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)' }}>Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {loading && feed.length === 0 ? (
+                                // Skeleton Loader
+                                Array.from({ length: 10 }).map((_, i) => (
+                                    <tr key={`skeleton-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                        <td style={{ padding: '0.65rem 1rem' }}>
+                                            <div style={{ height: '14px', width: '80px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                        </td>
+                                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                                            <div style={{ height: '14px', width: '40px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                        </td>
+                                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                                            <div style={{ height: '14px', width: '30px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                        </td>
+                                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                                            <div style={{ height: '14px', width: '60px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                        </td>
+                                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                                            <div style={{ height: '14px', width: '100px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                        </td>
+                                        <td style={{ padding: '0.65rem 1rem' }}>
+                                            <div style={{ height: '14px', width: '150px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                        </td>
+                                    </tr>
+                                ))
+                            ) : filteredFeed.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ fontSize: '2rem' }}>📋</span>
+                                            <span style={{ color: 'var(--color-text-dim)', fontWeight: 600 }}>No activity found.</span>
+                                            <span style={{ color: 'var(--color-text-dim)', fontSize: '0.8rem' }}>
+                                                Try adjusting your filters or date range.
+                                            </span>
+                                        </div>
                                     </td>
                                 </tr>
-                            ))
-                        ) : filteredFeed.length === 0 ? (
-                            <tr>
-                                <td colSpan={6} style={{ textAlign: 'center', padding: '3rem 1rem' }}>
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                                        <span style={{ fontSize: '2rem' }}>📋</span>
-                                        <span style={{ color: 'var(--color-text-dim)', fontWeight: 600 }}>No activity found.</span>
-                                        <span style={{ color: 'var(--color-text-dim)', fontSize: '0.8rem' }}>
-                                            Try adjusting your filters or date range.
-                                        </span>
-                                    </div>
-                                </td>
-                            </tr>
-                        ) : (
-                            paginatedFeed.map((entry) => {
-                                const details = formatDetails(entry);
-                                const worldInfo = entry.type === 'location' ? parseWorldFromDetails(entry.details) : {};
+                            ) : (
+                                paginatedFeed.map((entry) => {
+                                    const details = formatDetails(entry);
+                                    const worldInfo = entry.type === 'location' ? parseWorldFromDetails(entry.details) : {};
 
-                                return (
-                                    <tr
-                                        key={entry.id}
-                                        style={{
-                                            borderBottom: '1px solid rgba(255,255,255,0.03)',
-                                            transition: 'background 0.15s ease'
-                                        }}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                    >
-                                        <td style={{
-                                            padding: '0.65rem 1rem',
-                                            fontFamily: 'monospace',
-                                            fontSize: '0.7rem',
-                                            color: 'var(--color-text-dim)'
-                                        }}>
-                                            {formatDate(entry.timestamp)}
-                                        </td>
-                                        <td style={{
-                                            padding: '0.65rem 0.5rem',
-                                            fontSize: '0.75rem'
-                                        }}>
-                                            <span style={{
-                                                color: getTypeColor(entry.type),
-                                                fontWeight: 600
+                                    return (
+                                        <tr
+                                            key={entry.id}
+                                            style={{
+                                                borderBottom: '1px solid rgba(255,255,255,0.03)',
+                                                transition: 'background 0.15s ease'
+                                            }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                            <td style={{
+                                                padding: '0.65rem 1rem',
+                                                fontFamily: 'monospace',
+                                                fontSize: '0.7rem',
+                                                color: 'var(--color-text-dim)'
                                             }}>
-                                                {getTypeLabel(entry.type)}
-                                            </span>
-                                        </td>
-                                        <td style={{
-                                            padding: '0.65rem 0.5rem',
-                                            fontWeight: 600,
-                                            fontSize: '0.85rem',
-                                            maxWidth: '180px'
-                                        }}>
-                                            <span
-                                                style={{
-                                                    ...clickableStyle,
-                                                    color: 'var(--color-primary)',
-                                                    whiteSpace: 'nowrap',
-                                                    overflow: 'hidden',
-                                                    textOverflow: 'ellipsis',
-                                                    display: 'inline-block',
-                                                    maxWidth: '100%'
-                                                }}
-                                                onClick={() => entry.userId && openUserProfile(entry.userId, entry.displayName)}
-                                                onMouseEnter={(e) => e.currentTarget.style.textDecorationColor = 'var(--color-primary)'}
-                                                onMouseLeave={(e) => e.currentTarget.style.textDecorationColor = 'transparent'}
-                                            >
-                                                {entry.displayName}
-                                            </span>
-                                        </td>
-                                        <td style={{
-                                            padding: '0.65rem 0.5rem',
-                                            textAlign: 'center'
-                                        }}>
-                                            {entry.userId && (
-                                                <AgeVerifiedBadge isVerified={users.get(entry.userId)?.ageVerified} />
-                                            )}
-                                        </td>
-                                        <td style={{
-                                            padding: '0.65rem 0.5rem'
-                                        }}>
-                                            {entry.userId && (
-                                                <TrustRankBadge
-                                                    tags={users.get(entry.userId)?.tags}
-                                                    fallbackRank={users.get(entry.userId)?.tags ? undefined : 'Visitor'}
-                                                />
-                                            )}
-                                        </td>
-                                        <td style={{
-                                            padding: '0.65rem 1rem',
-                                            fontSize: '0.75rem',
-                                            color: 'var(--color-text-dim)',
-                                            maxWidth: '300px',
-                                            whiteSpace: 'nowrap',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis'
-                                        }} title={details}>
-                                            {entry.type === 'location' && worldInfo.worldId ? (
+                                                {formatDate(entry.timestamp)}
+                                            </td>
+                                            <td style={{
+                                                padding: '0.65rem 0.5rem',
+                                                fontSize: '0.75rem'
+                                            }}>
+                                                <span style={{
+                                                    color: getTypeColor(entry.type),
+                                                    fontWeight: 600
+                                                }}>
+                                                    {getTypeLabel(entry.type)}
+                                                </span>
+                                            </td>
+                                            <td style={{
+                                                padding: '0.65rem 0.5rem',
+                                                fontWeight: 600,
+                                                fontSize: '0.85rem',
+                                                maxWidth: '180px'
+                                            }}>
                                                 <span
                                                     style={{
                                                         ...clickableStyle,
-                                                        color: 'var(--color-text-dim)'
+                                                        color: 'var(--color-primary)',
+                                                        whiteSpace: 'nowrap',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        display: 'inline-block',
+                                                        maxWidth: '100%'
                                                     }}
-                                                    onClick={() => openWorldProfile(worldInfo.worldId!, worldInfo.worldName)}
-                                                    onMouseEnter={(e) => {
-                                                        e.currentTarget.style.color = 'var(--color-primary)';
-                                                        e.currentTarget.style.textDecorationColor = 'var(--color-primary)';
-                                                    }}
-                                                    onMouseLeave={(e) => {
-                                                        e.currentTarget.style.color = 'var(--color-text-dim)';
-                                                        e.currentTarget.style.textDecorationColor = 'transparent';
-                                                    }}
+                                                    onClick={() => entry.userId && openUserProfile(entry.userId, entry.displayName)}
+                                                    onMouseEnter={(e) => e.currentTarget.style.textDecorationColor = 'var(--color-primary)'}
+                                                    onMouseLeave={(e) => e.currentTarget.style.textDecorationColor = 'transparent'}
                                                 >
-                                                    {details}
+                                                    {entry.displayName}
                                                 </span>
-                                            ) : (
-                                                details
-                                            )}
-                                        </td>
-                                    </tr>
-                                );
-                            })
-                        )}
-                    </tbody>
-                </table>
+                                            </td>
+                                            <td style={{
+                                                padding: '0.65rem 0.5rem',
+                                                textAlign: 'center'
+                                            }}>
+                                                {entry.userId && (
+                                                    <AgeVerifiedBadge isVerified={users.get(entry.userId)?.ageVerified} />
+                                                )}
+                                            </td>
+                                            <td style={{
+                                                padding: '0.65rem 0.5rem'
+                                            }}>
+                                                {entry.userId && (
+                                                    <TrustRankBadge
+                                                        tags={users.get(entry.userId)?.tags}
+                                                        fallbackRank={users.get(entry.userId)?.tags ? undefined : 'Visitor'}
+                                                    />
+                                                )}
+                                            </td>
+                                            <td style={{
+                                                padding: '0.65rem 1rem',
+                                                fontSize: '0.75rem',
+                                                color: 'var(--color-text-dim)',
+                                                maxWidth: '300px',
+                                                whiteSpace: 'nowrap',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis'
+                                            }} title={details}>
+                                                {entry.type === 'location' && worldInfo.worldId ? (
+                                                    <span
+                                                        style={{
+                                                            ...clickableStyle,
+                                                            color: 'var(--color-text-dim)'
+                                                        }}
+                                                        onClick={() => openWorldProfile(worldInfo.worldId!, worldInfo.worldName)}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.color = 'var(--color-primary)';
+                                                            e.currentTarget.style.textDecorationColor = 'var(--color-primary)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.color = 'var(--color-text-dim)';
+                                                            e.currentTarget.style.textDecorationColor = 'transparent';
+                                                        }}
+                                                    >
+                                                        {details}
+                                                    </span>
+                                                ) : entry.type === 'avatar' && (entry.data as any)?.currentAvatarId ? (
+                                                    <span
+                                                        style={{
+                                                            ...clickableStyle,
+                                                            color: 'var(--color-text-dim)'
+                                                        }}
+                                                        onClick={() => openAvatarProfile((entry.data as any).currentAvatarId, (entry.data as any).avatarName)}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.color = 'var(--color-primary)';
+                                                            e.currentTarget.style.textDecorationColor = 'var(--color-primary)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.color = 'var(--color-text-dim)';
+                                                            e.currentTarget.style.textDecorationColor = 'transparent';
+                                                        }}
+                                                    >
+                                                        {details}
+                                                    </span>
+                                                ) : (
+                                                    details
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             {/* Pagination Controls match standard */}
@@ -474,6 +495,7 @@ export const FeedView: React.FC = () => {
                 openUserProfile={openUserProfile}
                 openWorldProfile={openWorldProfile}
                 openGroupProfile={openGroupProfile}
+                openAvatarProfile={openAvatarProfile}
             />
         </GlassPanel>
     );

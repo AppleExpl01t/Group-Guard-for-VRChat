@@ -25,7 +25,7 @@ class ProcessService extends EventEmitter {
         if (this.checkInterval) return;
 
         logger.info(`[ProcessService] Starting monitoring for ${this.processName}...`);
-        
+
         // Initial check immediately
         this.checkProcess();
 
@@ -53,7 +53,7 @@ class ProcessService extends EventEmitter {
             // Using fast, raw tasklist check
             execFile('tasklist', ['/FI', `IMAGENAME eq ${this.processName}`, '/FO', 'CSV', '/NH'], (error, stdout) => {
                 let found = false;
-                
+
                 if (error) {
                     // Tasklist failed? Assume not run running or error
                     // Don't log spam errors, just debug

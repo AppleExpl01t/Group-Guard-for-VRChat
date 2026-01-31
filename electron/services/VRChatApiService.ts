@@ -183,6 +183,23 @@ export interface VRCFriend {
     [key: string]: unknown;
 }
 
+export interface VRCAvatar {
+    id: string;
+    name: string;
+    description?: string;
+    authorId?: string;
+    authorName?: string;
+    tags?: string[];
+    assetUrl?: string; // .vrca file
+    imageUrl?: string;
+    thumbnailImageUrl?: string;
+    releaseStatus?: string;
+    version?: number;
+    unityPackageUrl?: string;
+    unityVersion?: string;
+    [key: string]: unknown;
+}
+
 // Result types for API operations
 export interface ApiResult<T> {
     success: boolean;
@@ -731,6 +748,29 @@ export const vrchatApiService = {
             });
             return undefined;
         }, `updateInviteMessage:${_slot}`);
+    },
+
+    // ========================================
+    // AVATARS
+    // ========================================
+
+    /**
+     * Get avatar details by ID
+     */
+    async getAvatar(avatarId: string): Promise<ApiResult<VRCAvatar>> {
+        if (!avatarId) {
+            return { success: false, error: 'Avatar ID is required' };
+        }
+
+        return networkService.execute(async () => {
+            const client = getVRChatClient();
+            if (!client) throw new Error('Not authenticated');
+
+            const response = await client.getAvatar({ path: { avatarId } });
+            const avatar = response.data as VRCAvatar;
+
+            return avatar;
+        }, `getAvatar:${avatarId}`);
     },
 
     // ========================================

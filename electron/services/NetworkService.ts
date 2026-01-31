@@ -15,6 +15,9 @@ export class TokenBucket {
     private readonly capacity: number;
     private readonly refillRate: number; // tokens per ms
 
+    private queue: Array<{ count: number; resolve: () => void }> = [];
+    private timer: NodeJS.Timeout | null = null;
+
     /**
      * @param capacity Max burst size (e.g. 60)
      * @param refillRate Tokens per second (e.g. 1 for 60/min)
@@ -37,22 +40,37 @@ export class TokenBucket {
         }
     }
 
-    async consume(count: number = 1): Promise<void> {
+    private processQueue() {
         this.refill();
 
-        if (this.tokens >= count) {
-            this.tokens -= count;
-            return;
+        while (this.queue.length > 0) {
+            const next = this.queue[0]; // Peek
+            if (this.tokens >= next.count) {
+                this.tokens -= next.count;
+                this.queue.shift(); // Dequeue
+                next.resolve();
+            } else {
+                // Not enough tokens yet. Schedule retry.
+                const missing = next.count - this.tokens;
+                const waitMs = Math.ceil(missing / this.refillRate);
+
+                if (this.timer) clearTimeout(this.timer);
+
+                this.timer = setTimeout(() => {
+                    this.timer = null;
+                    this.processQueue();
+                }, waitMs);
+
+                return; // Stop processing
+            }
         }
+    }
 
-        // Calculate wait time
-        const missingTokens = count - this.tokens;
-        const waitMs = Math.ceil(missingTokens / this.refillRate);
-
-        // logger.debug(`[TokenBucket] Rate limit hit. Waiting ${waitMs}ms...`);
-        return new Promise(resolve => setTimeout(() => {
-            this.consume(count).then(resolve);
-        }, waitMs));
+    async consume(count: number = 1): Promise<void> {
+        return new Promise<void>((resolve) => {
+            this.queue.push({ count, resolve });
+            this.processQueue();
+        });
     }
 }
 
@@ -85,8 +103,8 @@ export const networkService = {
                 const status = err.response?.status;
                 const msg = err.response?.data?.error?.message || err.message || 'Unknown error';
 
-                if (status === 401) {
-                    logger.warn(`[Network] 401 Unauthorized during '${context}'`);
+                if (status === 401 || msg.includes('Not authenticated')) {
+                    // Suppress authentication errors silently - they match expected startup race conditions
                     return { success: false, error: 'Not authenticated' };
                 }
 
@@ -94,16 +112,32 @@ export const networkService = {
                     attempt++;
                     if (attempt <= retryConfig.maxRetries) {
                         const delay = retryConfig.baseDelay * Math.pow(2, attempt - 1);
-                        logger.warn(`[Network] 429 Rate Limited during '${context}'. Retrying in ${delay}ms (Attempt ${attempt}/${retryConfig.maxRetries})`);
+                        logger.debug(`[Network] Resource busy during '${context}'. Retrying... (Attempt ${attempt}/${retryConfig.maxRetries})`);
                         await new Promise(resolve => setTimeout(resolve, delay));
                         continue;
                     } else {
-                        logger.warn(`[Network] 429 Rate Limited during '${context}'. Max retries reached.`);
+                        logger.warn(`[Network] Resource busy during '${context}'. Max retries reached.`);
                         return { success: false, error: 'Rate Limited (Max Retries)' };
                     }
                 }
 
-                logger.error(`[Network] Failed '${context}': ${msg}`, error);
+                // Suppress verbose network errors for polling and hydration
+                const isPolling = context.includes('polling');
+                const isHydration = context.includes('hydration');
+                const isExpectedNetworkError = status === 401 || status === 429 || msg.includes('Not authenticated');
+
+                if (isPolling || isHydration || isExpectedNetworkError) {
+                    // Suppress logging for these common, expected scenarios
+                    // logger.debug(`[Network] Suppressed error for '${context}': ${msg}`);
+                } else {
+                    // Generic error - logic: only log stack trace if in dev AND it's not a common expected error
+                    const isProduction = process.env.NODE_ENV !== 'development';
+                    if (!isProduction) {
+                        logger.error(`[Network] Failed '${context}': ${msg}`, error);
+                    } else {
+                        logger.error(`[Network] Failed '${context}': ${msg}`);
+                    }
+                }
                 return { success: false, error: msg };
             }
         }

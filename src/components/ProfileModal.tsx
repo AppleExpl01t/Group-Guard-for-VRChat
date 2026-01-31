@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-type ProfileType = 'user' | 'world' | 'group';
+type ProfileType = 'user' | 'world' | 'group' | 'avatar';
 
 interface ProfileData {
     type: ProfileType;
@@ -14,11 +14,13 @@ interface ProfileModalProps {
     openUserProfile?: (id: string, name?: string) => void;
     openWorldProfile?: (id: string, name?: string) => void;
     openGroupProfile?: (id: string, name?: string) => void;
+    openAvatarProfile?: (id: string, name?: string) => void;
 }
 
 import { UserProfileModal } from './modals/UserProfileModal';
 import { WorldProfileModal } from './modals/WorldProfileModal';
 import { GroupProfileModal } from './modals/GroupProfileModal';
+import { AvatarProfileModal } from './modals/AvatarProfileModal';
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({
     profile,
@@ -53,6 +55,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         />;
     }
 
+    if (profile.type === 'avatar') {
+        return <AvatarProfileModal
+            avatarId={profile.id}
+            onClose={onClose}
+            openUserProfile={openUserProfile}
+        />;
+    }
+
     return null;
 };
 
@@ -72,6 +82,10 @@ export const useProfileModal = () => {
         setProfile({ type: 'group', id: groupId, name });
     };
 
+    const openAvatarProfile = (avatarId: string, name?: string) => {
+        setProfile({ type: 'avatar', id: avatarId, name });
+    };
+
     const closeProfile = () => {
         setProfile(null);
     };
@@ -81,6 +95,7 @@ export const useProfileModal = () => {
         openUserProfile,
         openWorldProfile,
         openGroupProfile,
+        openAvatarProfile,
         closeProfile
     };
 };

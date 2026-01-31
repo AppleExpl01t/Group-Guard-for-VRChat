@@ -72,7 +72,7 @@ const loadProcessedAuditLogs = () => {
             const data = JSON.parse(fs.readFileSync(PROCESSED_LOGS_FILE, 'utf-8'));
             if (Array.isArray(data)) {
                 data.forEach(id => processedAuditLogIds.add(id));
-                logger.info(`[PermissionGuard] Loaded ${data.length} processed log IDs from disk`);
+                logger.debug(`[PermissionGuard] Loaded ${data.length} processed log IDs from disk`);
             }
         }
     } catch (err) {
@@ -194,7 +194,6 @@ export const permissionGuardService = {
                     const rolesResult = await vrchatApiService.getGroupRoles(groupId);
                     if (rolesResult.success && rolesResult.data) {
                         groupRoles = rolesResult.data;
-                        groupRolesCache.set(groupId, { roles: groupRoles, timestamp: Date.now() });
                     } else {
                         logger.warn(`[PermissionGuard] Failed to fetch roles for ${groupId}, skipping check.`);
                         continue;
@@ -269,7 +268,7 @@ export const permissionGuardService = {
                                 instanceGuardService.markClosed(instanceKey);
 
                                 if (isAlreadyClosed) {
-                                    logger.info(`[PermissionGuard] Instance already closed (treating as success)`);
+                                    logger.debug(`[PermissionGuard] Instance already closed (treating as success)`);
                                 }
 
                                 // Log action

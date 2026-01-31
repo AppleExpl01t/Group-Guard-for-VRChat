@@ -193,198 +193,199 @@ export const SocialView: React.FC = () => {
                 </div>
             </LogFilterBar>
 
-            {/* Table */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '0' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                        <tr style={{
-                            color: 'rgba(255,255,255,0.7)',
-                            fontSize: '0.7rem',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                            position: 'sticky',
-                            top: 0,
-                            background: 'var(--glass-bg, #1a1a1a)',
-                            zIndex: 10
-                        }}>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)', minWidth: '110px' }}>Date</th>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '130px' }}>Type</th>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '180px' }}>User</th>
-                            <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '50px' }}>18+</th>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '100px' }}>Rank</th>
-                            <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)' }}>Details</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {loading && events.length === 0 ? (
-                            // Skeleton Loader
-                            Array.from({ length: 10 }).map((_, i) => (
-                                <tr key={`skeleton-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                                    <td style={{ padding: '0.65rem 1rem' }}>
-                                        <div style={{ height: '14px', width: '80px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                    <td style={{ padding: '0.65rem 0.5rem' }}>
-                                        <div style={{ height: '14px', width: '60px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                    <td style={{ padding: '0.65rem 0.5rem' }}>
-                                        <div style={{ height: '14px', width: '30px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                    <td style={{ padding: '0.65rem 0.5rem' }}>
-                                        <div style={{ height: '14px', width: '60px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                    <td style={{ padding: '0.65rem 0.5rem' }}>
-                                        <div style={{ height: '14px', width: '100px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                    <td style={{ padding: '0.65rem 1rem' }}>
-                                        <div style={{ height: '14px', width: '140px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </td>
-                                </tr>
-                            ))
-                        ) : filteredEvents.length === 0 ? (
-                            <tr>
-                                <td colSpan={6} style={{ textAlign: 'center', padding: '3rem 1rem' }}>
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                                        <span style={{ fontSize: '2rem' }}>👥</span>
-                                        <span style={{ color: 'var(--color-text-dim)', fontWeight: 600 }}>No social activity found.</span>
-                                        <span style={{ color: 'var(--color-text-dim)', fontSize: '0.8rem' }}>
-                                            Try adjusting your filters or date range.
-                                        </span>
-                                    </div>
-                                </td>
+            {/* Table Coiainer - Uses Absolute Fill to force scroll within available space (COPIED FROM GAMELOGVIEW) */}
+            <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+                <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', padding: '0' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                            <tr style={{
+                                color: 'rgba(255,255,255,0.7)',
+                                fontSize: '0.7rem',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                position: 'sticky',
+                                top: 0,
+                                background: 'var(--glass-bg, #1a1a1a)',
+                                zIndex: 10
+                            }}>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)', minWidth: '110px' }}>Date</th>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '130px' }}>Type</th>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '180px' }}>User</th>
+                                <th style={{ textAlign: 'center', padding: '0.65rem 0.5rem', borderBottom: '1px solid var(--border-color)', minWidth: '50px' }}>18+</th>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 0.75rem', borderBottom: '1px solid var(--border-color)', minWidth: '100px' }}>Rank</th>
+                                <th style={{ textAlign: 'left', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border-color)' }}>Details</th>
                             </tr>
-                        ) : (
-                            paginatedEvents.map((event) => (
-                                <tr
-                                    key={event.id}
-                                    style={{
-                                        borderBottom: '1px solid rgba(255,255,255,0.03)',
-                                        transition: 'background 0.15s ease'
-                                    }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                >
-                                    <td style={{
-                                        padding: '0.65rem 1rem',
-                                        fontFamily: 'monospace',
-                                        fontSize: '0.7rem',
-                                        color: 'var(--color-text-dim)'
-                                    }}>
-                                        {formatDate(event.timestamp)}
-                                    </td>
-                                    <td style={{
-                                        padding: '0.65rem 0.5rem',
-                                        fontSize: '0.75rem'
-                                    }}>
-                                        <span style={{ marginRight: '0.3rem' }}>{getTypeIcon(event.type)}</span>
-                                        <span style={{
-                                            color: getTypeColor(event.type),
-                                            fontWeight: 500
-                                        }}>
-                                            {getTypeLabel(event.type)}
-                                        </span>
-                                    </td>
-                                    <td style={{
-                                        padding: '0.65rem 0.5rem',
-                                        fontWeight: 600,
-                                        fontSize: '0.85rem',
-                                        maxWidth: '180px'
-                                    }}>
-                                        <span
-                                            style={{
-                                                ...clickableStyle,
-                                                color: 'var(--color-primary)',
-                                                whiteSpace: 'nowrap',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                display: 'inline-block',
-                                                maxWidth: '100%'
-                                            }}
-                                            onClick={() => event.userId && openUserProfile(event.userId, event.displayName)}
-                                            onMouseEnter={(e) => e.currentTarget.style.textDecorationColor = 'var(--color-primary)'}
-                                            onMouseLeave={(e) => e.currentTarget.style.textDecorationColor = 'transparent'}
-                                        >
-                                            {event.displayName}
-                                        </span>
-                                    </td>
-                                    <td style={{
-                                        padding: '0.65rem 0.5rem',
-                                        textAlign: 'center'
-                                    }}>
-                                        {event.userId && (
-                                            <AgeVerifiedBadge isVerified={users.get(event.userId)?.ageVerified} />
-                                        )}
-                                    </td>
-                                    <td style={{
-                                        padding: '0.65rem 0.5rem'
-                                    }}>
-                                        {event.userId && (
-                                            <TrustRankBadge
-                                                tags={users.get(event.userId)?.tags}
-                                                fallbackRank={users.get(event.userId)?.tags ? undefined : 'Visitor'}
-                                            />
-                                        )}
-                                    </td>
-                                    <td style={{
-                                        padding: '0.65rem 1rem',
-                                        fontSize: '0.75rem',
-                                        color: 'var(--color-text-dim)',
-                                        maxWidth: '200px',
-                                        whiteSpace: 'nowrap',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis'
-                                    }}>
-                                        {event.type === 'name_change' && event.previousName ? (
-                                            <span>
-                                                Was: <span style={{ textDecoration: 'line-through' }}>{event.previousName}</span>
+                        </thead>
+                        <tbody>
+                            {loading && events.length === 0 ? (
+                                // Skeleton Loader
+                                Array.from({ length: 10 }).map((_, i) => (
+                                    <tr key={`skeleton-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                        <td style={{ padding: '0.65rem 1rem' }}>
+                                            <div style={{ height: '14px', width: '80px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                        </td>
+                                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                                            <div style={{ height: '14px', width: '60px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                        </td>
+                                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                                            <div style={{ height: '14px', width: '30px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                        </td>
+                                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                                            <div style={{ height: '14px', width: '60px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                        </td>
+                                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                                            <div style={{ height: '14px', width: '100px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                        </td>
+                                        <td style={{ padding: '0.65rem 1rem' }}>
+                                            <div style={{ height: '14px', width: '140px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                        </td>
+                                    </tr>
+                                ))
+                            ) : filteredEvents.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ fontSize: '2rem' }}>👥</span>
+                                            <span style={{ color: 'var(--color-text-dim)', fontWeight: 600 }}>No social activity found.</span>
+                                            <span style={{ color: 'var(--color-text-dim)', fontSize: '0.8rem' }}>
+                                                Try adjusting your filters or date range.
                                             </span>
-                                        ) : event.type === 'add' ? (
-                                            <span style={{ color: '#22c55e' }}>Now friends</span>
-                                        ) : (
-                                            <span style={{ color: '#ef4444' }}>No longer friends</span>
-                                        )}
+                                        </div>
                                     </td>
                                 </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
+                            ) : (
+                                paginatedEvents.map((event) => (
+                                    <tr
+                                        key={event.id}
+                                        style={{
+                                            borderBottom: '1px solid rgba(255,255,255,0.03)',
+                                            transition: 'background 0.15s ease'
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <td style={{
+                                            padding: '0.65rem 1rem',
+                                            fontFamily: 'monospace',
+                                            fontSize: '0.7rem',
+                                            color: 'var(--color-text-dim)'
+                                        }}>
+                                            {formatDate(event.timestamp)}
+                                        </td>
+                                        <td style={{
+                                            padding: '0.65rem 0.5rem',
+                                            fontSize: '0.75rem'
+                                        }}>
+                                            <span style={{ marginRight: '0.3rem' }}>{getTypeIcon(event.type)}</span>
+                                            <span style={{
+                                                color: getTypeColor(event.type),
+                                                fontWeight: 500
+                                            }}>
+                                                {getTypeLabel(event.type)}
+                                            </span>
+                                        </td>
+                                        <td style={{
+                                            padding: '0.65rem 0.5rem',
+                                            fontWeight: 600,
+                                            fontSize: '0.85rem',
+                                            maxWidth: '180px'
+                                        }}>
+                                            <span
+                                                style={{
+                                                    ...clickableStyle,
+                                                    color: 'var(--color-primary)',
+                                                    whiteSpace: 'nowrap',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    display: 'inline-block',
+                                                    maxWidth: '100%'
+                                                }}
+                                                onClick={() => event.userId && openUserProfile(event.userId, event.displayName)}
+                                                onMouseEnter={(e) => e.currentTarget.style.textDecorationColor = 'var(--color-primary)'}
+                                                onMouseLeave={(e) => e.currentTarget.style.textDecorationColor = 'transparent'}
+                                            >
+                                                {event.displayName}
+                                            </span>
+                                        </td>
+                                        <td style={{
+                                            padding: '0.65rem 0.5rem',
+                                            textAlign: 'center'
+                                        }}>
+                                            {event.userId && (
+                                                <AgeVerifiedBadge isVerified={users.get(event.userId)?.ageVerified} />
+                                            )}
+                                        </td>
+                                        <td style={{
+                                            padding: '0.65rem 0.5rem'
+                                        }}>
+                                            {event.userId && (
+                                                <TrustRankBadge
+                                                    tags={users.get(event.userId)?.tags}
+                                                    fallbackRank={users.get(event.userId)?.tags ? undefined : 'Visitor'}
+                                                />
+                                            )}
+                                        </td>
+                                        <td style={{
+                                            padding: '0.65rem 1rem',
+                                            fontSize: '0.75rem',
+                                            color: 'var(--color-text-dim)',
+                                            maxWidth: '200px',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis'
+                                        }}>
+                                            {event.type === 'name_change' && event.previousName ? (
+                                                <span>
+                                                    Was: <span style={{ textDecoration: 'line-through' }}>{event.previousName}</span>
+                                                </span>
+                                            ) : event.type === 'add' ? (
+                                                <span style={{ color: '#22c55e' }}>Now friends</span>
+                                            ) : (
+                                                <span style={{ color: '#ef4444' }}>No longer friends</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             {/* Pagination Controls */}
-            {totalPages > 1 && (
-                <div style={{
-                    padding: '0.75rem 1rem',
-                    borderTop: '1px solid var(--border-color)',
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    gap: '0.5rem'
+            {/* Pagination Controls - Always render to maintain layout stability */}
+            <div style={{
+                padding: '0.75rem 1rem',
+                borderTop: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: '0.5rem'
+            }}>
+                <NeonButton
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setPage(p => Math.max(0, p - 1))}
+                    disabled={page === 0}
+                >
+                    ← Prev
+                </NeonButton>
+                <span style={{
+                    fontSize: '0.75rem',
+                    color: 'var(--color-text-dim)',
+                    padding: '0 0.5rem'
                 }}>
-                    <NeonButton
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setPage(p => Math.max(0, p - 1))}
-                        disabled={page === 0}
-                    >
-                        ← Prev
-                    </NeonButton>
-                    <span style={{
-                        fontSize: '0.75rem',
-                        color: 'var(--color-text-dim)',
-                        padding: '0 0.5rem'
-                    }}>
-                        Page {page + 1} of {totalPages}
-                    </span>
-                    <NeonButton
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-                        disabled={page >= totalPages - 1}
-                    >
-                        Next →
-                    </NeonButton>
-                </div>
-            )}
+                    Page {page + 1} of {Math.max(1, totalPages)}
+                </span>
+                <NeonButton
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                    disabled={page >= totalPages - 1}
+                >
+                    Next →
+                </NeonButton>
+            </div>
 
             <ProfileModal
                 profile={profile}

@@ -17,14 +17,12 @@ export const setupAutoModHandlers = () => {
 
   // Subscribe to group updates to triggering re-scan
   serviceEventBus.on("groups-updated", () => {
-    logger.info(
-      "[AutoMod] Groups updated, triggering re-scan of pending requests",
-    );
+    logger.info("[AutoMod] Re-scanning pending requests.");
     setTimeout(() => {
-        autoModService.triggerPendingRequestScan().catch((err) =>
+      autoModService.triggerPendingRequestScan().catch((err) =>
         logger.error("AutoMod trigger failed", err),
       );
-    }, 2000); 
+    }, 2000);
   });
 
   // Handlers
@@ -48,37 +46,37 @@ export const setupAutoModHandlers = () => {
     autoModConfigService.saveGroupConfig(groupId, config);
 
     logger.info(
-      `[AutoMod] Auto-Process turned ${enabled ? "ON" : "OFF"} for group ${groupId}. Clearing cache and re-scanning.`,
+      `[AutoMod] Auto-Process enabled for group ${groupId}.`,
     );
-    
+
     // Call into Service to clear cache
     autoModService.resetCache();
 
     if (enabled) {
-        setTimeout(() => {
-          autoModService.triggerPendingRequestScan().catch((err) =>
-            logger.error("AutoMod trigger failed", err),
-          );
-        }, 1000);
+      setTimeout(() => {
+        autoModService.triggerPendingRequestScan().catch((err) =>
+          logger.error("AutoMod trigger failed", err),
+        );
+      }, 1000);
     }
 
     return enabled;
   });
-  
+
   ipcMain.handle("automod:set-auto-ban", (_e, { groupId, enabled }) => {
     const config = autoModConfigService.getGroupConfig(groupId);
     config.enableAutoBan = enabled;
     autoModConfigService.saveGroupConfig(groupId, config);
-    
+
     autoModService.resetCache();
-    
+
     return enabled;
   });
 
   ipcMain.handle("automod:save-rule", (_e, { groupId, rule }) => {
     const config = autoModConfigService.getGroupConfig(groupId);
     const rules = config.rules;
-    
+
     if (rule.id) {
       const index = rules.findIndex((r) => r.id === rule.id);
       if (index !== -1) {
@@ -148,63 +146,63 @@ export const setupAutoModHandlers = () => {
     const groupMap = new Map<string, { id: string, name: string, rules: string[] }>();
 
     for (const rule of rules) {
-        if (rule.whitelistedUserIds) {
-            for (const userId of rule.whitelistedUserIds) {
-                if (!userId) continue;
-                if (!userMap.has(userId)) {
-                     let name = userId;
-                     try {
-                         const result = await vrchatApiService.getUser(userId);
-                         if (result.success && result.data) name = result.data.displayName;
-                     } catch { /* ignore */ }
-                     
-                     userMap.set(userId, { id: userId, name, rules: [] });
-                }
-                userMap.get(userId)?.rules.push(rule.name);
-            }
+      if (rule.whitelistedUserIds) {
+        for (const userId of rule.whitelistedUserIds) {
+          if (!userId) continue;
+          if (!userMap.has(userId)) {
+            let name = userId;
+            try {
+              const result = await vrchatApiService.getUser(userId);
+              if (result.success && result.data) name = result.data.displayName;
+            } catch { /* ignore */ }
+
+            userMap.set(userId, { id: userId, name, rules: [] });
+          }
+          userMap.get(userId)?.rules.push(rule.name);
         }
-        if (rule.whitelistedGroupIds) {
-             for (const groupIdVal of rule.whitelistedGroupIds) {
-                if (!groupIdVal) continue;
-                if (!groupMap.has(groupIdVal)) {
-                     let name = groupIdVal;
-                     try {
-                         const result = await vrchatApiService.getGroupDetails(groupIdVal);
-                         if (result.success && result.data) name = result.data.name;
-                     } catch { /* ignore */ }
-                     groupMap.set(groupIdVal, { id: groupIdVal, name, rules: [] });
-                }
-                groupMap.get(groupIdVal)?.rules.push(rule.name);
-            }
+      }
+      if (rule.whitelistedGroupIds) {
+        for (const groupIdVal of rule.whitelistedGroupIds) {
+          if (!groupIdVal) continue;
+          if (!groupMap.has(groupIdVal)) {
+            let name = groupIdVal;
+            try {
+              const result = await vrchatApiService.getGroupDetails(groupIdVal);
+              if (result.success && result.data) name = result.data.name;
+            } catch { /* ignore */ }
+            groupMap.set(groupIdVal, { id: groupIdVal, name, rules: [] });
+          }
+          groupMap.get(groupIdVal)?.rules.push(rule.name);
         }
+      }
     }
     return {
-        users: Array.from(userMap.values()),
-        groups: Array.from(groupMap.values())
+      users: Array.from(userMap.values()),
+      groups: Array.from(groupMap.values())
     };
   });
 
   ipcMain.handle("automod:removeFromWhitelist", async (_, { groupId, id, type }) => {
     const config = autoModConfigService.getGroupConfig(groupId);
-    const rules = config.rules; 
+    const rules = config.rules;
     let updated = false;
 
     for (let i = 0; i < rules.length; i++) {
-        let ruleUpdated = false;
-        if (type === 'user' && rules[i].whitelistedUserIds?.includes(id)) {
-            rules[i].whitelistedUserIds = rules[i].whitelistedUserIds!.filter(uid => uid !== id);
-            ruleUpdated = true;
-        }
-        if (type === 'group' && rules[i].whitelistedGroupIds?.includes(id)) {
-             rules[i].whitelistedGroupIds = rules[i].whitelistedGroupIds!.filter(gid => gid !== id);
-             ruleUpdated = true;
-        }
-        if (ruleUpdated) updated = true;
+      let ruleUpdated = false;
+      if (type === 'user' && rules[i].whitelistedUserIds?.includes(id)) {
+        rules[i].whitelistedUserIds = rules[i].whitelistedUserIds!.filter(uid => uid !== id);
+        ruleUpdated = true;
+      }
+      if (type === 'group' && rules[i].whitelistedGroupIds?.includes(id)) {
+        rules[i].whitelistedGroupIds = rules[i].whitelistedGroupIds!.filter(gid => gid !== id);
+        ruleUpdated = true;
+      }
+      if (ruleUpdated) updated = true;
     }
 
     if (updated) {
-        autoModConfigService.saveGroupConfig(groupId, { ...config, rules });
-        return true;
+      autoModConfigService.saveGroupConfig(groupId, { ...config, rules });
+      return true;
     }
     return false;
   });

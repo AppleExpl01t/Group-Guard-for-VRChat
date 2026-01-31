@@ -40,7 +40,7 @@ class OscService {
             try {
                 const { senderIp, senderPort } = this.config;
                 logger.info(`Initializing OSC Client with IP: ${senderIp}, Port: ${senderPort}`);
-                
+
                 // Double check we don't have a lingering client
                 if (this.client) {
                     logger.warn('Existing client found during init, closing it.');
@@ -80,7 +80,7 @@ class OscService {
     public setConfig(newConfig: Partial<OscConfig>) {
         this.config = { ...this.config, ...newConfig };
         this.store.set('osc', this.config);
-        
+
         // Always restart service to apply changes (start() checks enabled flag)
         this.stop();
         this.start();

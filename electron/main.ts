@@ -12,6 +12,115 @@ import { storageService } from './services/StorageService'; // Import early
 
 const logger = log.scope('App');
 
+// ========================================
+// STARTUP CONFIGURATION
+// ========================================
+const SILENT_STARTUP = true; // Toggle this to switch between Verbose (Dev) and Silent (Release) mode
+
+// Suppress dependency warnings (like punycode) during startup
+process.removeAllListeners('warning');
+
+// In silent mode, we suppress info logs to the console BEFORE any services initialize
+if (SILENT_STARTUP) {
+  log.transports.console.level = 'warn';
+} else {
+  log.transports.console.level = process.env.NODE_ENV === 'development' ? 'info' : 'warn';
+}
+
+// STARTUP SPLASH
+const splash = `
+\x1b[36m     _____                         _____                     _ 
+    |  __ \\                       |  __ \\                   | |
+    | |  \\/_ __ ___  _   _ _ __   | |  \\/_   _  __ _ _ __ __| |
+    | | __| '__/ _ \\| | | | '_ \\  | | __| | | |/ _\` | '__/ _\` |
+    | |_\\ \\ | | (_) | |_| | |_) | | |_\\ \\ |_| | (_| | | | (_| |
+     \\____/_|  \\___/ \\__,_| .__/   \\____/\\__,_|\\__,_|_|  \\__,_|
+                          | |                                  
+                          |_|                                  
+      __                                                       
+     / _|                                                      
+    | |_ ___  _ __                                             
+    |  _/ _ \\| '__|                                            
+    | || (_) | |                                               
+    |_| \\___/|_|                                               
+
+     _   _______   _____  _   _   ___ _____                    
+    | | | | ___ \\ /  __ \\| | | | / _ \\_   _|                   
+    | | | | |_/ / | /  \\/| |_| |/ /_\\ \\| |                     
+    | | | |    /  | |    |  _  ||  _  || |                     
+    \\ \\_/ / |\\ \\  | \\__/\\| | | || | | || |                     
+     \\___/\\_| \\_|  \\____/\\_| |_/\\_| |_/\\_/     \x1b[0m
+
+\x1b[32m[Startup]\x1b[0m VRChat Group Guard v${app.getVersion()}
+\x1b[32m[Startup]\x1b[0m Engine: Electron ${process.versions.electron} (Node ${process.versions.node})
+\x1b[32m[Startup]\x1b[0m Platform: ${process.platform} ${process.arch}
+`;
+
+/**
+ * Manages the CLI loading bar during startup
+ */
+class StartupProgress {
+  private currentStep = 0;
+  private totalSteps = 28;
+  private failedServices: string[] = [];
+  private startTime: number;
+
+  constructor(private isSilent: boolean) {
+    this.startTime = Date.now();
+    if (this.isSilent) {
+      // Clear console and show splash
+      process.stdout.write('\x1Bc');
+      process.stdout.write(splash + '\n');
+      this.draw('Initializing...');
+    } else {
+      process.stdout.write(splash + '\n');
+    }
+  }
+
+  update(serviceName: string, success = true) {
+    if (!success) this.failedServices.push(serviceName);
+    this.currentStep++;
+    if (this.isSilent) {
+      this.draw(serviceName);
+    }
+  }
+
+  private draw(serviceName: string) {
+    const width = 40;
+    const progress = Math.min(Math.round((this.currentStep / this.totalSteps) * width), width);
+    const percent = Math.min(Math.round((this.currentStep / this.totalSteps) * 100), 100);
+    const completed = '█'.repeat(progress);
+    const remaining = '░'.repeat(width - progress);
+
+    // Simple spinner animation based on step
+    const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    const spinner = frames[this.currentStep % frames.length];
+
+    // \x1b[2K clears the entire line, \x1b[1G moves to column 1
+    const output = `\x1b[2K\x1b[1G \x1b[36m${spinner} [${completed}${remaining}]\x1b[0m ${percent}% | Synchronizing: \x1b[2m${serviceName}\x1b[0m`;
+    process.stdout.write(output);
+
+    if (this.currentStep >= this.totalSteps) {
+      const duration = ((Date.now() - this.startTime) / 1000).toFixed(1);
+      process.stdout.write('\n\n');
+      if (this.failedServices.length > 0) {
+        process.stdout.write(`\x1b[31m[!] Startup complete with issues in: ${this.failedServices.join(', ')} (${duration}s)\x1b[0m\n\n`);
+      } else {
+        process.stdout.write(`\x1b[32mSystem initialization complete. Secure Bridge active. (${duration}s)\x1b[0m\n\n`);
+      }
+
+      // Restore normal level
+      setTimeout(() => {
+        if (this.isSilent) {
+          log.transports.console.level = process.env.NODE_ENV === 'development' ? 'info' : 'warn';
+        }
+      }, 50);
+    }
+  }
+}
+
+const progress = new StartupProgress(SILENT_STARTUP);
+
 // Initialize Storage Service (Sync) to get the correct path
 storageService.initialize();
 
@@ -46,9 +155,9 @@ try {
       }
       // Try to remove old dir if empty
       try { fs.rmdirSync(oldLogDir); } catch { /* ignore */ }
-      console.log(`[Startup] Migrated logs from ${oldLogDir} to ${logDir}`);
+      logger.info(`[Startup] Migrated logs from ${oldLogDir} to ${logDir}`);
     } catch (e) {
-      console.error('[Startup] Failed to migrate logs:', e);
+      logger.error(`[Startup] Failed to migrate logs: ${e}`);
     }
   }
 
@@ -69,10 +178,10 @@ try {
     const archivePath = path.join(logDir, archiveName);
 
     fs.renameSync(logFile, archivePath);
-    console.log(`[Startup] Archived previous log to ${archiveName}`);
+    logger.info(`[Startup] Archived previous log to ${archiveName}`);
   }
 } catch (err) {
-  console.error('[Startup] Failed to rotate/migrate logs:', err);
+  logger.error(`[Startup] Failed to rotate/migrate logs: ${err}`);
 }
 
 // Configure logging for production
@@ -86,15 +195,10 @@ log.transports.file.archiveLogFn = (oldLogFile) => {
 
 log.initialize();
 log.transports.file.level = 'info';
-log.transports.console.level = process.env.NODE_ENV === 'development' ? 'info' : 'warn';
+// Leave console level as configured above (warn if silent)
 
-logger.info('========================================');
-logger.info(`VRChat Group Guard v${app.getVersion()} starting...`);
-logger.info(`Electron: ${process.versions.electron}`);
-logger.info(`Chrome: ${process.versions.chrome}`);
-logger.info(`Node: ${process.versions.node}`);
-logger.info(`Platform: ${process.platform} ${process.arch}`);
-logger.info('========================================');
+logger.info(`VRChat Group Guard v${app.getVersion()} started on ${process.platform}`);
+progress.update('App Context');
 
 // Catch unhandled exceptions
 // Catch unhandled exceptions
@@ -206,7 +310,7 @@ ipcMain.on('log', (_event, level, message) => {
   }
 });
 
-// Initialize Services
+// Initialize Services (Sequence tracked)
 import { setupAuthHandlers } from './services/AuthService';
 import { setupGroupHandlers } from './services/GroupService';
 import { setupUserHandlers } from './services/UserService';
@@ -225,6 +329,41 @@ import { setupUserProfileHandlers } from './services/UserProfileService';
 import { setupBulkFriendHandlers } from './services/BulkFriendService';
 import { setupFriendshipHandlers } from './services/FriendshipIpc';
 import { playerFlagService } from './services/PlayerFlagService';
+
+progress.update('Auth Handlers');
+setupAuthHandlers();
+progress.update('Group Handlers');
+setupGroupHandlers();
+progress.update('User Handlers');
+setupUserHandlers();
+progress.update('Credential Handlers');
+setupCredentialsHandlers();
+progress.update('Pipeline Handlers');
+setupPipelineHandlers();
+progress.update('LogWatcher Handlers');
+setupLogWatcherHandlers();
+progress.update('AutoMod Handlers');
+setupAutoModHandlers();
+progress.update('Staff Handlers');
+setupStaffHandlers();
+progress.update('Instance Handlers');
+setupInstanceHandlers();
+progress.update('OSC Handlers');
+setupOscHandlers();
+progress.update('OSC Announcement');
+setupOscAnnouncementHandlers();
+progress.update('Discord Webhooks');
+setupDiscordWebhookHandlers();
+progress.update('Report Engine');
+setupReportHandlers();
+progress.update('User Profiles');
+setupUserProfileHandlers();
+progress.update('Bulk Friends');
+setupBulkFriendHandlers();
+progress.update('Friendship IPC');
+setupFriendshipHandlers();
+progress.update('Player Flags');
+playerFlagService.setupHandlers();
 
 // ...
 import { processService } from './services/ProcessService';
@@ -269,21 +408,29 @@ storageService.setupHandlers();
 
 import { settingsService, AppSettings } from './services/SettingsService';
 settingsService.initialize();
+progress.update('Settings');
 
 import { watchlistService } from './services/WatchlistService';
 watchlistService.initialize();
+progress.update('Watchlist');
 
 import { timeTrackingService } from './services/TimeTrackingService';
 timeTrackingService.initialize();
+progress.update('Time Tracking');
 
 // Initialize Blocking/Critical Async Services concurrently
 Promise.all([
   databaseService.initialize().catch(err => {
     logger.error('Failed to initialize database:', err);
-  }),
-  discordBroadcastService.connect().catch(err => logger.error('Failed to connect Discord RPC:', err))
+    progress.update('Database', false);
+  }).then(() => progress.update('Database')),
+  discordBroadcastService.connect().catch(err => {
+    logger.error('Failed to connect Discord RPC:', err);
+    progress.update('Discord RPC', false);
+  }).then(() => progress.update('Discord RPC'))
 ]).then(() => {
   logger.info('Critical services initialized.');
+  progress.update('Interface Ready');
 });
 
 // Setup handlers
@@ -295,27 +442,19 @@ serviceEventBus.on('friend-update', (data) => {
     mainWindow.webContents.send('friendship:update', data);
   }
 });
-setupAuthHandlers();
-setupGroupHandlers();
-setupUserHandlers();
-setupCredentialsHandlers();
-setupPipelineHandlers();
-setupLogWatcherHandlers();
-setupAutoModHandlers();
-setupStaffHandlers();
-setupInstanceHandlers();
-setupOscHandlers();
-setupOscAnnouncementHandlers();
-setupDiscordWebhookHandlers();
-setupReportHandlers();
-setupUserProfileHandlers();
-setupBulkFriendHandlers();
-setupFriendshipHandlers();
-playerFlagService.setupHandlers();
+
+// Log Scanner API
+import { logScannerService } from './services/LogScannerService';
+ipcMain.handle('log-scanner:scan', () => {
+  return logScannerService.scanAndImportHistory();
+});
 
 // Start Background Workers
+progress.update('LogWatcher Sync');
 logWatcherService.start(); // Start robust watching immediately
+progress.update('AutoMod Logic');
 startAutoModService(); // Start the periodic join request processing loop
+progress.update('OSC Engine');
 oscService.start();
 
 ipcMain.handle('settings:get', () => {
@@ -451,6 +590,8 @@ app.whenReady().then(async () => {
     // Let's add simple state tracking variable.
     return updateDownloaded;
   });
+
+  progress.update('Lifecycle Complete');
 
 
 

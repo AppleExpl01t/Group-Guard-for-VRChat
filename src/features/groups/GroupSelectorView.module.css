@@ -230,8 +230,9 @@
 /* Overlay for text content in large mode */
 .overlayContent {
   padding: 1.2rem;
-  padding-top: 0.5rem;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.95), transparent);
+  padding-top: 1.5rem;
+  /* Standard spacing for the gradient transition */
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.98) 0%, rgba(0, 0, 0, 0.6) 60%, transparent 100%);
   width: 100%;
   z-index: 5;
   position: relative;
@@ -553,11 +554,14 @@
   z-index: 1;
 }
 
-/* --- ROAMING CARD --- */
-
 .cardRoaming {
   justify-content: flex-end !important;
   /* Always align bottom */
+}
+
+.cardCompact.cardRoaming {
+  padding: 0 !important;
+  /* Force edge-to-edge for thumbnails */
 }
 
 /* Ensure legible text on background for Roaming Card in all sizes */
@@ -565,8 +569,10 @@
   text-align: left;
   width: 100%;
   z-index: 20;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
-  font-size: 1rem;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 1);
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
   padding: 0 0.5rem;
 }
 
@@ -586,14 +592,23 @@
   border-bottom-right-radius: 16px;
 }
 
-/* Compact Roaming Card Specifics - Smaller text */
+.cardCompact.cardRoaming .overlayContent {
+  padding: 0.6rem;
+  padding-top: 1.2rem;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.4) 50%, transparent 100%);
+}
+
 .cardCompact.cardRoaming .groupName {
-  font-size: 0.7rem;
-  line-height: 1.1;
-  padding: 0 0.4rem 0.4rem 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  width: 100%;
+  padding: 0;
   white-space: normal;
-  /* Allow wrapping if needed, though cardCompact usually clamps */
+  display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
-  /* Limit to 2 lines in this tiny view */
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }

@@ -39,7 +39,7 @@ class InstanceLoggerService {
 
         // Handle Game Closed - Clear State
         logWatcherService.on('game-closed', () => {
-            logger.info('[InstanceLogger] Game Closed. Clearing all instance state.');
+            logger.info('[InstanceLogger] Pipeline closed (VRChat terminated)');
 
             // Close current session if exists
             if (this.currentSessionId) {
@@ -90,20 +90,20 @@ class InstanceLoggerService {
             const groupId = groupMatch ? groupMatch[1].toLowerCase() : null;
 
             if (groupMatch) {
-                logger.info(`[InstanceLogger] Extracted Group ID: ${groupId} from location`);
+                logger.debug(`[InstanceLogger] Detected group: ${groupId}`);
             }
 
             this.currentGroupId = groupId;
             windowService.broadcast('instance:group-changed', groupId);
 
             if (!groupId) {
-                logger.info('Skipping non-group instance:', event.location);
+                logger.debug(`[InstanceLogger] Skipping non-group location: ${event.location}`);
                 this.currentSessionId = null;
                 return;
             }
 
             if (!groupAuthorizationService.isGroupAllowed(groupId)) {
-                log.info(`[InstanceLogger] Skipping group ${groupId} - not in moderated list`);
+                logger.debug(`[InstanceLogger] Persistence disabled for group ${groupId}`);
                 this.currentSessionId = null;
                 return;
             }
@@ -128,7 +128,7 @@ class InstanceLoggerService {
             });
 
             this.currentSessionId = sessionId;
-            log.info(`[InstanceLogger] Started new session: ${sessionId}`);
+            logger.info(`[InstanceLogger] Session started: ${sessionId}`);
 
             // Log initial Location Change
             await this.logEvent('LOCATION_CHANGE', {
