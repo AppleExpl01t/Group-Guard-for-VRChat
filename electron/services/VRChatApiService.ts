@@ -183,6 +183,28 @@ export interface VRCFriend {
     [key: string]: unknown;
 }
 
+export interface VRCAvatar {
+    id: string;
+    name: string;
+    description?: string;
+    authorId?: string;
+    authorName?: string;
+    tags?: string[];
+    assetUrl?: string; // .vrca file
+    imageUrl?: string;
+    thumbnailImageUrl?: string;
+    releaseStatus?: string;
+    version?: number;
+    unityPackageUrl?: string;
+    unityVersion?: string;
+    [key: string]: unknown;
+}
+
+export interface MutualCounts {
+    friends: number;
+    groups: number;
+}
+
 // Result types for API operations
 export interface ApiResult<T> {
     success: boolean;
@@ -212,6 +234,11 @@ const worldCache = new LRUCache<string, { data: VRCWorld; timestamp: number }>({
 const groupMembersCache = new LRUCache<string, { data: VRCGroupMember[]; timestamp: number }>({
     max: 50,
     ttl: 1000 * 60 * 1, // 1 minute TTL (members change frequently)
+});
+
+const mutualCountsCache = new LRUCache<string, { data: MutualCounts; timestamp: number }>({
+    max: 500,
+    ttl: 1000 * 60 * 5, // 5 minute TTL
 });
 
 // ============================================
@@ -300,6 +327,46 @@ export const vrchatApiService = {
 
             return user;
         }, `getUser:${userId}`);
+    },
+
+    /**
+     * Get mutual counts (friends and groups in common)
+     */
+    async getMutualCounts(userId: string, bypassCache = false): Promise<ApiResult<MutualCounts>> {
+        if (!userId) {
+            return { success: false, error: 'User ID is required' };
+        }
+
+        if (!bypassCache) {
+            const cached = mutualCountsCache.get(userId);
+            if (cached) {
+                // logger.debug(`Mutual counts for ${userId} served from cache`);
+                return { success: true, data: cached.data };
+            }
+        }
+
+        return networkService.execute(async () => {
+            const cookie = await getAuthCookieStringAsync();
+            if (!cookie) throw new Error('Not authenticated');
+
+            const response = await fetch(`https://api.vrchat.cloud/api/1/users/${userId}/mutuals`, {
+                method: 'GET',
+                headers: {
+                    'Cookie': cookie,
+                    'User-Agent': 'VRChat Group Guard/1.0'
+                }
+            });
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            const data = await response.json();
+            const counts = data as MutualCounts;
+
+            // Cache it
+            mutualCountsCache.set(userId, { data: counts, timestamp: Date.now() });
+
+            return counts;
+        }, `getMutualCounts:${userId}`);
     },
 
     /**
@@ -734,6 +801,29 @@ export const vrchatApiService = {
     },
 
     // ========================================
+    // AVATARS
+    // ========================================
+
+    /**
+     * Get avatar details by ID
+     */
+    async getAvatar(avatarId: string): Promise<ApiResult<VRCAvatar>> {
+        if (!avatarId) {
+            return { success: false, error: 'Avatar ID is required' };
+        }
+
+        return networkService.execute(async () => {
+            const client = getVRChatClient();
+            if (!client) throw new Error('Not authenticated');
+
+            const response = await client.getAvatar({ path: { avatarId } });
+            const avatar = response.data as VRCAvatar;
+
+            return avatar;
+        }, `getAvatar:${avatarId}`);
+    },
+
+    // ========================================
     // WORLDS
     // ========================================
 
@@ -825,6 +915,7 @@ export const vrchatApiService = {
         groupCache.clear();
         worldCache.clear();
         groupMembersCache.clear();
+        mutualCountsCache.clear();
         logger.info('All API caches cleared');
     },
 

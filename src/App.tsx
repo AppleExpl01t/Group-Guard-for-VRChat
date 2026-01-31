@@ -31,6 +31,7 @@ const AuditLogView = lazy(() => import('./features/audit/AuditLogView').then(m =
 const WatchlistView = lazy(() => import('./features/watchlist/WatchlistView').then(m => ({ default: m.WatchlistView })));
 const InstanceGuardView = lazy(() => import('./features/instances/InstanceGuardView').then(m => ({ default: m.InstanceGuardView })));
 const FriendshipManagerView = lazy(() => import('./views/FriendshipManagerView').then(m => ({ default: m.FriendshipManagerView })));
+const IntegrationsView = lazy(() => import('./features/integrations').then(m => ({ default: m.IntegrationsView })));
 
 function App() {
   const { isAuthenticated, autoLogin, status, logout } = useAuthStore();
@@ -283,6 +284,8 @@ function App() {
         return <DatabaseView />;
       case 'friendship':  // New Friendship Manager View
         return <FriendshipManagerView />;
+      case 'integrations':
+        return <IntegrationsView />;
 
       case 'main':
       default:
@@ -313,6 +316,7 @@ function App() {
         <AppLayout>
           <TitleBar
             onSettingsClick={() => setCurrentView('settings')}
+            onIntegrationsClick={() => setCurrentView('integrations')}
             onLogoutClick={() => setIsLogoutConfirmOpen(true)}
           />
 

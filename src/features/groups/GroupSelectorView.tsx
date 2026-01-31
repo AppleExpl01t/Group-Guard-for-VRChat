@@ -222,13 +222,15 @@ const RoamingCard = memo(({
           style={{
             position: 'absolute',
             top: isLarge ? 12 : 6,
-            left: isLarge ? 12 : 6,
+            left: isLarge ? 12 : 0,
             zIndex: 30,
             display: 'flex',
             flexDirection: 'column',
-            alignItems: 'center',
-            gap: '4px',
-            pointerEvents: 'none'
+            alignItems: isLarge ? 'flex-start' : 'center',
+            gap: isLarge ? '4px' : '2px',
+            pointerEvents: 'none',
+            width: isLarge ? 'auto' : '100%',
+            padding: isLarge ? 0 : '0 6px'
           }}
         >
           <motion.div
@@ -256,10 +258,10 @@ const RoamingCard = memo(({
             style={{
               background: 'rgba(0, 0, 0, 0.6)',
               backdropFilter: 'blur(4px)',
-              padding: '2px 8px',
+              padding: isLarge ? '2px 8px' : '1px 6px',
               borderRadius: '12px',
               color: '#fff',
-              fontSize: '0.7rem',
+              fontSize: isLarge ? '0.7rem' : '0.6rem',
               fontWeight: 700,
               border: '1px solid rgba(255, 255, 255, 0.1)',
               display: 'flex',
@@ -268,7 +270,7 @@ const RoamingCard = memo(({
               boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
             }}
           >
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e', display: 'inline-block' }}></span>
+            <span style={{ width: isLarge ? '6px' : '4px', height: isLarge ? '6px' : '4px', borderRadius: '50%', background: '#22c55e', display: 'inline-block' }}></span>
             {activeUserCount} Users
           </motion.div>
         </div>
@@ -278,17 +280,20 @@ const RoamingCard = memo(({
         <motion.div
           className={styles.overlayContent}
         >
-          <motion.div className={styles.groupName} layoutId="name-roaming">
-            {currentWorldName || 'Unknown World'}
-          </motion.div>
-
           {isLarge && (
-            <div className={styles.metaRow}>
-              <span className={styles.shortCode} style={{ color: '#22c55e', borderColor: '#22c55e' }}>LIVE</span>
-              <span className={styles.memberCount} style={{ color: '#86efac' }}>
+            <div className={styles.metaRow} style={{ alignItems: 'flex-end', marginTop: 'auto' }}>
+              <motion.div className={styles.groupName} layoutId="name-roaming" style={{ flex: 1, padding: 0 }}>
+                {currentWorldName || 'Unknown World'}
+              </motion.div>
+              <span className={styles.memberCount} style={{ color: '#86efac', marginBottom: '2px', flexShrink: 0, marginLeft: '1rem' }}>
                 Viewing Live Data
               </span>
             </div>
+          )}
+          {!isLarge && (
+            <motion.div className={styles.groupName} layoutId="name-roaming">
+              {currentWorldName || 'Unknown World'}
+            </motion.div>
           )}
         </motion.div>
       </div >

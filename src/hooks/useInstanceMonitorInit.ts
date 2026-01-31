@@ -112,6 +112,12 @@ export function useInstanceMonitorInit(isAuthenticated: boolean) {
       exitRoamingMode();
     });
 
+    // Capture Enriched Metadata (Rank, Avatar)
+    const cleanupEntityUpdate = window.electron.instance.onEntityUpdate((entity) => {
+      const updateEntity = useInstanceMonitorStore.getState().updateEntity;
+      updateEntity(entity);
+    });
+
     // Start watching logs AFTER listeners are set up
     window.electron.logWatcher.start();
 
@@ -122,6 +128,7 @@ export function useInstanceMonitorInit(isAuthenticated: boolean) {
       cleanupWorldName();
       cleanupGroup();
       cleanupGameClosed();
+      cleanupEntityUpdate();
       window.electron.logWatcher.stop();
     };
   }, [

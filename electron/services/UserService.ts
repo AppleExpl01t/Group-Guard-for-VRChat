@@ -20,7 +20,7 @@ export async function fetchUser(userId: string): Promise<any> {
     if (!userId) throw new Error("User ID is required");
 
     const result = await vrchatApiService.getUser(userId);
-    
+
     if (result.success && result.data) {
         const u = result.data;
         if (u.ageVerificationStatus !== undefined || u.ageVerified !== undefined) {
@@ -35,21 +35,27 @@ export async function fetchUser(userId: string): Promise<any> {
 }
 
 export function setupUserHandlers() {
-  
-  // Get User Profile
-  ipcMain.handle('users:get', async (_event, { userId }: { userId: string }) => {
-      try {
-          const user = await fetchUser(userId);
-          return { success: true, user };
-      } catch (e: unknown) {
-          const err = e as { message?: string };
-          return { success: false, error: err.message };
-      }
-  });
 
-  // Clear cache for a user (useful if we get an update via WS)
-  ipcMain.handle('users:clear-cache', async (_event, { userId }: { userId: string }) => {
-      vrchatApiService.clearUserCache(userId);
-      return { success: true };
-  });
+    // Get User Profile
+    ipcMain.handle('users:get', async (_event, { userId }: { userId: string }) => {
+        try {
+            const user = await fetchUser(userId);
+            return { success: true, user };
+        } catch (e: unknown) {
+            const err = e as { message?: string };
+            return { success: false, error: err.message };
+        }
+    });
+
+    // Clear cache for a user (useful if we get an update via WS)
+    ipcMain.handle('users:clear-cache', async (_event, { userId }: { userId: string }) => {
+        vrchatApiService.clearUserCache(userId);
+        return { success: true };
+    });
+
+    // Get Avatar Details
+    ipcMain.handle('avatars:get', async (_event, { avatarId }: { avatarId: string }) => {
+        const result = await vrchatApiService.getAvatar(avatarId);
+        return result; // result is ApiResult<VRCAvatar>
+    });
 }

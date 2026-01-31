@@ -6,9 +6,6 @@ import { useConfirm } from '../../context/ConfirmationContext';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../context/ThemeContext';
-import { OscSettings } from './OscSettings';
-import { DiscordRpcSettings } from './DiscordRpcSettings';
-import { DiscordWebhookSettings } from './DiscordWebhookSettings';
 import { AudioSettings } from './AudioSettings';
 import { SettingsTabBar, type SettingsTab } from './SettingsTabBar';
 import { SettingsSearch, matchesSearch } from './SettingsSearch';
@@ -33,8 +30,6 @@ const TAB_SEARCH_DATA: Record<SettingsTab, string[]> = {
   appearance: ['Appearance', 'Theme', 'Primary Neon', 'Accent Neon', 'Color', 'Hue', 'Background', 'Dark', 'Light', 'Particles', 'Glass', 'Blur', 'Opacity', 'Border', 'Radius', 'Orbs', 'Effects'],
   audio: ['Audio', 'Notification Sound', 'Volume', 'Music', 'Alert', 'Notifications', 'Test', 'Visual'],
   security: ['Security', 'Data', 'Auto-Login', 'Credentials', 'Sign in', 'Remember', 'Forget Device'],
-  osc: ['OSC', 'Integration', 'VRChat', 'Open Sound Control', 'Port', 'IP', 'Chatbox'],
-  discord: ['Discord', 'Webhook', 'RPC', 'Rich Presence', 'Status', 'Activity', 'Logs', 'Channel'],
   about: ['About', 'System', 'Version', 'Group Guard'],
   credits: ['Credits', 'Developers', 'Contributors', 'Team', 'Authors', 'Thanks'],
   debug: ['Debug', 'Crash', 'Test', 'Internal'],
@@ -119,6 +114,7 @@ export const SettingsView: React.FC = () => {
     glassOpacity, setGlassOpacity,
     particleSettings, setParticleSettings,
     borderRadius, setBorderRadius,
+    customBackgroundImage, setCustomBackgroundImage,
     resetTheme
   } = useTheme();
   const { confirm } = useConfirm();
@@ -172,14 +168,39 @@ export const SettingsView: React.FC = () => {
     }
   };
 
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Electron exposes 'path' on File object
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const path = (file as any).path;
+      if (path) {
+        // Convert to file URL for CSS
+        const fileUrl = `file:///${path.replace(/\\/g, '/')}`;
+        setCustomBackgroundImage(fileUrl);
+        addNotification({ type: 'success', title: 'Wallpaper Set', message: 'Custom background applied.' });
+      } else {
+        // Fallback to FileReader if path is not available (though it should be in Electron)
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            setCustomBackgroundImage(event.target.result as string);
+            addNotification({ type: 'success', title: 'Wallpaper Set', message: 'Custom background applied.' });
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  };
+
   // Determine which tabs match the search
   const visibleTabs = useMemo(() => {
     const result: Record<SettingsTab, boolean> = {
       appearance: false,
       audio: false,
       security: false,
-      osc: false,
-      discord: false,
       about: false,
       credits: false,
       debug: false,
@@ -198,7 +219,7 @@ export const SettingsView: React.FC = () => {
 
     const counts: Record<SettingsTab, number> = {
       appearance: 0, audio: 0, security: 0,
-      osc: 0, discord: 0, about: 0, credits: 0, debug: 0
+      about: 0, credits: 0, debug: 0
     };
 
     for (const tab of Object.keys(counts) as SettingsTab[]) {
@@ -219,7 +240,7 @@ export const SettingsView: React.FC = () => {
     if (visibleTabs[activeTab]) return;
 
     // Find the first tab that has results
-    const tabOrder: SettingsTab[] = ['appearance', 'audio', 'security', 'osc', 'discord', 'about', 'credits', 'debug'];
+    const tabOrder: SettingsTab[] = ['appearance', 'audio', 'security', 'about', 'credits', 'debug'];
     for (const tab of tabOrder) {
       if (visibleTabs[tab]) {
         setActiveTab(tab);
@@ -326,7 +347,7 @@ export const SettingsView: React.FC = () => {
                   <div style={{ marginBottom: '1rem' }}>
                     <label style={{ color: 'var(--color-text-dim)', fontSize: '0.85rem', marginBottom: '0.5rem', display: 'block' }}>Theme Preset</label>
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      {(['dark', 'light', 'midnight', 'sunset'] as const).map((mode) => (
+                      {(['dark', 'light', 'midnight', 'sunset', 'ocean', 'forest', 'crimson', 'synthwave'] as const).map((mode) => (
                         <button
                           key={mode}
                           onClick={() => setThemeMode(mode)}
@@ -369,6 +390,69 @@ export const SettingsView: React.FC = () => {
                 {/* Background Colors */}
                 <div style={innerCardStyle}>
                   <h3 style={{ color: 'var(--color-text-main)', margin: '0 0 1rem 0', fontSize: '1rem' }}>Background</h3>
+
+                  {/* Custom Wallpaper Section */}
+                  <div style={{ marginBottom: '1.5rem', paddingBottom: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                      <div>
+                        <div style={{ color: 'var(--color-text-main)', fontWeight: 500 }}>Custom Wallpaper</div>
+                        <div style={{ color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>Upload a local image to use as background</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+
+                        {customBackgroundImage && (
+                          <NeonButton
+                            variant="secondary"
+                            onClick={() => setCustomBackgroundImage(null)}
+                            style={{ borderColor: '#ef4444', color: '#ef4444' }}
+                          >
+                            Remove
+                          </NeonButton>
+                        )}
+
+                        <NeonButton
+                          variant="primary"
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          Upload Image
+                        </NeonButton>
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          onChange={handleFileSelect}
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                        />
+                      </div>
+                    </div>
+                    {customBackgroundImage && (
+                      <div style={{
+                        height: '100px',
+                        borderRadius: '12px',
+                        overflow: 'hidden',
+                        position: 'relative',
+                        border: '1px solid var(--border-color)',
+                        backgroundImage: `url(${customBackgroundImage})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center'
+                      }}>
+                        <div style={{
+                          position: 'absolute',
+                          inset: 0,
+                          background: 'rgba(0,0,0,0.5)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'white',
+                          fontSize: '0.8rem',
+                          backdropFilter: 'blur(2px)'
+                        }}>
+                          Current Wallpaper
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <HueSpectrumPicker
                     label="Background Hue"
                     hue={backgroundHue}
@@ -696,16 +780,7 @@ export const SettingsView: React.FC = () => {
               </section>
             )}
 
-            {/* === OSC TAB === */}
-            {activeTab === 'osc' && <OscSettings />}
-
-            {/* === DISCORD TAB === */}
-            {activeTab === 'discord' && (
-              <>
-                <DiscordWebhookSettings />
-                <DiscordRpcSettings />
-              </>
-            )}
+            {/* === NO LONGER HERE: OSC & DISCORD TABS (Migrated to Integrations) === */}
 
             {/* === ABOUT TAB === */}
             {activeTab === 'about' && (
@@ -902,7 +977,7 @@ export const SettingsView: React.FC = () => {
                     </div>
                     <div>
                       <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Pawtistic</h3>
-                      <p style={{ color: 'var(--color-text-dim)', margin: '0.2rem 0' }}>Theme System & Visual Design</p>
+                      <p style={{ color: 'var(--color-text-dim)', margin: '0.2rem 0' }}>Developer • Friend Manager, Performance Enhancements & Visual Design</p>
 
                       <div
                         style={{
@@ -914,7 +989,7 @@ export const SettingsView: React.FC = () => {
                       >
                         <a href="https://github.com/gooseontheloose" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)', textDecoration: 'underline', cursor: 'pointer' }}>GitHub</a>
                         {' • '}
-                        <a href="https://vrchat.com/home/user/usr_..." target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)', textDecoration: 'underline', cursor: 'pointer' }}>VRChat</a>
+                        <a href="https://vrchat.com/home/user/usr_11357725-018b-40b3-9f1c-f891ee1001fd" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)', textDecoration: 'underline', cursor: 'pointer' }}>VRChat</a>
                       </div>
                     </div>
                   </div>

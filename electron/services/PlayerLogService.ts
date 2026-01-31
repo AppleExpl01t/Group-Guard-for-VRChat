@@ -108,12 +108,14 @@ class PlayerLogService {
 
     public initialize(userDataDir: string) {
         this.dbPath = path.join(userDataDir, 'player_log.jsonl');
-        this.isInitialized = true;
 
         // AUTO-FIX: Remove known corrupted entries from log history
+        // Run BEFORE enabling listeners to ensure atomic cleanup
         this.cleanupDatabase();
 
         this.loadRecentIds();
+
+        this.isInitialized = true;
         logger.info(`PlayerLogService initialized. DB Path: ${this.dbPath}`);
     }
 
@@ -227,6 +229,27 @@ class PlayerLogService {
             logger.info(`[PlayerLogService] Logged: ${entry.type} - ${entry.displayName}`);
         } catch (e) {
             logger.error('Failed to append player log:', e);
+        }
+    }
+
+    /**
+     * Reads ALL player log entries efficiently (Streaming/Full Read).
+     * Used for Recalibration.
+     */
+    public async getAllEntries(): Promise<PlayerLogEntry[]> {
+        if (!this.dbPath || !fs.existsSync(this.dbPath)) return [];
+        try {
+            // Given standard usage, file is typically < 100MB, so full read is acceptable for now.
+            // Future optimization: Stream read if > 500MB
+            const content = await fs.promises.readFile(this.dbPath, 'utf-8');
+            return content.split('\n')
+                .map(line => {
+                    try { return JSON.parse(line) as PlayerLogEntry; } catch { return null; }
+                })
+                .filter((e): e is PlayerLogEntry => e !== null);
+        } catch (e) {
+            logger.error('Failed to read all player logs:', e);
+            return [];
         }
     }
 

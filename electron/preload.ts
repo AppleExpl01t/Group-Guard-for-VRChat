@@ -1,22 +1,22 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { 
-    VRChatGroup, 
-    GroupMember, 
-    PipelineEvent, 
-    AutoModRule, 
-    InstanceGuardEvent, 
-    LiveEntity, 
-    ScannedUser, 
-    AutoModUserInput, 
-    GameLogEntry, 
-    FriendLocation, 
-    SocialFeedEntry, 
-    PlayerLogEntry, 
-    RelationshipEvent, 
-    OscConfig, 
-    WatchedEntity, 
-    ModerationTag, 
-    GroupAnnouncementConfig, 
+import type {
+    VRChatGroup,
+    GroupMember,
+    PipelineEvent,
+    AutoModRule,
+    InstanceGuardEvent,
+    LiveEntity,
+    ScannedUser,
+    AutoModUserInput,
+    GameLogEntry,
+    FriendLocation,
+    SocialFeedEntry,
+    PlayerLogEntry,
+    RelationshipEvent,
+    OscConfig,
+    WatchedEntity,
+    ModerationTag,
+    GroupAnnouncementConfig,
     AppSettings,
     VRChatUser,
     ScanResult
@@ -26,7 +26,7 @@ import type {
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electron', {
     log: (level: string, message: string) => ipcRenderer.send('log', level, message),
-    getVersion: () => process.versions.electron,
+    getVersion: () => process?.versions?.electron || 'unknown',
     openExternal: (url: string) => ipcRenderer.invoke('app:open-external', url),
 
     // Auth API
@@ -80,6 +80,11 @@ contextBridge.exposeInMainWorld('electron', {
 
     // Worlds API
     getWorld: (worldId: string) => ipcRenderer.invoke('worlds:get-details', { worldId }),
+
+    // Avatars API
+    avatars: {
+        get: (avatarId: string) => ipcRenderer.invoke('avatars:get', { avatarId }),
+    },
 
     // Users API
     getUser: (userId: string) => ipcRenderer.invoke('users:get', { userId }),
@@ -409,6 +414,11 @@ contextBridge.exposeInMainWorld('electron', {
             ipcRenderer.on('friendship:stats-update', handler);
             return () => ipcRenderer.removeListener('friendship:stats-update', handler);
         },
+    },
+
+    // Log Scanner API
+    logScanner: {
+        scan: () => ipcRenderer.invoke('log-scanner:scan'),
     },
 
     // Generic IPC Renderer for event listening

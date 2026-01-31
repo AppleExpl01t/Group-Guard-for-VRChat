@@ -15,6 +15,9 @@ export class TokenBucket {
     private readonly capacity: number;
     private readonly refillRate: number; // tokens per ms
 
+    private queue: Array<{ count: number; resolve: () => void }> = [];
+    private timer: NodeJS.Timeout | null = null;
+
     /**
      * @param capacity Max burst size (e.g. 60)
      * @param refillRate Tokens per second (e.g. 1 for 60/min)
@@ -37,77 +40,121 @@ export class TokenBucket {
         }
     }
 
-    async consume(count: number = 1): Promise<void> {
+    private processQueue() {
         this.refill();
 
-        if (this.tokens >= count) {
-            this.tokens -= count;
-            return;
+        while (this.queue.length > 0) {
+            const next = this.queue[0]; // Peek
+            if (this.tokens >= next.count) {
+                this.tokens -= next.count;
+                this.queue.shift(); // Dequeue
+                next.resolve();
+            } else {
+                // Not enough tokens yet. Schedule retry.
+                const missing = next.count - this.tokens;
+                const waitMs = Math.ceil(missing / this.refillRate);
+
+                if (this.timer) clearTimeout(this.timer);
+
+                this.timer = setTimeout(() => {
+                    this.timer = null;
+                    this.processQueue();
+                }, waitMs);
+
+                return; // Stop processing
+            }
         }
+    }
 
-        // Calculate wait time
-        const missingTokens = count - this.tokens;
-        const waitMs = Math.ceil(missingTokens / this.refillRate);
-
-        // logger.debug(`[TokenBucket] Rate limit hit. Waiting ${waitMs}ms...`);
-        return new Promise(resolve => setTimeout(() => {
-            this.consume(count).then(resolve);
-        }, waitMs));
+    async consume(count: number = 1): Promise<void> {
+        return new Promise<void>((resolve) => {
+            this.queue.push({ count, resolve });
+            this.processQueue();
+        });
     }
 }
+
+const globalThrottle = new TokenBucket(40, 2); // 40 burst, 2/sec sustained
+const pendingRequests = new Map<string, Promise<any>>();
 
 export const networkService = {
 
     /**
-     * Executes a single API operation with standardized error handling.
+     * Executes a single API operation with standardized error handling and rate limiting.
      * @param operation The async function to execute.
      * @param context A description of the operation for logging.
      * @returns ExecutionResult
      */
     execute: async <T>(operation: () => Promise<T>, context: string, retryConfig: { maxRetries: number; baseDelay: number } = { maxRetries: 3, baseDelay: 1000 }): Promise<ExecutionResult<T>> => {
-        let attempt = 0;
-
-        while (attempt <= retryConfig.maxRetries) {
+        // Request Coalescing: If an identical request is already in flight, wait for it.
+        const cacheKey = context;
+        if (pendingRequests.has(cacheKey)) {
+            // logger.debug(`[Network] Coalescing request for: ${context}`);
             try {
-                // if (attempt > 0) logger.debug(`[Network] Retry attempt ${attempt} for: ${context}`);
-                const data = await operation();
-
-                // Minimal validation for VRChat "error" responses that aren't thrown
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                if (data && (data as any).error) {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    throw (data as any).error;
-                }
-
+                const data = await pendingRequests.get(cacheKey);
                 return { success: true, data };
-            } catch (error: unknown) {
-                const err = error as { message?: string; response?: { status?: number; data?: { error?: { message?: string } } } };
-                const status = err.response?.status;
-                const msg = err.response?.data?.error?.message || err.message || 'Unknown error';
-
-                if (status === 401) {
-                    logger.warn(`[Network] 401 Unauthorized during '${context}'`);
-                    return { success: false, error: 'Not authenticated' };
-                }
-
-                if (status === 429) {
-                    attempt++;
-                    if (attempt <= retryConfig.maxRetries) {
-                        const delay = retryConfig.baseDelay * Math.pow(2, attempt - 1);
-                        logger.warn(`[Network] 429 Rate Limited during '${context}'. Retrying in ${delay}ms (Attempt ${attempt}/${retryConfig.maxRetries})`);
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                        continue;
-                    } else {
-                        logger.warn(`[Network] 429 Rate Limited during '${context}'. Max retries reached.`);
-                        return { success: false, error: 'Rate Limited (Max Retries)' };
-                    }
-                }
-
-                logger.error(`[Network] Failed '${context}': ${msg}`, error);
-                return { success: false, error: msg };
+            } catch (error: any) {
+                return { success: false, error: error.message || String(error) };
             }
         }
-        return { success: false, error: 'Unknown retry error' };
+
+        const requestPromise = (async () => {
+            let attempt = 0;
+
+            // Global Rate Limiting
+            await globalThrottle.consume(1);
+
+            while (attempt <= retryConfig.maxRetries) {
+                try {
+                    const data = await operation();
+
+                    if (data && (data as any).error) {
+                        throw (data as any).error;
+                    }
+
+                    return data;
+                } catch (error: unknown) {
+                    const err = error as { message?: string; response?: { status?: number; data?: { error?: { message?: string } } } };
+                    const status = err.response?.status;
+                    const msg = err.response?.data?.error?.message || err.message || 'Unknown error';
+
+                    if (status === 401 || msg.includes('Not authenticated')) {
+                        throw new Error('Not authenticated');
+                    }
+
+                    if (status === 429) {
+                        attempt++;
+                        if (attempt <= retryConfig.maxRetries) {
+                            const delay = retryConfig.baseDelay * Math.pow(2, attempt - 1);
+                            logger.warn(`[Network] 429 Rate Limited during '${context}'. Retrying in ${delay}ms... (Attempt ${attempt}/${retryConfig.maxRetries})`);
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                            continue;
+                        }
+                    }
+
+                    throw error;
+                }
+            }
+            throw new Error('Max retries reached');
+        })();
+
+        // Store in pending map
+        pendingRequests.set(cacheKey, requestPromise);
+
+        try {
+            const data = await requestPromise;
+            return { success: true, data };
+        } catch (error: any) {
+            const msg = error.message || 'Unknown error';
+            // Suppress verbose network errors for polling and hydration
+            if (!context.includes('polling') && !context.includes('hydration') && !msg.includes('Not authenticated')) {
+                logger.error(`[Network] Failed '${context}': ${msg}`);
+            }
+            return { success: false, error: msg };
+        } finally {
+            // Remove from pending map after cleanup
+            pendingRequests.delete(cacheKey);
+        }
     },
 
     /**

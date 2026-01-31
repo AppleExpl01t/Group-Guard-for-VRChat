@@ -67,14 +67,16 @@ class OscAnnouncementService {
                         updatedCount++;
                     }
                 });
-                logger.info(`Updated local group name cache with ${updatedCount} entries.`);
+                if (updatedCount > 0) {
+                    logger.debug(`[Osc] Synced ${updatedCount} group titles.`);
+                }
 
                 // If we are currently active in a group and just learned its name, update immediately
                 if (this.activeGroupId && this.groupNames.has(this.activeGroupId)) {
                     const newName = this.groupNames.get(this.activeGroupId)!;
                     if (this.activeGroupName !== newName) {
                         this.activeGroupName = newName;
-                        logger.info(`Passively updated active group name to: ${this.activeGroupName}`);
+                        logger.info(`[Osc] Active Group: ${this.activeGroupName}`);
                     }
                 }
             }
@@ -115,7 +117,7 @@ class OscAnnouncementService {
         }
 
         if (this.activeGroupId !== newGroupId) {
-            logger.info(`Location changed. Group: ${newGroupId || 'None'} (was ${this.activeGroupId || 'None'})`);
+            logger.info(`[Osc] World: ${newGroupId || 'Public Instance'}`);
             this.activeGroupId = newGroupId;
 
             // Clean up old state
@@ -137,24 +139,36 @@ class OscAnnouncementService {
         // 1. Fast Path: Local Cache
         if (this.groupNames.has(groupId)) {
             this.activeGroupName = this.groupNames.get(groupId)!;
-            logger.info(`Resolved group name from local cache: ${this.activeGroupName}`);
+            // logger.debug(`Resolved group name from local cache: ${this.activeGroupName}`);
             return;
         }
 
         // 2. Slow Path: API (via Promise to avoid race conditions)
         this.groupNamePromise = (async () => {
             try {
+                // Pre-check authentication to avoid noisy console errors before login completes
+                if (!vrchatApiService.isAuthenticated()) {
+                    // logger.debug(`[Osc] Skipping name fetch for ${groupId}: Not authenticated yet.`);
+                    return;
+                }
+
                 // Now utilizes the VRChatApiService which checks its own cache first too!
                 const result = await vrchatApiService.getGroupDetails(groupId, false, { includeRoles: false });
                 if (result.success && result.data) {
                     this.activeGroupName = result.data.name;
                     this.groupNames.set(groupId, result.data.name); // Update local cache
-                    logger.info(`Updated active group name from API to: ${this.activeGroupName}`);
-                } else {
-                    this.activeGroupName = 'Group'; // Fallback
+                    logger.info(`[Osc] Active Group: ${this.activeGroupName}`);
+                } else if (result.error !== 'Not authenticated') {
+                    // Only log error if it's NOT a simple auth failure (which is expected on early world join)
+                    logger.warn(`[Osc] Could not fetch group name for ${groupId}: ${result.error}`);
+                    this.activeGroupName = 'Group';
                 }
             } catch (e) {
-                logger.warn(`Failed to fetch group name for ${groupId}`, e);
+                // Suppress stack trace for expected Not authenticated state
+                const msg = (e as any)?.message || String(e);
+                if (!msg.includes('Not authenticated')) {
+                    logger.warn(`Failed to fetch group name for ${groupId}`, e);
+                }
                 this.activeGroupName = 'Group';
             }
         })();
@@ -163,7 +177,11 @@ class OscAnnouncementService {
     }
 
     private handlePlayerJoined(event: PlayerJoinedEvent) {
-        logger.info(`[handlePlayerJoined] Player: ${event.displayName}, ActiveGroup: ${this.activeGroupId}, isBackfill: ${event.isBackfill}`);
+        if (!event.isBackfill) {
+            logger.debug(`[handlePlayerJoined] Player: ${event.displayName}, ActiveGroup: ${this.activeGroupId}, isBackfill: ${event.isBackfill}`);
+        } else {
+            // logger.debug(`[handlePlayerJoined] Player: ${event.displayName}, ActiveGroup: ${this.activeGroupId}, isBackfill: ${event.isBackfill}`);
+        }
 
         this.currentPlayers.add(event.displayName);
 
@@ -297,7 +315,7 @@ class OscAnnouncementService {
         const config = this.getGroupConfig(this.activeGroupId);
         if (!config || !config.periodicEnabled || !config.periodicMessage || config.periodicIntervalMinutes <= 0) return;
 
-        logger.info(`Starting periodic announcement every ${config.periodicIntervalMinutes}m for ${this.activeGroupId}`);
+        logger.debug(`Starting periodic announcement every ${config.periodicIntervalMinutes}m for ${this.activeGroupId}`);
 
         this.periodicTimer = setInterval(async () => {
             if (!this.activeGroupId) {
@@ -339,14 +357,14 @@ class OscAnnouncementService {
 
         // VRChat Chatbox Limit is 144 chars. 
         const SAFE_TEXT = text.substring(0, 144);
-        logger.info(`Sending OSC announcement: "${SAFE_TEXT}"`);
+        logger.debug(`[Osc] Sent: "${SAFE_TEXT}"`);
         oscService.send('/chatbox/input', [SAFE_TEXT, true, false])
             .catch(e => logger.debug('Failed to send OSC announcement', e)); // Message, Instant, No Sound
 
         // Schedule clear if duration is set and > 0
         if (durationSeconds && durationSeconds > 0) {
             this.clearMessageTimer = setTimeout(() => {
-                logger.info('Clearing OSC announcement (duration expired)');
+                logger.debug('[Osc] Clearing display');
                 oscService.send('/chatbox/input', ["", true, false])
                     .catch(e => logger.debug('Failed to clear OSC announcement', e));
                 this.clearMessageTimer = null;

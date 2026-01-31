@@ -193,6 +193,7 @@ const LANGUAGE_MAP: Record<string, string> = {
 // Trust class mapping for CSS
 const TRUST_CLASS_MAP: Record<TrustRank, string> = {
     'Visitor': 'x-tag-untrusted',
+    'New User': 'x-tag-basic',
     'User': 'x-tag-basic',
     'Known': 'x-tag-known',
     'Trusted': 'x-tag-trusted',
@@ -280,35 +281,14 @@ class UserProfileService {
      * Get mutual counts (friends and groups in common)
      */
     async getMutualCounts(userId: string): Promise<MutualCounts | null> {
-        const cookie = await getAuthCookieStringAsync();
-        if (!cookie) {
-            throw new Error('Not authenticated');
-        }
-
-        const result = await networkService.execute(async () => {
-            logger.debug(`Fetching mutual counts for: ${userId}`);
-            const response = await fetch(`https://api.vrchat.cloud/api/1/users/${userId}/mutuals`, {
-                method: 'GET',
-                headers: {
-                    'Cookie': cookie,
-                    'User-Agent': 'VRChat Group Guard/1.0'
-                }
-            });
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            const data = await response.json();
-            // DEBUG: Log raw response to understand API structure
-            logger.info(`[DEBUG] mutualCounts raw response for ${userId}: ${JSON.stringify(data)}`);
-            return data as MutualCounts;
-        }, `getMutualCounts:${userId}`);
+        const result = await vrchatApiService.getMutualCounts(userId);
 
         if (!result.success) {
             logger.warn(`Failed to fetch mutual counts for ${userId}:`, result.error);
             return null;
         }
 
-        return result.data || null;
+        return (result.data as MutualCounts) || null;
     }
 
     /**

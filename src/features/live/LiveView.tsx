@@ -245,16 +245,31 @@ export const LiveView: React.FC = () => {
         setFlagDialogUser({ id: userId, displayName: name });
     }, []);
 
+    // Concurrency Control: Prevent old scans from overwriting new ones (Ghosting)
+    const scanSequenceRef = React.useRef<number>(0);
+
     const performScan = useCallback(async () => {
         if (!selectedGroup && !isRoamingMode) return;
+
+        // generated scan ID
+        const scanId = Date.now();
+        scanSequenceRef.current = scanId;
 
         try {
             const scanGroupId = selectedGroup ? selectedGroup.id : undefined;
             const results = await window.electron.instance.scanSector(scanGroupId);
+
+            // Abort if a newer scan started
+            if (scanSequenceRef.current !== scanId) return;
+
             updateLiveScan(results as LiveEntity[]);
 
             if (window.electron.instance.getInstanceInfo) {
                 const info = await window.electron.instance.getInstanceInfo();
+
+                // Check again after second await
+                if (scanSequenceRef.current !== scanId) return;
+
                 if (info.success) {
                     setInstanceInfo({
                         name: info.name || currentWorldName || 'Unknown',
@@ -274,7 +289,9 @@ export const LiveView: React.FC = () => {
         } catch (err) {
             console.error(err);
         } finally {
-            setIsInitialLoad(false);
+            if (scanSequenceRef.current === scanId) {
+                setIsInitialLoad(false);
+            }
         }
     }, [selectedGroup?.id, isRoamingMode, updateLiveScan]);
 
@@ -305,30 +322,24 @@ export const LiveView: React.FC = () => {
     }, [handlePlayerJoined, handlePlayerLeft, updateEntity, addLog]);
 
     useEffect(() => {
-        console.log('[LiveView] Main Effect: Mounting Listeners');
+        console.log('[LiveView] Main Effect: Mounting UI Log Listeners (Passive Mode)');
 
-        // 1. Join Events (LogWatcher)
+        // 1. Join Events (UI Log Only)
         const unsubJoin = window.electron.logWatcher.onPlayerJoined((event) => {
-            handlersRef.current.handlePlayerJoined({
-                displayName: event.displayName,
-                userId: event.userId,
-                joinTime: new Date(event.timestamp).getTime()
-            });
+            handlersRef.current.addLog(`[JOIN] ${event.displayName}`, 'success');
         });
 
-        // 2. Leave Events (LogWatcher)
+        // 2. Leave Events (UI Log Only)
         const unsubLeave = window.electron.logWatcher.onPlayerLeft((event) => {
-            handlersRef.current.handlePlayerLeft(event.displayName);
             handlersRef.current.addLog(`[LEFT] ${event.displayName}`, 'warn');
         });
 
-        // 3. Entity Metadata Updates (Enrichment Service)
+        // 3. Entity Metadata Updates (UI Log Only)
         const unsubEntity = window.electron.instance.onEntityUpdate((updatedEntity: LiveEntity) => {
-            handlersRef.current.updateEntity(updatedEntity);
             handlersRef.current.addLog(`[SCAN] Profile Resolved: ${updatedEntity.displayName} (Rank: ${updatedEntity.rank})`, 'info');
         });
 
-        // 4. Log Watcher telemetry
+        // 4. Log Watcher telemetry (Pure UI)
         const unsubKick = window.electron.logWatcher.onVoteKick((event) => {
             handlersRef.current.addLog(`[VOTE KICK] ${event.initiator} initiated vote kick against ${event.target}`, 'warn');
         });
@@ -338,25 +349,19 @@ export const LiveView: React.FC = () => {
             handlersRef.current.addLog(`[VIDEO] Now Playing: ${shortUrl} (Req: ${event.requestedBy})`, 'info');
         });
 
-        // 5. World/Instance Changes
+        // 5. World/Instance Changes (UI Log Only)
         const unsubLocation = window.electron.logWatcher.onLocation((event) => {
-            const instId = event.instanceId || '';
-            const loc = event.location || `${event.worldId}:${instId}`;
-            useInstanceMonitorStore.getState().setInstanceInfo(instId, loc);
-            useInstanceMonitorStore.getState().setWorldId(event.worldId);
             handlersRef.current.addLog(`[WORLD] Moved to ${event.worldId}`, 'info');
         });
 
         const unsubWorldName = window.electron.logWatcher.onWorldName((event) => {
-            useInstanceMonitorStore.getState().setWorldName(event.name);
             handlersRef.current.addLog(`[WORLD] Entered: ${event.name}`, 'success');
         });
 
-        // Ensure service is running
-        window.electron.logWatcher.start();
+        // MOVED TO useInstanceMonitorInit.ts: window.electron.logWatcher.start();
 
         return () => {
-            console.log('[LiveView] Main Effect: Cleaning up Listeners');
+            console.log('[LiveView] Main Effect: Cleaning up UI Listeners');
             unsubJoin();
             unsubLeave();
             unsubEntity();
@@ -973,7 +978,7 @@ export const LiveView: React.FC = () => {
                     </GlassPanel>
 
                     {/* Right: Actions & Logs (1/3 width) */}
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: '280px' }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: '280px', overflowY: 'auto', overflowX: 'hidden', paddingRight: '4px' }}>
 
                         {/* Right Panel Tabs */}
                         <div style={{ display: 'flex', background: 'var(--color-surface-card)', borderRadius: '8px', padding: '4px', border: '1px solid var(--border-color)' }}>

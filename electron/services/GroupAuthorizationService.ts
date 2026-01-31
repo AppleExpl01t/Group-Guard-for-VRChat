@@ -109,7 +109,7 @@ class GroupAuthorizationService {
 
         // Listen for raw group updates from GroupService (legacy support for event-based calls)
         serviceEventBus.on('groups-raw', async (payload) => {
-            logger.info(`[SECURITY] Received groups-raw event with ${payload.groups?.length || 0} groups`);
+            logger.debug(`[Security] Processing ${payload.groups?.length || 0} group memberships`);
             await this.processAndAuthorizeGroups(payload.groups || [], payload.userId);
         });
     }
@@ -128,7 +128,7 @@ class GroupAuthorizationService {
                 this.allowedGroupIds = new Set(cached.filter(id => id && id.startsWith('grp_')));
                 this.cacheOwnerId = ownerId || null;
                 this.initialized = true;
-                logger.info(`[SECURITY] Loaded ${this.allowedGroupIds.size} allowed groups from disk cache (Owner: ${this.cacheOwnerId})`);
+                logger.info(`[Security] Restored ${this.allowedGroupIds.size} authorized groups from cache.`);
 
                 // Load full group objects if available
                 if (Array.isArray(cachedObjects) && cachedObjects.length > 0) {
@@ -137,7 +137,7 @@ class GroupAuthorizationService {
                             this.cachedGroupObjects.set(g.id, g);
                         }
                     }
-                    logger.info(`[SECURITY] Loaded ${this.cachedGroupObjects.size} full group objects from disk cache`);
+                    logger.debug(`[Security] Hydrated ${this.cachedGroupObjects.size} group profiles from storage.`);
                 }
 
                 // Emit event early to unlock UI
@@ -244,7 +244,9 @@ class GroupAuthorizationService {
 
         // Add owner groups immediately
         moderatableGroups.push(...ownerGroups);
-        logger.info(`[SECURITY] Found ${ownerGroups.length} owner groups (no API needed), ${needsPermCheck.length} need permission check`);
+        if (ownerGroups.length > 0 || needsPermCheck.length > 0) {
+            logger.info(`[Security] Verified ${ownerGroups.length} owned groups; ${needsPermCheck.length} pending permission check.`);
+        }
 
         // RATE LIMIT MITIGATION: Token Bucket + Concurrency
         // We substitute the old "Fast Lane" / "Slow Lane" with a dynamic token bucket.
@@ -265,9 +267,7 @@ class GroupAuthorizationService {
                 if (hasMod) {
                     moderatableGroups.push(g);
                     this.emitGroupVerified(g);
-                    logger.info(`[SECURITY] Checked ${groupId}: VERIFIED ✅`);
-                } else {
-                    // logger.debug(`[SECURITY] Checked ${groupId}: No Mod Perms ❌`);
+                    logger.debug(`[Security] Verified: ${groupId}`);
                 }
             } catch (e) {
                 logger.error(`[SECURITY] Error checking permissions for ${groupId}:`, e);
@@ -331,7 +331,7 @@ class GroupAuthorizationService {
         // Note: persistGroups is called inside updateGroupObjectCache
 
         // Emit filtered groups for other services
-        logger.info(`[SECURITY] Authorized ${mappedGroups.length} moderatable groups for user ${userId}`);
+        logger.info(`[Security] Session authorized for ${mappedGroups.length} groups.`);
         serviceEventBus.emit('groups-updated', { groups: mappedGroups });
 
         return mappedGroups;
@@ -483,8 +483,7 @@ class GroupAuthorizationService {
     public setAllowedGroups(groupIds: string[]): void {
         this.allowedGroupIds = new Set(groupIds.filter(id => id && id.startsWith('grp_')));
         this.initialized = true;
-        logger.info(`[SECURITY] Authorized groups updated: ${this.allowedGroupIds.size} groups allowed`);
-        logger.debug(`[SECURITY] Allowed group IDs: ${Array.from(this.allowedGroupIds).join(', ')}`);
+        // logger.debug(`[Security] Allowed group IDs: ${Array.from(this.allowedGroupIds).join(', ')}`);
     }
 
     /**
@@ -710,7 +709,7 @@ class GroupAuthorizationService {
     public startPredictiveCaching(): void {
         if (this.predictiveCacheInterval) return;
 
-        logger.info('[PERF] Starting predictive caching service');
+        logger.debug('[Perf] Starting predictive caching service');
 
         // Run every 2 minutes (low priority)
         this.predictiveCacheInterval = setInterval(() => {

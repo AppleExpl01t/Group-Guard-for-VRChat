@@ -28,6 +28,7 @@ export interface VRChatUser {
   ageVerified?: boolean;
   ageVerificationStatus?: string;
   pronouns?: string;
+  currentAvatarId?: string;
   // Add additional fields as needed
 }
 
@@ -184,6 +185,23 @@ export interface VRChatInstance {
   };
 }
 
+export interface VRCAvatar {
+  id: string;
+  name: string;
+  description?: string;
+  authorId?: string;
+  authorName?: string;
+  tags?: string[];
+  assetUrl?: string;
+  imageUrl?: string;
+  thumbnailImageUrl?: string;
+  releaseStatus?: string;
+  version?: number;
+  unityPackageUrl?: string;
+  unityVersion?: string;
+  [key: string]: unknown;
+}
+
 // Pipeline WebSocket Event Types
 export type PipelineEventType =
   // Notification Events
@@ -327,6 +345,8 @@ export interface FriendLocation {
   userIcon?: string;
   profilePicOverride?: string;
   currentAvatarThumbnailImageUrl?: string;
+  currentAvatarId?: string;
+  avatarName?: string;
 }
 
 export interface SocialFeedEntry {
@@ -463,6 +483,11 @@ export interface ElectronAPI {
 
   // Worlds API
   getWorld: (worldId: string) => Promise<{ success: boolean; world?: { id: string; name: string; capacity?: number; imageUrl?: string; authorName?: string }; error?: string }>;
+
+  // Avatars API
+  avatars: {
+    get: (avatarId: string) => Promise<{ success: boolean; data?: VRCAvatar; error?: string }>;
+  };
 
   // User API
   getUser: (userId: string) => Promise<{ success: boolean; user?: VRChatUser; error?: string }>;
@@ -744,6 +769,7 @@ export interface FriendListItem extends FriendLocation {
   isVRCPlus?: boolean;
   isAgeVerified?: boolean;
   platform?: string;
+  isLocalInstance?: boolean;
 }
 
 declare global {

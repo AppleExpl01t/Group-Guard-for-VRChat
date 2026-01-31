@@ -8,14 +8,15 @@ import { NotificationPanel } from '../../features/notifications/NotificationPane
 import { useGroupStore } from '../../stores/groupStore';
 import styles from './TitleBar.module.css';
 import { WindowControls } from './WindowControls';
-import { Settings, LogOut, Bell, Users, Globe } from 'lucide-react';
+import { Settings, LogOut, Bell, Users, Globe, Puzzle } from 'lucide-react';
 
 interface TitleBarProps {
   onSettingsClick: () => void;
+  onIntegrationsClick: () => void;
   onLogoutClick: () => void;
 }
 
-export const TitleBar: React.FC<TitleBarProps> = ({ onSettingsClick, onLogoutClick }) => {
+export const TitleBar: React.FC<TitleBarProps> = ({ onSettingsClick, onIntegrationsClick, onLogoutClick }) => {
   const { user } = useAuthStore();
   const { history } = useAutoModAlertStore();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -122,6 +123,21 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onSettingsClick, onLogoutCli
                 >
                   <Settings size={18} style={{ opacity: 0.8 }} />
                   App Settings
+                </motion.button>
+
+                {/* Integrations Button */}
+                <motion.button
+                  whileHover={{ scale: 1.02, backgroundColor: 'rgba(255, 255, 255, 0.08)' }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => {
+                    onIntegrationsClick();
+                    setIsProfileOpen(false);
+                  }}
+                  className={styles.settingsButton}
+                  style={{ marginTop: '4px' }}
+                >
+                  <Puzzle size={18} style={{ opacity: 0.8 }} />
+                  Integrations
                 </motion.button>
 
                 {/* Logout Button (Moved to Dropdown) */}
