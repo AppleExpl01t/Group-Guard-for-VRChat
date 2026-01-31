@@ -103,8 +103,8 @@ export const networkService = {
                 const status = err.response?.status;
                 const msg = err.response?.data?.error?.message || err.message || 'Unknown error';
 
-                if (status === 401) {
-                    logger.warn(`[Network] 401 Unauthorized during '${context}'`);
+                if (status === 401 || msg.includes('Not authenticated')) {
+                    // Suppress authentication errors silently - they match expected startup race conditions
                     return { success: false, error: 'Not authenticated' };
                 }
 
@@ -112,16 +112,32 @@ export const networkService = {
                     attempt++;
                     if (attempt <= retryConfig.maxRetries) {
                         const delay = retryConfig.baseDelay * Math.pow(2, attempt - 1);
-                        logger.warn(`[Network] 429 Rate Limited during '${context}'. Retrying in ${delay}ms (Attempt ${attempt}/${retryConfig.maxRetries})`);
+                        logger.debug(`[Network] Resource busy during '${context}'. Retrying... (Attempt ${attempt}/${retryConfig.maxRetries})`);
                         await new Promise(resolve => setTimeout(resolve, delay));
                         continue;
                     } else {
-                        logger.warn(`[Network] 429 Rate Limited during '${context}'. Max retries reached.`);
+                        logger.warn(`[Network] Resource busy during '${context}'. Max retries reached.`);
                         return { success: false, error: 'Rate Limited (Max Retries)' };
                     }
                 }
 
-                logger.error(`[Network] Failed '${context}': ${msg}`, error);
+                // Suppress verbose network errors for polling and hydration
+                const isPolling = context.includes('polling');
+                const isHydration = context.includes('hydration');
+                const isExpectedNetworkError = status === 401 || status === 429 || msg.includes('Not authenticated');
+
+                if (isPolling || isHydration || isExpectedNetworkError) {
+                    // Suppress logging for these common, expected scenarios
+                    // logger.debug(`[Network] Suppressed error for '${context}': ${msg}`);
+                } else {
+                    // Generic error - logic: only log stack trace if in dev AND it's not a common expected error
+                    const isProduction = process.env.NODE_ENV !== 'development';
+                    if (!isProduction) {
+                        logger.error(`[Network] Failed '${context}': ${msg}`, error);
+                    } else {
+                        logger.error(`[Network] Failed '${context}': ${msg}`);
+                    }
+                }
                 return { success: false, error: msg };
             }
         }

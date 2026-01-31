@@ -150,9 +150,10 @@ class LogWatcherService extends EventEmitter {
     processService.on('status-changed', (isRunning) => {
       if (!isRunning) {
         log.info('[LogWatcher] ProcessService reports VRChat closed. Clearing state.');
+        // Handle Game Closed - Clear State
         this.handleGameClosed();
       } else {
-        log.info('[LogWatcher] ProcessService reports VRChat running.');
+        log.debug('[LogWatcher] ProcessService reports VRChat running.');
       }
     });
 
@@ -325,7 +326,7 @@ class LogWatcherService extends EventEmitter {
       return;
     }
 
-    log.info('[LogWatcher] Syncing state to renderer...');
+    log.debug('[LogWatcher] Syncing state to renderer...');
     const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19).replace(/-/g, '.');
 
     if (this.state.currentWorldName) {
@@ -406,7 +407,7 @@ class LogWatcherService extends EventEmitter {
         const isInitialRead = this.currentFileSize === 0;
         if (isInitialRead) {
           this.isHydrating = true;
-          log.info(`[LogWatcher] Initial hydration started for ${path.basename(this.currentLogPath)} (${(stat.size / 1024 / 1024).toFixed(2)} MB)`);
+          log.debug(`[LogWatcher] Initial hydration started for ${path.basename(this.currentLogPath)} (${(stat.size / 1024 / 1024).toFixed(2)} MB)`);
         }
 
         const stream = fs.createReadStream(this.currentLogPath, {
@@ -436,7 +437,7 @@ class LogWatcherService extends EventEmitter {
 
         if (this.isHydrating) {
           this.isHydrating = false;
-          log.info(`[LogWatcher] Initial hydration complete. Processed ${lineCount} lines.`);
+          log.debug(`[LogWatcher] Initial hydration complete. Processed ${lineCount} lines.`);
           // Sync final state to all windows
           BrowserWindow.getAllWindows().forEach(win => this.emitStateToWindow(win));
         }
@@ -469,8 +470,10 @@ class LogWatcherService extends EventEmitter {
     // Lazy load dependencies
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { fetchInstancePlayers } = require('./AuthService');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { groupAuthorizationService } = require('./GroupAuthorizationService');
 
-    log.info(`[LogWatcher] Reconciling players for ${location} via API...`);
+    log.debug(`[LogWatcher] Syncing instance state via API: ${location}`);
     const apiPlayers = await fetchInstancePlayers(location);
 
     // CONCURRENCY CHECK: Ensure we are still in the same world
@@ -509,12 +512,12 @@ class LogWatcherService extends EventEmitter {
       }
     }
     if (added > 0) {
-      log.info(`[LogWatcher] Reconcile complete. Added ${added} missing players from API.`);
+      log.info(`[LogWatcher] Synced ${added} missing players from API.`);
       if (this.state.currentLocation && this.state.currentLocation.includes('~group(')) {
         discordBroadcastService.updateGroupStatus(this.state.currentWorldName || 'Group Instance', this.state.players.size);
       }
     } else {
-      log.info('[LogWatcher] Reconcile complete. No missing players found.');
+      log.debug('[LogWatcher] API sync complete: No missing players.');
     }
   }
 
@@ -604,15 +607,17 @@ class LogWatcherService extends EventEmitter {
       const instanceId = fullInstanceString;
       const location = `${worldId}:${fullInstanceString}`;
 
-      log.info(`[LogWatcher] MATCH Joining: ${location}`);
+      log.debug(`[LogWatcher] MATCH Joining: ${location}`);
 
-      // DEBUG: Fetch API location to compare
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { fetchCurrentLocationFromApi } = require('./AuthService');
-      fetchCurrentLocationFromApi().catch((err: unknown) => log.error('[DEBUG_COMPARE] Failed to fetch API location', err));
+      // DEBUG: Fetch API location to compare (Only when not hydrating)
+      if (!this.isHydrating) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { fetchCurrentLocationFromApi } = require('./AuthService');
+        fetchCurrentLocationFromApi().catch(() => { }); // Fallback silently
+      }
 
       if (this.state.currentLocation !== location) {
-        log.info(`[LogWatcher] Location CHANGED to ${location}. Purging old instance cache.`);
+        log.debug(`[LogWatcher] Location transitioned to ${location}`);
 
         // FORCED PURGE: Completely clear presence state for the OLD world
         this.state.players.clear();
@@ -625,9 +630,10 @@ class LogWatcherService extends EventEmitter {
         this.emit('location', { worldId, instanceId, location, timestamp });
         serviceEventBus.emit('location', { worldId, instanceId, location, timestamp });
 
-        // INSTANT RECONCILE: Immediately pull the fresh user list from the API for the NEW instance
-        // This is the "failsafe" to ensure the Roaming Card is correct even if logs are slow
-        this.reconcileWithApi(location);
+        // INSTANT RECONCILE: Immediately pull the fresh user list (Only when not hydrating)
+        if (!this.isHydrating) {
+          this.reconcileWithApi(location);
+        }
 
         if (location.includes('~group(')) {
           discordBroadcastService.updateGroupStatus("Group Instance", 0);

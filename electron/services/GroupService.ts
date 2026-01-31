@@ -14,12 +14,12 @@ export function setupGroupHandlers() {
 
     // Listen for security updates and broadcast to renderer
     serviceEventBus.on('groups-updated', ({ groups }) => {
-        logger.info(`Broadcasting ${groups.length} authorized groups to renderer`);
+        logger.debug(`Broadcasting ${groups.length} authorized groups to renderer`);
         windowService.broadcast('groups:updated', { groups });
     });
 
     serviceEventBus.on('groups-cache-ready', ({ groupIds }) => {
-        logger.info(`Broadcasting cache ready event for ${groupIds.length} groups`);
+        logger.debug(`Broadcasting cache ready event for ${groupIds.length} groups`);
         windowService.broadcast('groups:cache-ready', { groupIds });
     });
 
@@ -48,7 +48,7 @@ export function setupGroupHandlers() {
                 const cachedFullObjects = groupAuthorizationService.getCachedGroupObjects();
 
                 if (cachedGroupIds.length > 0) {
-                    logger.info(`[PERF] Returning ${cachedGroupIds.length} cached groups instantly (Stage 1)`);
+                    logger.debug(`[Cache] Restoring ${cachedGroupIds.length} groups (Stage 1)`);
 
                     // Trigger Stage 2 refresh in background
                     setTimeout(() => {
@@ -59,7 +59,7 @@ export function setupGroupHandlers() {
 
                     // Return full cached objects if available, otherwise return minimal placeholders
                     if (cachedFullObjects.length > 0) {
-                        logger.info(`[PERF] Returning ${cachedFullObjects.length} full cached group objects with images`);
+                        logger.info(`[Cache] Restored ${cachedFullObjects.length} group profiles.`);
                         return {
                             success: true,
                             groups: cachedFullObjects,
@@ -145,19 +145,17 @@ export function setupGroupHandlers() {
 
             // Handle { instances: [...] } wrapper commonly returned by VRChat API
             if (!Array.isArray(allInstances) && allInstances && Array.isArray(allInstances.instances)) {
-                logger.info(`[GroupService] Extracting instances from wrapped response for unified fetch`);
+                logger.debug(`[GroupService] Extracting instances from wrapped response for unified fetch`);
                 allInstances = allInstances.instances;
             }
 
             if (!Array.isArray(allInstances)) {
                 // Safe logging for BigInt
-                logger.warn('[GroupService] getAllActiveInstances returned non-array:',
-                    JSON.stringify(allInstances, (key, value) => typeof value === 'bigint' ? value.toString() : value)
-                );
+                logger.warn('[Sync] Unified fetch returned non-array result.');
                 return { instances: [] };
             }
 
-            logger.info(`[GroupService] Fetched ${allInstances.length} active instances across all groups (Unified)`);
+            logger.debug(`[Sync] Found ${allInstances.length} active instances.`);
             return { instances: allInstances };
 
         }, 'groups:get-all-active-instances').then(res => {

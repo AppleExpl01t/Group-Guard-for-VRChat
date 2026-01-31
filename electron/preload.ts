@@ -26,7 +26,7 @@ import type {
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electron', {
     log: (level: string, message: string) => ipcRenderer.send('log', level, message),
-    getVersion: () => process.versions.electron,
+    getVersion: () => process?.versions?.electron || 'unknown',
     openExternal: (url: string) => ipcRenderer.invoke('app:open-external', url),
 
     // Auth API
