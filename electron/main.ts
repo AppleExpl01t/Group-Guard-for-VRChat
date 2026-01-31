@@ -415,7 +415,8 @@ watchlistService.initialize();
 progress.update('Watchlist');
 
 import { timeTrackingService } from './services/TimeTrackingService';
-timeTrackingService.initialize();
+// timeTrackingService is now initialized by FriendshipService once a user logs in, 
+// as it requires a userDataDir context for legacy migrations.
 progress.update('Time Tracking');
 
 // Initialize Blocking/Critical Async Services concurrently

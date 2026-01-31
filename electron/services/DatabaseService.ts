@@ -90,10 +90,16 @@ class DatabaseService {
                 // Connect explicitly
                 await this.prisma.$connect();
 
-                // AUTO-MIGRATION: Ensure 'flags' column exists (fix for mismatch)
                 try {
                     await this.prisma.$executeRaw`ALTER TABLE ScannedUser ADD COLUMN flags TEXT`;
                     logger.info('Applied auto-migration: Added flags column to ScannedUser');
+                } catch (e) {
+                    // Ignore if column already exists
+                }
+
+                try {
+                    await this.prisma.$executeRaw`ALTER TABLE FriendStats ADD COLUMN friendSince DATETIME`;
+                    logger.info('Applied auto-migration: Added friendSince column to FriendStats');
                 } catch (e) {
                     // Ignore if column already exists
                 }

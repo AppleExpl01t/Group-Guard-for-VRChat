@@ -99,6 +99,9 @@ class LocationService {
 
         this.friends.set(data.userId, updated);
 
+        // PERSISTENCE: Save to disk on individual updates to prevent data loss on crash
+        this.persistSnapshot();
+
         // Emit state change event if something actually changed
         if (statusChanged || locationChanged || descriptionChanged || groupChanged || avatarChanged) {
             // ...
@@ -166,6 +169,18 @@ class LocationService {
             this.friends.set(f.userId, f);
         }
         this.persistSnapshot();
+    }
+
+    /**
+     * Removes a friend from the local cache (e.g. on unfriend)
+     */
+    public removeFriend(userId: string) {
+        if (this.friends.has(userId)) {
+            const friend = this.friends.get(userId);
+            logger.info(`Removing friend from cache: ${friend?.displayName} (${userId})`);
+            this.friends.delete(userId);
+            this.persistSnapshot();
+        }
     }
 
     public getAllFriends(): FriendLocation[] {

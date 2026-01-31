@@ -162,8 +162,13 @@ class SocialFeedService {
 
     private async handleRelationshipChange(event: any) {
         const { userId, displayName, type, timestamp } = event;
-        const feedType = type === 'add' ? 'add' : (type === 'remove' ? 'remove' : null);
+        const feedTypeMap: Record<string, string> = {
+            'add': 'add',
+            'remove': 'remove',
+            'avatar_change': 'avatar'
+        };
 
+        const feedType = feedTypeMap[type];
         if (!feedType) return;
 
         const entry: SocialFeedEntry = {
@@ -172,7 +177,9 @@ class SocialFeedService {
             userId,
             displayName,
             timestamp,
-            details: type === 'add' ? 'Added as friend' : 'Removed from friends',
+            details: type === 'add' ? 'Added as friend' :
+                type === 'remove' ? 'Removed from friends' :
+                    'Updated their avatar (Background Check)',
             data: event
         };
         await this.appendEntry(entry);

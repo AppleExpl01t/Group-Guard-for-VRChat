@@ -70,6 +70,7 @@ model FriendStats {
   encounterCount   Int      @default(0)
   lastSeen         DateTime
   lastHeartbeat    DateTime?
+  friendSince      DateTime? // Date they were first added as a friend
   
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
