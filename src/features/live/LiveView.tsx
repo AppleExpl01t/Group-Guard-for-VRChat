@@ -978,7 +978,7 @@ export const LiveView: React.FC = () => {
                     </GlassPanel>
 
                     {/* Right: Actions & Logs (1/3 width) */}
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: '280px' }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: '280px', overflowY: 'auto', overflowX: 'hidden', paddingRight: '4px' }}>
 
                         {/* Right Panel Tabs */}
                         <div style={{ display: 'flex', background: 'var(--color-surface-card)', borderRadius: '8px', padding: '4px', border: '1px solid var(--border-color)' }}>

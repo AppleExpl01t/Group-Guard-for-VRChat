@@ -316,7 +316,7 @@ export const LocationsView: React.FC = () => {
                                 }}>
                                     Active Locations
                                 </h4>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', alignItems: 'center' }}>
                                     {instanceGroups.map((group) => {
                                         // For private instances, render friend cards directly without container
                                         if (group.isPrivate) {
