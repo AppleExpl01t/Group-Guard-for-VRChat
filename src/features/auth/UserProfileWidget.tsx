@@ -6,8 +6,9 @@ const getTrustRank = (tags: string[] = []) => {
   if (tags.includes('admin_moderator')) return { label: 'Admin', color: '#ff0000' };
   if (tags.includes('system_trust_veteran')) return { label: 'Trusted', color: '#8134ef' };
   if (tags.includes('system_trust_trusted')) return { label: 'Known', color: '#ff7b00' };
-  if (tags.includes('system_trust_basic')) return { label: 'New User', color: '#1778ff' };
   if (tags.includes('system_trust_known')) return { label: 'User', color: '#2bcf5c' };
+  if (tags.includes('system_trust_basic')) return { label: 'New User', color: '#1778ff' };
+
   return { label: 'Visitor', color: '#cccccc' };
 };
 
