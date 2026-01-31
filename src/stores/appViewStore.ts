@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 // Define the available views in the application
-export type AppView = 'main' | 'moderation' | 'instances' | 'audit' | 'database' | 'settings' | 'live' | 'watchlist' | 'friendship';
+export type AppView = 'main' | 'moderation' | 'instances' | 'audit' | 'database' | 'settings' | 'live' | 'watchlist' | 'friendship' | 'integrations';
 
 interface AppViewState {
     currentView: AppView;

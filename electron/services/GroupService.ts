@@ -180,21 +180,8 @@ export function setupGroupHandlers() {
 
     // Get world details
     ipcMain.handle('worlds:get-details', async (_event, { worldId }: { worldId: string }) => {
-        try {
-            const client = getVRChatClient();
-            if (!client) throw new Error("Not authenticated");
-
-            // Revert to Object Syntax
-            const response = await client.getWorld({ path: { worldId } });
-
-            if (response.error) throw response.error;
-            return { success: true, world: response.data };
-
-        } catch (error: unknown) {
-            const err = error as { message?: string };
-            logger.error('Failed to fetch world details:', error);
-            return { success: false, error: err.message || 'Failed to fetch world' };
-        }
+        const result = await vrchatApiService.getWorld(worldId);
+        return { ...result, world: result.data };
     });
 
     // Get group members

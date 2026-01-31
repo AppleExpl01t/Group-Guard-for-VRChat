@@ -74,74 +74,87 @@ export class TokenBucket {
     }
 }
 
+const globalThrottle = new TokenBucket(40, 2); // 40 burst, 2/sec sustained
+const pendingRequests = new Map<string, Promise<any>>();
+
 export const networkService = {
 
     /**
-     * Executes a single API operation with standardized error handling.
+     * Executes a single API operation with standardized error handling and rate limiting.
      * @param operation The async function to execute.
      * @param context A description of the operation for logging.
      * @returns ExecutionResult
      */
     execute: async <T>(operation: () => Promise<T>, context: string, retryConfig: { maxRetries: number; baseDelay: number } = { maxRetries: 3, baseDelay: 1000 }): Promise<ExecutionResult<T>> => {
-        let attempt = 0;
-
-        while (attempt <= retryConfig.maxRetries) {
+        // Request Coalescing: If an identical request is already in flight, wait for it.
+        const cacheKey = context;
+        if (pendingRequests.has(cacheKey)) {
+            // logger.debug(`[Network] Coalescing request for: ${context}`);
             try {
-                // if (attempt > 0) logger.debug(`[Network] Retry attempt ${attempt} for: ${context}`);
-                const data = await operation();
-
-                // Minimal validation for VRChat "error" responses that aren't thrown
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                if (data && (data as any).error) {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    throw (data as any).error;
-                }
-
+                const data = await pendingRequests.get(cacheKey);
                 return { success: true, data };
-            } catch (error: unknown) {
-                const err = error as { message?: string; response?: { status?: number; data?: { error?: { message?: string } } } };
-                const status = err.response?.status;
-                const msg = err.response?.data?.error?.message || err.message || 'Unknown error';
-
-                if (status === 401 || msg.includes('Not authenticated')) {
-                    // Suppress authentication errors silently - they match expected startup race conditions
-                    return { success: false, error: 'Not authenticated' };
-                }
-
-                if (status === 429) {
-                    attempt++;
-                    if (attempt <= retryConfig.maxRetries) {
-                        const delay = retryConfig.baseDelay * Math.pow(2, attempt - 1);
-                        logger.debug(`[Network] Resource busy during '${context}'. Retrying... (Attempt ${attempt}/${retryConfig.maxRetries})`);
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                        continue;
-                    } else {
-                        logger.warn(`[Network] Resource busy during '${context}'. Max retries reached.`);
-                        return { success: false, error: 'Rate Limited (Max Retries)' };
-                    }
-                }
-
-                // Suppress verbose network errors for polling and hydration
-                const isPolling = context.includes('polling');
-                const isHydration = context.includes('hydration');
-                const isExpectedNetworkError = status === 401 || status === 429 || msg.includes('Not authenticated');
-
-                if (isPolling || isHydration || isExpectedNetworkError) {
-                    // Suppress logging for these common, expected scenarios
-                    // logger.debug(`[Network] Suppressed error for '${context}': ${msg}`);
-                } else {
-                    // Generic error - logic: only log stack trace if in dev AND it's not a common expected error
-                    const isProduction = process.env.NODE_ENV !== 'development';
-                    if (!isProduction) {
-                        logger.error(`[Network] Failed '${context}': ${msg}`, error);
-                    } else {
-                        logger.error(`[Network] Failed '${context}': ${msg}`);
-                    }
-                }
-                return { success: false, error: msg };
+            } catch (error: any) {
+                return { success: false, error: error.message || String(error) };
             }
         }
-        return { success: false, error: 'Unknown retry error' };
+
+        const requestPromise = (async () => {
+            let attempt = 0;
+
+            // Global Rate Limiting
+            await globalThrottle.consume(1);
+
+            while (attempt <= retryConfig.maxRetries) {
+                try {
+                    const data = await operation();
+
+                    if (data && (data as any).error) {
+                        throw (data as any).error;
+                    }
+
+                    return data;
+                } catch (error: unknown) {
+                    const err = error as { message?: string; response?: { status?: number; data?: { error?: { message?: string } } } };
+                    const status = err.response?.status;
+                    const msg = err.response?.data?.error?.message || err.message || 'Unknown error';
+
+                    if (status === 401 || msg.includes('Not authenticated')) {
+                        throw new Error('Not authenticated');
+                    }
+
+                    if (status === 429) {
+                        attempt++;
+                        if (attempt <= retryConfig.maxRetries) {
+                            const delay = retryConfig.baseDelay * Math.pow(2, attempt - 1);
+                            logger.warn(`[Network] 429 Rate Limited during '${context}'. Retrying in ${delay}ms... (Attempt ${attempt}/${retryConfig.maxRetries})`);
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                            continue;
+                        }
+                    }
+
+                    throw error;
+                }
+            }
+            throw new Error('Max retries reached');
+        })();
+
+        // Store in pending map
+        pendingRequests.set(cacheKey, requestPromise);
+
+        try {
+            const data = await requestPromise;
+            return { success: true, data };
+        } catch (error: any) {
+            const msg = error.message || 'Unknown error';
+            // Suppress verbose network errors for polling and hydration
+            if (!context.includes('polling') && !context.includes('hydration') && !msg.includes('Not authenticated')) {
+                logger.error(`[Network] Failed '${context}': ${msg}`);
+            }
+            return { success: false, error: msg };
+        } finally {
+            // Remove from pending map after cleanup
+            pendingRequests.delete(cacheKey);
+        }
     },
 
     /**

@@ -6,9 +6,6 @@ import { useConfirm } from '../../context/ConfirmationContext';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../context/ThemeContext';
-import { OscSettings } from './OscSettings';
-import { DiscordRpcSettings } from './DiscordRpcSettings';
-import { DiscordWebhookSettings } from './DiscordWebhookSettings';
 import { AudioSettings } from './AudioSettings';
 import { SettingsTabBar, type SettingsTab } from './SettingsTabBar';
 import { SettingsSearch, matchesSearch } from './SettingsSearch';
@@ -33,8 +30,6 @@ const TAB_SEARCH_DATA: Record<SettingsTab, string[]> = {
   appearance: ['Appearance', 'Theme', 'Primary Neon', 'Accent Neon', 'Color', 'Hue', 'Background', 'Dark', 'Light', 'Particles', 'Glass', 'Blur', 'Opacity', 'Border', 'Radius', 'Orbs', 'Effects'],
   audio: ['Audio', 'Notification Sound', 'Volume', 'Music', 'Alert', 'Notifications', 'Test', 'Visual'],
   security: ['Security', 'Data', 'Auto-Login', 'Credentials', 'Sign in', 'Remember', 'Forget Device'],
-  osc: ['OSC', 'Integration', 'VRChat', 'Open Sound Control', 'Port', 'IP', 'Chatbox'],
-  discord: ['Discord', 'Webhook', 'RPC', 'Rich Presence', 'Status', 'Activity', 'Logs', 'Channel'],
   about: ['About', 'System', 'Version', 'Group Guard'],
   credits: ['Credits', 'Developers', 'Contributors', 'Team', 'Authors', 'Thanks'],
   debug: ['Debug', 'Crash', 'Test', 'Internal'],
@@ -206,8 +201,6 @@ export const SettingsView: React.FC = () => {
       appearance: false,
       audio: false,
       security: false,
-      osc: false,
-      discord: false,
       about: false,
       credits: false,
       debug: false,
@@ -226,7 +219,7 @@ export const SettingsView: React.FC = () => {
 
     const counts: Record<SettingsTab, number> = {
       appearance: 0, audio: 0, security: 0,
-      osc: 0, discord: 0, about: 0, credits: 0, debug: 0
+      about: 0, credits: 0, debug: 0
     };
 
     for (const tab of Object.keys(counts) as SettingsTab[]) {
@@ -247,7 +240,7 @@ export const SettingsView: React.FC = () => {
     if (visibleTabs[activeTab]) return;
 
     // Find the first tab that has results
-    const tabOrder: SettingsTab[] = ['appearance', 'audio', 'security', 'osc', 'discord', 'about', 'credits', 'debug'];
+    const tabOrder: SettingsTab[] = ['appearance', 'audio', 'security', 'about', 'credits', 'debug'];
     for (const tab of tabOrder) {
       if (visibleTabs[tab]) {
         setActiveTab(tab);
@@ -787,16 +780,7 @@ export const SettingsView: React.FC = () => {
               </section>
             )}
 
-            {/* === OSC TAB === */}
-            {activeTab === 'osc' && <OscSettings />}
-
-            {/* === DISCORD TAB === */}
-            {activeTab === 'discord' && (
-              <>
-                <DiscordWebhookSettings />
-                <DiscordRpcSettings />
-              </>
-            )}
+            {/* === NO LONGER HERE: OSC & DISCORD TABS (Migrated to Integrations) === */}
 
             {/* === ABOUT TAB === */}
             {activeTab === 'about' && (
