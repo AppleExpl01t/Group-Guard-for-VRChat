@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import log from 'electron-log';
 import { gameLogService } from './GameLogService';
-import { locationService } from './LocationService';
+import { locationService, FriendLocation } from './LocationService';
 import { socialFeedService } from './SocialFeedService';
 import { playerLogService } from './PlayerLogService';
 import { relationshipService } from './RelationshipService';
@@ -33,6 +33,22 @@ class FriendshipService {
     }
 
     private setupEventListeners() {
+        // Listen for Relationship Changes (New Friends, Removed Friends, Name Changes)
+        serviceEventBus.on('friendship-relationship-changed', ({ event }) => {
+            if (!this.isInitialized) return;
+
+            if (event.type === 'add') {
+                logger.info(`New friend added: ${event.displayName} (${event.userId}). Priming location cache.`);
+                locationService.updateFriend({
+                    userId: event.userId,
+                    displayName: event.displayName,
+                    status: 'offline', // Default for new additions, poll will pick up if online
+                    location: 'offline',
+                    userIcon: event.avatarUrl // Prime with what we have from RelationshipService
+                });
+            }
+        });
+
         // Listen for Friend Updates via ServiceEventBus (from Pipeline)
         serviceEventBus.on('friend-update', (payload) => {
             if (!this.isInitialized) return;
@@ -165,8 +181,11 @@ class FriendshipService {
     private startPolling() {
         this.stopPolling();
 
-        // Initial check after a small delay
-        setTimeout(() => this.pollOnlineFriends(), 10000);
+        // Initial checks after a small delay
+        setTimeout(() => {
+            this.pollFullFriendsList(); // Full sync (online + offline) on startup
+            this.pollOnlineFriends(); // online-only poller
+        }, 10000);
 
         this.pollInterval = setInterval(() => {
             this.pollOnlineFriends();
@@ -218,6 +237,40 @@ class FriendshipService {
             throw new Error('FriendshipService is not initialized! Cannot access data directory.');
         }
         return this.userDataDir;
+    }
+
+    private async pollFullFriendsList() {
+        if (!this.isInitialized || !vrchatApiService.isAuthenticated()) return;
+
+        logger.info('Performing full friends sync (online + offline)...');
+        try {
+            const [onlineResult, offlineResult] = await Promise.all([
+                vrchatApiService.getFriends(false),
+                vrchatApiService.getFriends(true)
+            ]);
+
+            if (onlineResult.success && offlineResult.success) {
+                const allApiFriends = [...(onlineResult.data || []), ...(offlineResult.data || [])];
+                const apiFriends: FriendLocation[] = allApiFriends.map(f => ({
+                    userId: f.id,
+                    displayName: f.displayName,
+                    status: f.status || 'offline',
+                    location: f.location || 'offline',
+                    lastUpdated: new Date().toISOString(),
+                    userIcon: f.userIcon as string,
+                    profilePicOverride: f.profilePicOverride as string,
+                    currentAvatarThumbnailImageUrl: f.currentAvatarThumbnailImageUrl as string,
+                    statusDescription: f.statusDescription as string,
+                    representedGroup: (f as any).representedGroup as string,
+                    currentAvatarId: (f as any).currentAvatarRequestId || (f as any).currentAvatarId as string
+                }));
+
+                locationService.setFriends(apiFriends);
+                logger.info(`Full friends sync complete. ${apiFriends.length} friends updated.`);
+            }
+        } catch (e) {
+            logger.error('Failed to perform full friends sync:', e);
+        }
     }
 
     /**

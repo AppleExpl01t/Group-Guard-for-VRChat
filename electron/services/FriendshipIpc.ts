@@ -78,29 +78,32 @@ export function setupFriendshipHandlers() {
             const hasImages = friends.some(f => f.userIcon || f.currentAvatarThumbnailImageUrl || f.profilePicOverride);
 
             if (friends.length === 0 || !hasImages) {
-                logger.info(`[IPC] Friends cache empty or missing images (hasImages: ${hasImages}), fetching from VRChat API...`);
+                logger.info(`[IPC] Friends cache empty or missing images (hasImages: ${hasImages}), fetching full friends list from VRChat API...`);
                 try {
-                    const onlineResult = await vrchatApiService.getFriends(false);
-                    if (onlineResult.success && onlineResult.data) {
-                        const apiFriends: FriendLocation[] = onlineResult.data.map(f => ({
-                            userId: f.id,
-                            displayName: f.displayName,
-                            status: f.status || 'offline',
-                            location: f.location || 'private',
-                            lastUpdated: new Date().toISOString(),
-                            userIcon: f.userIcon as string,
-                            profilePicOverride: f.profilePicOverride as string,
-                            currentAvatarThumbnailImageUrl: f.currentAvatarThumbnailImageUrl as string,
-                            statusDescription: f.statusDescription as string,
-                            representedGroup: (f as any).representedGroup as string,
-                            currentAvatarId: (f as any).currentAvatarRequestId || (f as any).currentAvatarId as string
-                        }));
+                    const [onlineResult, offlineResult] = await Promise.all([
+                        vrchatApiService.getFriends(false),
+                        vrchatApiService.getFriends(true)
+                    ]);
 
-                        // Update LocationService with fetched data
-                        locationService.setFriends(apiFriends);
-                        friends = apiFriends;
-                        logger.info(`[IPC] Fetched ${friends.length} online friends from API`);
-                    }
+                    const allApiFriends = [...(onlineResult.data || []), ...(offlineResult.data || [])];
+                    const apiFriends: FriendLocation[] = allApiFriends.map(f => ({
+                        userId: f.id,
+                        displayName: f.displayName,
+                        status: f.status || 'offline',
+                        location: f.location || 'offline',
+                        lastUpdated: new Date().toISOString(),
+                        userIcon: f.userIcon as string,
+                        profilePicOverride: f.profilePicOverride as string,
+                        currentAvatarThumbnailImageUrl: f.currentAvatarThumbnailImageUrl as string,
+                        statusDescription: f.statusDescription as string,
+                        representedGroup: (f as any).representedGroup as string,
+                        currentAvatarId: (f as any).currentAvatarRequestId || (f as any).currentAvatarId as string
+                    }));
+
+                    // Update LocationService with fetched data
+                    locationService.setFriends(apiFriends);
+                    friends = apiFriends;
+                    logger.info(`[IPC] Fetched ${friends.length} total friends (online + offline) from API`);
                 } catch (apiError) {
                     logger.warn('[IPC] Failed to fetch friends from API:', apiError);
                 }
@@ -155,15 +158,20 @@ export function setupFriendshipHandlers() {
 
     // Force refresh friends from API (manual refresh button)
     ipcMain.handle('friendship:refresh-friends', async () => {
-        logger.info('[IPC] friendship:refresh-friends - Forcing API refresh');
+        logger.info('[IPC] friendship:refresh-friends - Forcing Full API refresh (online + offline)');
         try {
-            const onlineResult = await vrchatApiService.getFriends(false);
-            if (onlineResult.success && onlineResult.data) {
-                const apiFriends: FriendLocation[] = onlineResult.data.map(f => ({
+            const [onlineResult, offlineResult] = await Promise.all([
+                vrchatApiService.getFriends(false),
+                vrchatApiService.getFriends(true)
+            ]);
+
+            if (onlineResult.success && offlineResult.success) {
+                const allApiFriends = [...(onlineResult.data || []), ...(offlineResult.data || [])];
+                const apiFriends: FriendLocation[] = allApiFriends.map(f => ({
                     userId: f.id,
                     displayName: f.displayName,
                     status: f.status || 'offline',
-                    location: f.location || 'private',
+                    location: f.location || 'offline',
                     lastUpdated: new Date().toISOString(),
                     userIcon: f.userIcon as string,
                     profilePicOverride: f.profilePicOverride as string,
@@ -174,10 +182,10 @@ export function setupFriendshipHandlers() {
                 }));
 
                 locationService.setFriends(apiFriends);
-                logger.info(`[IPC] Refreshed ${apiFriends.length} friends from API`);
+                logger.info(`[IPC] Refreshed ${apiFriends.length} total friends from API`);
                 return { success: true, count: apiFriends.length };
             }
-            return { success: false, error: onlineResult.error };
+            return { success: false, error: onlineResult.error || offlineResult.error };
         } catch (e) {
             logger.error('[IPC] Failed to refresh friends:', e);
             return { success: false, error: String(e) };

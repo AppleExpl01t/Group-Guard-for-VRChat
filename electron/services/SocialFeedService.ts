@@ -58,106 +58,109 @@ class SocialFeedService {
         this.lastStatus.clear();
     }
 
-    private handleStateChange(payload: { friend: any; previous: any; change: { status: boolean; location: boolean; statusDescription: boolean; representedGroup: boolean; avatar: boolean } }) {
+    private async handleStateChange(payload: { friend: any; previous: any; change: { status: boolean; location: boolean; statusDescription: boolean; representedGroup: boolean; avatar: boolean } }) {
         const { friend, previous, change } = payload;
         const userId = friend.userId;
-        const displayName = friend.displayName;
-        const timestamp = new Date().toISOString();
-
         if (!userId) return;
 
-        let feedType: SocialFeedEntry['type'] | null = null;
-        let details = '';
+        // Gather all entries to append
+        const entries: Omit<SocialFeedEntry, 'id' | 'timestamp'>[] = [];
 
+        // 1. STATUS CHANGES (Online / Offline / Status Text)
         if (change.status) {
             if (friend.status === 'offline') {
-                feedType = 'offline';
-                details = 'Went Offline';
+                entries.push({
+                    type: 'offline',
+                    userId,
+                    displayName: friend.displayName,
+                    details: 'Went Offline'
+                });
+                // RESET CACHE: Ensure we log their next avatar switch when they come back online
+                this.lastAvatarId.delete(userId);
             } else if (!previous || previous.status === 'offline') {
-                feedType = 'online';
-                details = 'Came Online';
+                entries.push({
+                    type: 'online',
+                    userId,
+                    displayName: friend.displayName,
+                    details: 'Came Online'
+                });
             } else {
-                // Status color/text change (e.g. Active -> Join Me)
-                feedType = 'status';
-                details = `Status changed to ${friend.status.charAt(0).toUpperCase() + friend.status.slice(1)}`;
+                entries.push({
+                    type: 'status',
+                    userId,
+                    displayName: friend.displayName,
+                    details: `Status changed to ${friend.status.charAt(0).toUpperCase() + friend.status.slice(1)}`
+                });
             }
-        } else if (change.statusDescription && friend.status !== 'offline') {
-            feedType = 'status';
-            const oldDesc = previous?.statusDescription || '';
-            const newDesc = friend.statusDescription || '';
+        }
 
-            // Only log "Cleared" if there was something to clear
-            if (!newDesc && !oldDesc) {
-                return; // Ignore empty -> empty transition
+        // 2. STATUS DESCRIPTION / GROUP (Only if not offline)
+        if (friend.status !== 'offline') {
+            if (change.statusDescription) {
+                const details = friend.statusDescription || 'Cleared';
+                // Deduplicate status text
+                if (this.lastStatus.get(userId) !== details) {
+                    this.lastStatus.set(userId, details);
+                    entries.push({
+                        type: 'status',
+                        userId,
+                        displayName: friend.displayName,
+                        details: friend.statusDescription ? `Status message: ${friend.statusDescription}` : 'Status message: Cleared'
+                    });
+                }
             }
+            if (change.representedGroup) {
+                entries.push({
+                    type: 'status',
+                    userId,
+                    displayName: friend.displayName,
+                    details: `Now representing: ${friend.representedGroup || 'No Group'}`
+                });
+            }
+        }
 
-            details = `Status message: ${newDesc || 'Cleared'}`;
-        } else if (change.representedGroup && friend.status !== 'offline') {
-            feedType = 'status';
-            details = `Now representing: ${friend.representedGroup || 'No Group'}`;
-        } else if (change.avatar && friend.status !== 'offline') {
+        // 3. AVATAR CHANGE
+        if (change.avatar && friend.status !== 'offline') {
             const avatarId = (friend as any).currentAvatarId;
             const avatarName = (friend as any).avatarName;
 
-            // DEDUPLICATION: Avoid logging the same avatar twice in a row 
-            // (e.g. if LogWatcher and WebSocket both report it)
-            if (avatarId && this.lastAvatarId.get(userId) === avatarId) {
-                return;
-            }
-            if (avatarId) {
+            if (avatarId && this.lastAvatarId.get(userId) !== avatarId) {
                 this.lastAvatarId.set(userId, avatarId);
+                entries.push({
+                    type: 'avatar',
+                    userId,
+                    displayName: friend.displayName,
+                    details: avatarName ? `Switched to ${avatarName}` : 'Avatar Changed',
+                    data: {
+                        currentAvatarId: avatarId,
+                        avatarName: avatarName
+                    }
+                });
             }
-
-            feedType = 'avatar';
-            details = avatarName ? `Switched to ${avatarName}` : 'Avatar Changed';
         }
 
-        // Location change (only if not newly offline)
+        // 4. LOCATION CHANGE (GPS / World Joins)
         if (change.location && friend.status !== 'offline') {
-            feedType = 'location';
-            details = friend.worldName || friend.location || 'Private World';
+            const loc = friend.location?.toLowerCase() || '';
+            const isNoisyLocation = loc === 'offline' || loc === 'private' || loc === 'travelling' || loc === 'traveling';
 
-            // Map "Private World" to something nicer if it's just 'private'
-            if (details === 'private') details = 'Private World';
-        }
-
-        // ... (existing helper logic)
-
-        // DEDUPLICATION LOGIC
-        // We use the `lastStatus` cache (userId -> lastLoggedDetails) to prevent
-        // spamming the feed with identical updates (e.g. Polling noise)
-        if (feedType === 'status') {
-            const last = this.lastStatus.get(userId);
-            // If the message is exactly the same as the last one we successfully logged, skip it.
-            if (last === details) {
-                // logger.debug(`Skipping duplicate status update for ${displayName}: ${details}`);
-                return;
+            if (!isNoisyLocation) {
+                entries.push({
+                    type: 'location',
+                    userId,
+                    displayName: friend.displayName,
+                    details: friend.worldName || friend.location || 'Private World'
+                });
             }
-            // Update cache with new details
-            this.lastStatus.set(userId, details);
         }
 
-        // Special handling for Online/Offline to clear/reset duplicator if needed?
-        // Actually, if they go offline, we shouldn't necessarily clear the 'last status message'
-        // because if they come back online with the SAME status, it might be interesting to know?
-        // But usually "Status message" is independent of online/offline.
-        // Let's just track status messages for now.
-
-        if (feedType) {
-            const entry: SocialFeedEntry = {
-                id: `${timestamp}-${Math.random().toString(36).substr(2, 5)}`,
-                type: feedType,
-                userId,
-                displayName,
-                timestamp,
-                details,
-                data: friend
-            };
-            this.appendEntry(entry);
+        // PERSIST ALL GATHERED ENTRIES
+        for (const entry of entries) {
+            await (this as any).appendEntry(entry);
         }
     }
 
-    private handleRelationshipChange(event: any) {
+    private async handleRelationshipChange(event: any) {
         const { userId, displayName, type, timestamp } = event;
         const feedType = type === 'add' ? 'add' : (type === 'remove' ? 'remove' : null);
 
@@ -172,15 +175,23 @@ class SocialFeedService {
             details: type === 'add' ? 'Added as friend' : 'Removed from friends',
             data: event
         };
-        this.appendEntry(entry);
+        await this.appendEntry(entry);
     }
 
-    private appendEntry(entry: SocialFeedEntry) {
+    private async appendEntry(entry: Omit<SocialFeedEntry, 'id' | 'timestamp'> & { id?: string; timestamp?: string }) {
         if (!this.dbPath) return;
+
+        const timestamp = entry.timestamp || new Date().toISOString();
+        const fullEntry: SocialFeedEntry = {
+            id: entry.id || `${timestamp}-${Math.random().toString(36).substr(2, 5)}`,
+            timestamp,
+            ...entry
+        };
+
         try {
-            const line = JSON.stringify(entry) + '\n';
+            const line = JSON.stringify(fullEntry) + '\n';
             fs.appendFileSync(this.dbPath, line);
-            serviceEventBus.emit('social-feed-entry-added', { entry });
+            serviceEventBus.emit('social-feed-entry-added', { entry: fullEntry });
         } catch (e) {
             logger.error('Failed to append social feed:', e);
         }

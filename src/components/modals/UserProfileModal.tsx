@@ -9,6 +9,7 @@ interface UserProfileModalProps {
     onClose: () => void;
     openWorldProfile?: (id: string, name?: string) => void;
     openGroupProfile?: (id: string, name?: string) => void;
+    openAvatarProfile?: (id: string, name?: string) => void;
 }
 
 interface LocalStats {
@@ -23,7 +24,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     userId,
     onClose,
     openWorldProfile,
-    openGroupProfile
+    openGroupProfile,
+    openAvatarProfile
 }) => {
     const [loading, setLoading] = useState(true);
     const [profileData, setProfileData] = useState<any>(null);
@@ -212,6 +214,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                                         src={profile.profilePicOverride || profile.currentAvatarThumbnailImageUrl || profile.userIcon}
                                         alt={profile.displayName}
                                         className={styles.avatar}
+                                        onClick={() => profile.currentAvatarId && openAvatarProfile?.(profile.currentAvatarId, profile.avatarName)}
+                                        style={{ cursor: profile.currentAvatarId ? 'pointer' : 'default' }}
                                         onError={(e) => { (e.target as HTMLImageElement).src = 'https://assets.vrchat.com/www/images/default-avatar.png'; }}
                                     />
                                     <div className={styles.profileInfo}>
