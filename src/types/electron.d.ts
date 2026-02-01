@@ -444,6 +444,7 @@ export interface AppSettings {
 export interface ElectronAPI {
   log: (level: 'info' | 'warn' | 'error', message: string) => void;
   getVersion: () => string;
+  getHWID: () => Promise<string>;
   openExternal: (url: string) => Promise<{ success: boolean; error?: string }>;
 
   // Auth API

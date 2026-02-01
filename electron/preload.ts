@@ -27,6 +27,7 @@ import type {
 contextBridge.exposeInMainWorld('electron', {
     log: (level: string, message: string) => ipcRenderer.send('log', level, message),
     getVersion: () => process?.versions?.electron || 'unknown',
+    getHWID: () => ipcRenderer.invoke('get-hwid'),
     openExternal: (url: string) => ipcRenderer.invoke('app:open-external', url),
 
     // Auth API

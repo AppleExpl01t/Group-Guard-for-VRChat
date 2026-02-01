@@ -30,6 +30,14 @@ const inputStyle: React.CSSProperties = {
   boxSizing: 'border-box',
 };
 
+// Type for user management
+interface AdminUser {
+  id: number;
+  username: string;
+  role: 'owner' | 'admin';
+  hwid: string | null;
+}
+
 export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose }) => {
   const { adminSessionToken, adminUser, setAdminSession, recordFailedLogin, resetAdminAccess } = useAdminStore();
   
@@ -54,18 +62,40 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
   const [showManageAdmins, setShowManageAdmins] = useState(false);
   const [generatedInvite, setGeneratedInvite] = useState<string | null>(null);
   const [env] = useState<BackendEnv>(getBackendEnv());
+  const [hwid, setHwid] = useState<string>('browser-dev-mode');
+  const [users, setUsers] = useState<AdminUser[]>([]); // List of admins for management
+
+  // Fetch HWID on mount
+  React.useEffect(() => {
+    if (window.electron?.getHWID) {
+      window.electron.getHWID().then(id => {
+        console.log('[AdminPanel] HWID fetched:', id);
+        setHwid(id);
+      }).catch(err => console.error('Failed to get HWID:', err));
+    }
+  }, []);
 
   const handleEnvToggle = () => {
     const newEnv = env === 'local' ? 'prod' : 'local';
     setBackendEnv(newEnv); // Reloads app
   };
 
+  // Helper for auth headers
+  const getHeaders = React.useCallback((token?: string | null) => {
+    const headers: Record<string, string> = { 
+      'Content-Type': 'application/json',
+      'x-admin-hwid': hwid
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
+  }, [hwid]);
+
   // Auto-fetch profile if logged in but user data missing
   React.useEffect(() => {
     if (adminSessionToken && !adminUser) {
       console.log('Fetching admin profile...');
       fetch(`${BACKEND_URL}/admin/me`, {
-        headers: { 'Authorization': `Bearer ${adminSessionToken}` }
+        headers: getHeaders(adminSessionToken)
       })
       .then(res => res.json())
       .then(data => {
@@ -76,7 +106,64 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
       })
       .catch(console.error);
     }
-  }, [adminSessionToken, adminUser, setAdminSession]);
+  }, [adminSessionToken, adminUser, setAdminSession, getHeaders]);
+
+  // Fetch users when Manage Admins modal opens
+  React.useEffect(() => {
+    if (showManageAdmins && adminUser?.role === 'owner' && adminSessionToken) {
+      fetch(`${BACKEND_URL}/admin/users`, {
+        headers: getHeaders(adminSessionToken)
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setUsers(data.data);
+        }
+      })
+      .catch(console.error);
+    }
+  }, [showManageAdmins, adminUser, adminSessionToken, getHeaders]);
+
+  const handleResetHwid = async (userId: number, username: string) => {
+    if (!confirm(`Reset HWID for ${username}? This will allow them to login from a new device.`)) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/admin/users/${userId}/reset-hwid`, {
+        method: 'POST',
+        headers: getHeaders(adminSessionToken)
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('HWID Reset Successfully');
+        // Refresh list
+        setUsers(prev => prev.map(u => u.id === userId ? { ...u, hwid: null } : u));
+      } else {
+        alert('Failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Connection failed');
+    }
+  };
+
+  const handleRevokeUser = async (userId: number, username: string) => {
+    if (!confirm(`REVOKE ACCESS for ${username}? This will delete their account and disconnect them immediately.`)) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/admin/users/${userId}/revoke`, {
+        method: 'POST',
+        headers: getHeaders(adminSessionToken)
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('User Revoked');
+        setUsers(prev => prev.filter(u => u.id !== userId));
+      } else {
+        alert('Failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Connection failed');
+    }
+  };
 
   const resetForms = () => {
     setLoginUsername('');
@@ -110,7 +197,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
     try {
       const res = await fetch(`${BACKEND_URL}/admin/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(),
         body: JSON.stringify({ username: loginUsername, password: loginPassword }),
       });
       const data = await res.json();
@@ -158,7 +245,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
     try {
       const res = await fetch(`${BACKEND_URL}/admin/register`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(),
         body: JSON.stringify({ 
           username: regUsername, 
           password: regPassword, 
@@ -774,10 +861,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
                              setLoading(true);
                              const res = await fetch(`${BACKEND_URL}/admin/invite`, {
                                method: 'POST',
-                               headers: { 
-                                 'Content-Type': 'application/json',
-                                 'Authorization': `Bearer ${adminSessionToken}`
-                               }
+                               headers: getHeaders(adminSessionToken)
                              });
                              const data = await res.json();
                              if (data.success) {
@@ -798,6 +882,71 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
                       </NeonButton>
                     </div>
                   )}
+
+                  {/* User List */}
+                  <div style={{ marginTop: '2rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
+                    <h3 style={{ color: 'var(--color-text)', fontSize: '1rem', marginBottom: '1rem' }}>Active Administrators</h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '300px', overflowY: 'auto' }}>
+                      {users.map(user => (
+                        <div key={user.id} style={{ 
+                          background: 'rgba(0,0,0,0.3)', 
+                          padding: '0.75rem', 
+                          borderRadius: '6px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          border: '1px solid rgba(255,255,255,0.05)'
+                        }}>
+                          <div>
+                            <div style={{ color: 'var(--color-text)', fontWeight: 'bold' }}>
+                              {user.username} 
+                              {user.id === adminUser?.id && <span style={{ fontSize: '0.7rem', color: 'var(--color-text-dim)', marginLeft: '0.5rem' }}>(You)</span>}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-dim)' }}>
+                              Role: {user.role} | HWID: {user.hwid ? 'BOUND' : 'UNBOUND'}
+                            </div>
+                          </div>
+                          
+                          {/* Actions (Only for other users or if forced) */}
+                          {user.id !== adminUser?.id && (
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <button 
+                                onClick={() => handleResetHwid(user.id, user.username)}
+                                title="Reset Hardware ID Binding"
+                                style={{
+                                  background: 'rgba(59, 130, 246, 0.2)',
+                                  color: '#60a5fa',
+                                  border: '1px solid rgba(59, 130, 246, 0.4)',
+                                  borderRadius: '4px',
+                                  padding: '4px 8px',
+                                  cursor: 'pointer',
+                                  fontSize: '0.75rem'
+                                }}
+                              >
+                                Reset Device
+                              </button>
+                              <button 
+                                onClick={() => handleRevokeUser(user.id, user.username)}
+                                title="Revoke Access (Delete Admin)"
+                                style={{
+                                  background: 'rgba(239, 68, 68, 0.2)',
+                                  color: '#f87171',
+                                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                                  borderRadius: '4px',
+                                  padding: '4px 8px',
+                                  cursor: 'pointer',
+                                  fontSize: '0.75rem'
+                                }}
+                              >
+                                Revoke
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                 </div>
              ) : (
                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-dim)' }}>

@@ -12,9 +12,22 @@ import { storageService } from './services/StorageService'; // Import early
 
 const logger = log.scope('App');
 
+import { machineId } from 'node-machine-id';
+
 // ========================================
 // STARTUP CONFIGURATION
 // ========================================
+
+// Secure Machine ID Handler
+ipcMain.handle('get-hwid', async () => {
+  try {
+    const id = await machineId();
+    return id;
+  } catch (error) {
+    console.error("Failed to get machine ID:", error);
+    return 'unknown-hwid';
+  }
+});
 const SILENT_STARTUP = true; // Toggle this to switch between Verbose (Dev) and Silent (Release) mode
 
 // Suppress dependency warnings (like punycode) during startup
