@@ -46,6 +46,55 @@ interface Invite {
   expires_at: string;
 }
 
+
+// Inline Confirm Button Component
+const ConfirmButton: React.FC<{
+  onClick: () => void;
+  label: string;
+  confirmLabel?: string;
+  style?: React.CSSProperties;
+  className?: string;
+}> = ({ onClick, label, confirmLabel = 'Confirm?', style, className }) => {
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [timer, setTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleClick = () => {
+    if (isConfirming) {
+      onClick();
+      setIsConfirming(false);
+      if (timer) clearTimeout(timer);
+    } else {
+      setIsConfirming(true);
+      const t = setTimeout(() => setIsConfirming(false), 3000);
+      setTimer(t);
+    }
+  };
+
+  React.useEffect(() => {
+    return () => { if (timer) clearTimeout(timer); };
+  }, [timer]);
+
+  return (
+    <button
+      onClick={handleClick}
+      className={className}
+      style={{
+        ...style,
+        background: isConfirming ? '#fbbf24' : style?.background, // Amber warning color
+        color: isConfirming ? '#000' : style?.color,
+        fontWeight: isConfirming ? 'bold' : 'normal',
+        transition: 'all 0.2s',
+        minWidth: '80px',
+        textAlign: 'center',
+        border: isConfirming ? '1px solid #d97706' : style?.border
+      }}
+      title={isConfirming ? "Click again to confirm" : undefined}
+    >
+      {isConfirming ? confirmLabel : label}
+    </button>
+  );
+};
+
 export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose }) => {
   const { adminSessionToken, adminUser, setAdminSession, recordFailedLogin, resetAdminAccess } = useAdminStore();
   
@@ -64,6 +113,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
   
   // State
   const [error, setError] = useState<string | null>(null);
+
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showUnauthorizedModal, setShowUnauthorizedModal] = useState(false);
@@ -73,6 +123,9 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
   const [hwid, setHwid] = useState<string>('browser-dev-mode');
   const [users, setUsers] = useState<AdminUser[]>([]); // List of admins for management
   const [invites, setInvites] = useState<Invite[]>([]); // List of pending invites
+  
+  // Local status for Manage Admins modal
+  const [manageStatus, setManageStatus] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
 
   // Fetch HWID on mount
   React.useEffect(() => {
@@ -139,10 +192,15 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
       fetch(`${BACKEND_URL}/admin/invites`, {
         headers: getHeaders(adminSessionToken)
       })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          setInvites(data.data);
+      .then(async res => {
+        const contentType = res.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+          const data = await res.json();
+          if (data.success) {
+            setInvites(data.data);
+          }
+        } else {
+          console.warn("[AdminPanel] Received non-JSON response from /invites:", await res.text());
         }
       })
       .catch(console.error);
@@ -150,62 +208,67 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
   }, [showManageAdmins, adminUser, adminSessionToken, getHeaders]);
 
   const handleResetHwid = async (userId: number, username: string) => {
-    if (!confirm(`Reset HWID for ${username}? This will allow them to login from a new device.`)) return;
+    // Confirm handled by button state now
     try {
+      setManageStatus(null);
       const res = await fetch(`${BACKEND_URL}/admin/users/${userId}/reset-hwid`, {
         method: 'POST',
         headers: getHeaders(adminSessionToken)
       });
       const data = await res.json();
       if (data.success) {
-        alert('HWID Reset Successfully');
+        setManageStatus({ msg: `HWID Reset for ${username}`, type: 'success' });
         // Refresh list
         setUsers(prev => prev.map(u => u.id === userId ? { ...u, hwid: null } : u));
       } else {
-        alert('Failed: ' + (data.error || 'Unknown error'));
+        setManageStatus({ msg: 'Failed: ' + (data.error || 'Unknown error'), type: 'error' });
       }
     } catch (e) {
       console.error(e);
-      alert('Connection failed');
+      setManageStatus({ msg: 'Connection failed', type: 'error' });
     }
   };
 
   const handleRevokeUser = async (userId: number, username: string) => {
-    if (!confirm(`REVOKE ACCESS for ${username}? This will delete their account and disconnect them immediately.`)) return;
+    // Confirm handled by button state now
     try {
+      setManageStatus(null);
       const res = await fetch(`${BACKEND_URL}/admin/users/${userId}/revoke`, {
         method: 'POST',
         headers: getHeaders(adminSessionToken)
       });
       const data = await res.json();
       if (data.success) {
-        alert('User Revoked');
+        setManageStatus({ msg: `Revoked access for ${username}`, type: 'success' });
+        // Remove from list
         setUsers(prev => prev.filter(u => u.id !== userId));
       } else {
-        alert('Failed: ' + (data.error || 'Unknown error'));
+        setManageStatus({ msg: 'Failed: ' + (data.error || 'Unknown error'), type: 'error' });
       }
     } catch (e) {
       console.error(e);
-      alert('Connection failed');
+      setManageStatus({ msg: 'Connection failed', type: 'error' });
     }
   };
 
   const handleRevokeInvite = async (token: string) => {
-    if (!confirm('Revoke this invite token? It will be permanently deleted.')) return;
+    // Confirm handled by button now
     try {
+      setManageStatus(null);
       const res = await fetch(`${BACKEND_URL}/admin/invites/${token}/revoke`, {
         method: 'POST',
         headers: getHeaders(adminSessionToken)
       });
       const data = await res.json();
       if (data.success) {
+        setManageStatus({ msg: 'Invite cancelled', type: 'success' });
         setInvites(prev => prev.filter(i => i.token !== token));
       } else {
-        alert('Failed: ' + (data.error || 'Unknown error'));
+        setManageStatus({ msg: 'Failed: ' + (data.error || 'Unknown error'), type: 'error' });
       }
     } catch (e) {
       console.error(e);
-      alert('Connection failed');
+      setManageStatus({ msg: 'Connection failed', type: 'error' });
     }
   };
 
@@ -951,6 +1014,21 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
                   {/* User List */}
                   <div style={{ marginTop: '2rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
                     <h3 style={{ color: 'var(--color-text)', fontSize: '1rem', marginBottom: '1rem' }}>Active Administrators</h3>
+                    
+                    {manageStatus && (
+                         <div style={{
+                           marginBottom: '1rem',
+                           padding: '0.5rem',
+                           borderRadius: '4px',
+                           background: manageStatus.type === 'success' ? 'rgba(74, 222, 128, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                           color: manageStatus.type === 'success' ? '#4ade80' : '#f87171',
+                           fontSize: '0.8rem',
+                           textAlign: 'center'
+                         }}>
+                           {manageStatus.msg}
+                         </div>
+                    )}
+
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '300px', overflowY: 'auto' }}>
                     {users.map(user => (
                       <div key={user.id} style={{ 
@@ -976,9 +1054,9 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
                         {/* Actions (Only for other users or if forced) */}
                         {user.id !== adminUser?.id && (
                           <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            <button 
+                            <ConfirmButton 
                               onClick={() => handleResetHwid(user.id, user.username)}
-                              title="Reset Hardware ID Binding"
+                              label="Reset Device"
                               style={{
                                 background: 'rgba(59, 130, 246, 0.2)',
                                 color: '#60a5fa',
@@ -988,12 +1066,11 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
                                 cursor: 'pointer',
                                 fontSize: '0.75rem'
                               }}
-                            >
-                              Reset Device
-                            </button>
-                            <button 
+                            />
+                            <ConfirmButton
                               onClick={() => handleRevokeUser(user.id, user.username)}
-                              title="Revoke Access (Delete Admin)"
+                              label="Revoke Access"
+                              confirmLabel="Confirm Delete?"
                               style={{
                                 background: 'rgba(239, 68, 68, 0.2)',
                                 color: '#f87171',
@@ -1003,9 +1080,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
                                 cursor: 'pointer',
                                 fontSize: '0.75rem'
                               }}
-                            >
-                              Revoke Access
-                            </button>
+                            />
                           </div>
                         )}
                       </div>
@@ -1051,8 +1126,10 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
                                   Created by: <span style={{ color: 'var(--color-text)' }}>{invite.created_by}</span>
                                 </div>
                             </div>
-                            <button
+                            <ConfirmButton
                                 onClick={() => handleRevokeInvite(invite.token)}
+                                label="Cancel"
+                                confirmLabel="Sure?"
                                 style={{
                                   background: 'rgba(239, 68, 68, 0.1)',
                                   border: '1px solid rgba(239, 68, 68, 0.3)',
@@ -1063,11 +1140,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
                                   cursor: 'pointer',
                                   transition: 'all 0.2s'
                                 }}
-                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
-                                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
-                            >
-                                Cancel
-                            </button>
+                            />
                           </div>
                         ))}
                       </>
