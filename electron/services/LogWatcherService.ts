@@ -945,6 +945,7 @@ class LogWatcherService extends EventEmitter {
       this.emitToRenderer('log:vote-kick', event);
       if (!isBackfill) {
         this.emit('vote-kick', event);
+        serviceEventBus.emit('vote-kick', { target: event.target, initiator: event.initiator, timestamp: event.timestamp });
       }
     }
 
@@ -955,6 +956,7 @@ class LogWatcherService extends EventEmitter {
       this.emitToRenderer('log:video-play', event);
       if (!isBackfill) {
         this.emit('video-play', event);
+        serviceEventBus.emit('video-play', { url: event.url, requestedBy: event.requestedBy, timestamp: event.timestamp });
       }
     }
 

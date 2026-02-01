@@ -353,8 +353,8 @@ export interface FriendLocation {
 
 export interface SocialFeedEntry {
   id: string;
-  type: 'online' | 'offline' | 'location' | 'status' | 'add' | 'remove' | 'notification' | 'avatar';
-  userId: string;
+  type: 'online' | 'offline' | 'location' | 'status' | 'add' | 'remove' | 'notification' | 'avatar' | 'video' | 'votekick' | 'gps' | 'join' | 'leave';
+  userId?: string;
   displayName: string;
   timestamp: string;
   details?: string;
@@ -376,11 +376,17 @@ export interface PlayerLogEntry {
 export interface RelationshipEvent {
   id: string;
   timestamp: string;
-  type: 'add' | 'remove' | 'name_change';
+  type: 'add' | 'remove' | 'name_change' | 'avatar_change' | 'rank_change' | 'bio_change';
   userId: string;
   displayName: string;
   previousName?: string;
   avatarUrl?: string;
+  previousAvatarUrl?: string;
+  tags?: string[];
+  previousTags?: string[];
+  bio?: string;
+  previousBio?: string;
+  details?: string;
 }
 
 export interface OscConfig {
