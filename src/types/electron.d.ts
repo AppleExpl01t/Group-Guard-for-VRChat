@@ -347,6 +347,8 @@ export interface FriendLocation {
   currentAvatarThumbnailImageUrl?: string;
   currentAvatarId?: string;
   avatarName?: string;
+  userCount?: number;
+  capacity?: number;
 }
 
 export interface SocialFeedEntry {
@@ -561,6 +563,7 @@ export interface ElectronAPI {
     closeInstance: (worldId?: string, instanceId?: string) => Promise<{ success: boolean; error?: string }>;
     inviteSelf: (worldId: string, instanceId: string) => Promise<{ success: boolean; error?: string }>;
     getInstanceInfo: () => Promise<{ success: boolean; worldId?: string; instanceId?: string; name?: string; imageUrl?: string; error?: string }>;
+    getInstanceDetails: (location: string) => Promise<{ success: boolean; instance?: VRChatInstance; error?: string }>;
     onEntityUpdate: (callback: (entity: LiveEntity) => void) => () => void;
     onMassInviteProgress: (callback: (data: { sent: number; skipped: number; failed: number; total: number; current?: string; done?: boolean }) => void) => () => void;
 
