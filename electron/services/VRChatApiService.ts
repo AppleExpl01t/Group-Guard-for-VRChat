@@ -892,7 +892,7 @@ export const vrchatApiService = {
                 if (chunk.length < n) break;
 
                 offset += n;
-                if (offset > 1500) {
+                if (offset > 5000) {
                     logger.warn(`Friend list fetch reached sanity limit of ${offset}. Truncating.`);
                     break;
                 }
