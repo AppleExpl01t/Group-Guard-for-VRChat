@@ -348,7 +348,7 @@ export const SettingsView: React.FC = () => {
                   <div style={{ marginBottom: '1rem' }}>
                     <label style={{ color: 'var(--color-text-dim)', fontSize: '0.85rem', marginBottom: '0.5rem', display: 'block' }}>Theme Preset</label>
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      {(['dark', 'light', 'midnight', 'sunset', 'ocean', 'forest', 'crimson', 'synthwave'] as const).map((mode) => (
+                      {(['dark', 'light', 'midnight', 'sunset', 'ocean', 'forest', 'crimson', 'synthwave', 'admin'] as const).map((mode) => (
                         <button
                           key={mode}
                           onClick={() => setThemeMode(mode)}

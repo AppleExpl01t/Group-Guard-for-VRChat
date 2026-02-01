@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
 // Theme mode type
-export type ThemeMode = 'dark' | 'light' | 'midnight' | 'sunset' | 'ocean' | 'forest' | 'crimson' | 'synthwave';
+export type ThemeMode = 'dark' | 'light' | 'midnight' | 'sunset' | 'ocean' | 'forest' | 'crimson' | 'synthwave' | 'admin';
 
 // Particle settings interface
 export interface ParticleSettings {
@@ -58,6 +58,10 @@ interface ThemeState {
   customBackgroundImage: string | null;
   setCustomBackgroundImage: (image: string | null) => void;
 
+  // Typography
+  fontFamily: string;
+  setFontFamily: (font: string) => void;
+
   // Reset
   resetTheme: () => void;
 }
@@ -85,6 +89,7 @@ const DEFAULTS = {
     mouseReactive: false,
   },
   customBackgroundImage: null,
+  fontFamily: '"Inter", system-ui, sans-serif',
 };
 
 // Theme mode presets - comprehensive style changes for distinct looks
@@ -110,6 +115,7 @@ const THEME_PRESETS: Record<ThemeMode, typeof DEFAULTS> = {
       mouseReactive: false,
     },
     customBackgroundImage: null,
+    fontFamily: DEFAULTS.fontFamily,
   },
   light: {
     // Clean, bright professional theme
@@ -132,6 +138,7 @@ const THEME_PRESETS: Record<ThemeMode, typeof DEFAULTS> = {
       mouseReactive: false,
     },
     customBackgroundImage: null,
+    fontFamily: DEFAULTS.fontFamily,
   },
   midnight: {
     // Deep space, ultra dark with glowing accents
@@ -154,6 +161,7 @@ const THEME_PRESETS: Record<ThemeMode, typeof DEFAULTS> = {
       mouseReactive: true,
     },
     customBackgroundImage: null,
+    fontFamily: DEFAULTS.fontFamily,
   },
   sunset: {
     // Warm, cozy orange/pink vibes
@@ -176,6 +184,7 @@ const THEME_PRESETS: Record<ThemeMode, typeof DEFAULTS> = {
       mouseReactive: false,
     },
     customBackgroundImage: null,
+    fontFamily: DEFAULTS.fontFamily,
   },
   ocean: {
     // Deep underwater blues and teals
@@ -198,6 +207,7 @@ const THEME_PRESETS: Record<ThemeMode, typeof DEFAULTS> = {
       mouseReactive: true,
     },
     customBackgroundImage: null,
+    fontFamily: DEFAULTS.fontFamily,
   },
   forest: {
     // Emerald / Nature
@@ -220,6 +230,7 @@ const THEME_PRESETS: Record<ThemeMode, typeof DEFAULTS> = {
       mouseReactive: false,
     },
     customBackgroundImage: null,
+    fontFamily: DEFAULTS.fontFamily,
   },
   crimson: {
     // Intense Red / Dark
@@ -242,6 +253,7 @@ const THEME_PRESETS: Record<ThemeMode, typeof DEFAULTS> = {
       mouseReactive: true,
     },
     customBackgroundImage: null,
+    fontFamily: DEFAULTS.fontFamily,
   },
   synthwave: {
     // Pink / Cyan Grid
@@ -264,6 +276,30 @@ const THEME_PRESETS: Record<ThemeMode, typeof DEFAULTS> = {
       mouseReactive: true,
     },
     customBackgroundImage: null,
+    fontFamily: DEFAULTS.fontFamily,
+  },
+  admin: {
+    // Green Console / Terminal Theme
+    primaryHue: 142,        // Emerald Green (#22c55e) (Hue ~142)
+    accentHue: 142,         // Emerald Green
+    backgroundHue: 0,       // Pure Black (Hue 0)
+    backgroundSaturation: 0, // Pure Black (Sat 0)
+    backgroundLightness: 0, // Pure Black (Light 0)
+    themeMode: 'admin' as ThemeMode,
+    glassBlur: 0,           // No blur for raw terminal feel
+    glassOpacity: 90,       // High opacity, solid feel
+    borderRadius: 0,        // Sharp corners
+    headerGradientEnabled: false,
+    uiScale: 1,
+    particleSettings: {
+      enabled: true,
+      count: 30,
+      showOrbs: false,
+      colorShift: false,
+      mouseReactive: true,
+    },
+    customBackgroundImage: null,
+    fontFamily: '"Courier New", monospace',
   },
 };
 
@@ -297,6 +333,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
   const [customBackgroundImage, setCustomBackgroundImage] = useState<string | null>(() =>
     localStorage.getItem('theme_customBackgroundImage'));
+  const [fontFamily, setFontFamily] = useState<string>(() =>
+    localStorage.getItem('theme_fontFamily') || DEFAULTS.fontFamily);
 
   // Set theme mode with presets - applies all preset values for a complete theme change
   const setThemeMode = (mode: ThemeMode) => {
@@ -320,6 +358,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Apply other settings
     setHeaderGradientEnabled(preset.headerGradientEnabled);
+    setFontFamily(preset.fontFamily);
   };
 
   // Partial update for particle settings
@@ -447,6 +486,12 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [customBackgroundImage]);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--font-family-main', fontFamily);
+    localStorage.setItem('theme_fontFamily', fontFamily);
+  }, [fontFamily]);
+
   const resetTheme = () => {
     setPrimaryHue(DEFAULTS.primaryHue);
     setAccentHue(DEFAULTS.accentHue);
@@ -460,6 +505,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setBorderRadius(DEFAULTS.borderRadius);
     setHeaderGradientEnabled(DEFAULTS.headerGradientEnabled);
     setParticleSettingsState(DEFAULTS.particleSettings);
+    setFontFamily(DEFAULTS.fontFamily);
     // Intentional: Do not reset custom background image on theme reset, only on manual clear
   };
 
@@ -478,6 +524,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       uiScale, setUiScale,
       borderRadius, setBorderRadius,
       customBackgroundImage, setCustomBackgroundImage,
+      fontFamily, setFontFamily,
       resetTheme
     }}>
       {children}

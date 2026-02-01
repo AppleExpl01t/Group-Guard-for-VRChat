@@ -373,13 +373,309 @@
   background: var(--admin-accent-dim);
 }
 
-/* Responsive */
-@media (max-width: 768px) {
-  .statsGrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+/* Reusable Green Scrollbar Class */
+.customScrollbar {
+  /* Define variables locally to ensure they work in Portals/Modals outside .adminContainer */
+  --scrollbar-accent: #22c55e;
+  --scrollbar-bg: rgba(34, 197, 94, 0.3);
+  --scrollbar-hover: rgba(34, 197, 94, 0.6);
 
-  .panelsGrid {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-bg) transparent;
+}
+
+.customScrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.customScrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.customScrollbar::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-bg);
+  border-radius: 3px;
+}
+
+.customScrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-hover);
+}
+
+.customScrollbar::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Responsive */
+/* User Analytics View */
+.analyticsOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: #09090b; /* Zinc-950 equivalent */
+  display: flex;
+  flex-direction: column;
+}
+
+.analyticsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  border-bottom: 1px solid var(--terminal-border);
+  background: rgba(34, 197, 94, 0.05);
+}
+
+.analyticsTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.analyticsTitle {
+  font-family: "Courier New", monospace;
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: var(--color-text-main);
+  text-transform: uppercase;
+  margin: 0;
+  letter-spacing: 0.05em;
+}
+
+.analyticsCount {
+  font-family: "Courier New", monospace;
+  font-size: 0.75rem;
+  color: var(--color-text-dim);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.closeButton:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.analyticsContent {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Sidebar List */
+.analyticsSidebar {
+  width: 350px;
+  border-right: 1px solid var(--terminal-border);
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.searchContainer {
+  padding: 1rem;
+  border-bottom: 1px solid #1e293b;
+}
+
+.sidebarInput {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  background: var(--terminal-bg);
+  border: 1px solid var(--terminal-border);
+  border-radius: 4px;
+  color: var(--color-text-main);
+  font-family: "Courier New", monospace;
+  font-size: 0.8rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.sidebarInput:focus {
+  border-color: var(--admin-accent);
+  box-shadow: 0 0 10px var(--admin-accent-glow);
+}
+
+.userList {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.userListItem {
+  padding: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.userListItem:hover {
+  background: rgba(34, 197, 94, 0.05);
+}
+
+.userListItemActive {
+  background: rgba(34, 197, 94, 0.1);
+  border-left: 3px solid var(--admin-accent);
+}
+
+.userRecent {
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--color-text-dim);
+  display: flex;
+  justify-content: space-between;
+  font-family: monospace;
+}
+
+/* Detail View */
+.analyticsDetail {
+  flex: 1;
+  padding: 2rem;
+  overflow-y: auto;
+  background: radial-gradient(circle at top right, rgba(34, 197, 94, 0.03), transparent 40%);
+}
+
+.detailHeader {
+  display: flex;
+  gap: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--terminal-border);
+  margin-bottom: 2rem;
+  align-items: flex-start;
+}
+
+.avatarBox {
+  width: 64px;
+  height: 64px;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(30, 41, 59, 0.5));
+  border: 1px solid var(--terminal-border);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  font-weight: bold;
+  color: var(--admin-accent);
+  font-family: monospace;
+}
+
+.userName {
+  font-family: "Courier New", monospace;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: white;
+  margin: 0 0 0.5rem 0;
+  letter-spacing: -0.02em;
+}
+
+.userId {
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: var(--color-text-dim);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Detail Grid */
+.detailGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.infoCard {
+  background: var(--terminal-bg);
+  border: 1px solid var(--terminal-border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  overflow: hidden;
+}
+
+.cardTitle {
+  font-family: "Courier New", monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  color: var(--color-text-dim);
+  text-transform: uppercase;
+  margin: 0 0 1rem 0;
+}
+
+.infoRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-family: monospace;
+  font-size: 0.85rem;
+}
+
+.infoRow:last-child {
+  border-bottom: none;
+}
+
+.infoValue {
+  color: var(--color-text-main);
+}
+
+.infoValue.highlight {
+  color: var(--admin-accent);
+}
+
+.infoDate {
+  color: var(--color-text-dim);
+  font-size: 0.75rem;
+}
+
+.tagContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tag {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: var(--color-text-main);
+  font-family: monospace;
+}
+
+.emptyState {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-dim);
+  opacity: 0.5;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .analyticsContent {
+    flex-direction: column;
+  }
+  
+  .analyticsSidebar {
+    width: 100%;
+    height: 33%;
+    border-right: none;
+    border-bottom: 1px solid var(--terminal-border);
+  }
+  
+  .detailGrid {
     grid-template-columns: 1fr;
   }
 }

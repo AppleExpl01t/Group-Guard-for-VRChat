@@ -13,6 +13,8 @@ interface ModalProps {
     footer?: React.ReactNode;
     width?: string;
     closable?: boolean;
+    variant?: 'default' | 'admin';
+    contentOverflow?: 'auto' | 'hidden' | 'scroll' | 'visible';
 }
 
 export const Modal: React.FC<ModalProps> = ({ 
@@ -22,8 +24,12 @@ export const Modal: React.FC<ModalProps> = ({
     children, 
     footer,
     width = '500px',
-    closable = true
+    closable = true,
+    variant = 'default',
+    contentOverflow = 'auto'
 }) => {
+    // Determine props to access contentOverflow safely if needed, or just destructure above
+    const props = { contentOverflow };
 
 
     const { incrementModalCount, decrementModalCount } = useUIStore();
@@ -102,22 +108,34 @@ export const Modal: React.FC<ModalProps> = ({
                             // Removed manual transform centering because Flexbox handles it
                         }}
                     >
-                        <GlassPanel style={{ padding: '0', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '85vh', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
+                        <GlassPanel style={{ 
+                                padding: '0', 
+                                overflow: 'hidden', 
+                                display: 'flex', 
+                                flexDirection: 'column', 
+                                maxHeight: '85vh', 
+                                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                                border: variant === 'admin' ? '1px solid #22c55e' : undefined,
+                                background: variant === 'admin' ? 'rgba(0, 0, 0, 0.9)' : undefined
+                            }}>
                             {/* Header */}
                             <div style={{ 
                                 padding: '1.5rem', 
-                                borderBottom: '1px solid var(--border-color)',
+                                borderBottom: variant === 'admin' ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid var(--border-color)',
                                 display: 'flex',
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
-                                background: 'rgba(255,255,255,0.02)'
+                                background: variant === 'admin' ? 'rgba(34, 197, 94, 0.05)' : 'rgba(255,255,255,0.02)'
                             }}>
                                 <h2 style={{ 
                                     margin: 0, 
-                                    fontSize: '1.25rem', 
-                                    fontWeight: 600,
-                                    color: '#fff',
-                                    textShadow: '0 0 10px rgba(0, 255, 255, 0.3)'
+                                    fontSize: variant === 'admin' ? '1rem' : '1.25rem', 
+                                    fontWeight: variant === 'admin' ? 700 : 600,
+                                    color: variant === 'admin' ? '#22c55e' : '#fff',
+                                    textShadow: variant === 'admin' ? '0 0 10px rgba(34, 197, 94, 0.4)' : '0 0 10px rgba(0, 255, 255, 0.3)',
+                                    fontFamily: variant === 'admin' ? 'monospace' : 'inherit',
+                                    textTransform: variant === 'admin' ? 'uppercase' : 'none',
+                                    letterSpacing: variant === 'admin' ? '0.05em' : 'normal'
                                 }}>
                                     {title}
                                 </h2>
@@ -127,7 +145,7 @@ export const Modal: React.FC<ModalProps> = ({
                                         style={{
                                             background: 'none',
                                             border: 'none',
-                                            color: 'var(--color-text-dim)',
+                                            color: variant === 'admin' ? 'rgba(34, 197, 94, 0.7)' : 'var(--color-text-dim)',
                                             cursor: 'pointer',
                                             fontSize: '1.5rem',
                                             lineHeight: 1,
@@ -138,8 +156,8 @@ export const Modal: React.FC<ModalProps> = ({
                                             alignItems: 'center',
                                             justifyContent: 'center'
                                         }}
-                                        onMouseEnter={(e) => (e.currentTarget.style.color = '#fff')}
-                                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-dim)')}
+                                        onMouseEnter={(e) => (e.currentTarget.style.color = variant === 'admin' ? '#22c55e' : '#fff')}
+                                        onMouseLeave={(e) => (e.currentTarget.style.color = variant === 'admin' ? 'rgba(34, 197, 94, 0.7)' : 'var(--color-text-dim)')}
                                     >
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                     </button>
@@ -147,7 +165,10 @@ export const Modal: React.FC<ModalProps> = ({
                             </div>
 
                             {/* Body */}
-                            <div style={{ padding: '1.5rem', overflowY: 'auto' }}>
+                            <div style={{ 
+                                padding: '1.5rem', 
+                                overflowY: (props.contentOverflow || 'auto') as any
+                            }}>
                                 {children}
                             </div>
 

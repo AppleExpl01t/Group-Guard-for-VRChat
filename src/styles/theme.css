@@ -125,12 +125,16 @@
   --dock-height: 45px; /* Height for pill indicator clearance */
 
   /* --- TYPOGRAPHY --- */
+  --font-family-main: "Inter", system-ui, sans-serif;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-md: 1rem;
   --font-size-lg: 1.125rem;
   --font-size-xl: 1.25rem;
   --font-size-2xl: 1.5rem;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 700;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-bold: 700;
@@ -197,8 +201,8 @@
 body {
   background: var(--color-bg-app);
   color: var(--color-text-main);
-  font-family: "Inter", system-ui, sans-serif;
-  transition: background 0.3s ease, color 0.3s ease;
+  font-family: var(--font-family-main);
+  transition: background 0.3s ease, color 0.3s ease, font-family 0.3s ease;
 }
 
 /* Selection styling matches theme */

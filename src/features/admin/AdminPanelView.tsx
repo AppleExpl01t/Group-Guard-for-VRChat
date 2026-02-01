@@ -5,6 +5,8 @@ import { NeonButton } from '../../components/ui/NeonButton';
 import { useAdminStore } from '../../stores/adminStore';
 import { Shield, X, LogIn, UserPlus, AlertTriangle, CheckCircle, Users, Activity, Ban, Clock, Globe, Server } from 'lucide-react';
 import dashStyles from './AdminDashboard.module.css';
+import { UserAnalyticsModal } from './UserAnalyticsModal';
+import { Modal } from '../../components/ui/Modal';
 
 interface AdminPanelViewProps {
   isOpen: boolean;
@@ -192,9 +194,10 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
     }
   }, [adminSessionToken, adminUser, setAdminSession, getHeaders]);
 
-  // Fetch users when Manage Admins modal opens
+  // Fetch users and invites when Manage Admins modal opens
   React.useEffect(() => {
     if (showManageAdmins && adminUser?.role === 'owner' && adminSessionToken) {
+      // Fetch Users
       fetch(`${BACKEND_URL}/admin/users`, {
         headers: getHeaders(adminSessionToken)
       })
@@ -202,6 +205,18 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
       .then(data => {
         if (data.success) {
           setUsers(data.data);
+        }
+      })
+      .catch(console.error);
+
+      // Fetch Invites
+      fetch(`${BACKEND_URL}/admin/invites`, {
+        headers: getHeaders(adminSessionToken)
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setInvites(data.data);
         }
       })
       .catch(console.error);
@@ -467,124 +482,21 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
     );
   }
 
-  // Analytics Panel (Full Screen Overlay for now)
+  // Analytics Panel
   if (showUserAnalytics) {
      return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: '#020617' }}>
-         {/* Simple Header */}
-         <div style={{ padding: '1rem', borderBottom: '1px solid #1e293b', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <Shield className="text-emerald-500" />
-              <h2 className="text-white font-bold text-xl">User Analytics Database</h2>
-              <span className="text-slate-500 text-sm">{trackedUsers.length} results</span>
-            </div>
-            <button 
-              onClick={() => { setShowUserAnalytics(false); setSelectedTrackedUser(null); }}
-              className="p-2 hover:bg-slate-800 rounded text-slate-400 hover:text-white"
-            >
-              <X />
-            </button>
-         </div>
-
-         <div style={{ display: 'flex', height: 'calc(100vh - 65px)' }}>
-            {/* Left: Search & List */}
-            <div style={{ width: '400px', borderRight: '1px solid #1e293b', display: 'flex', flexDirection: 'column' }}>
-               <div style={{ padding: '1rem' }}>
-                  <input 
-                    type="text" 
-                    placeholder="Search Username or ID..." 
-                    value={userSearchQuery}
-                    onChange={(e) => setUserSearchQuery(e.target.value)}
-                    style={{ ...inputStyle, background: '#0f172a', borderColor: '#334155' }}
-                  />
-               </div>
-               <div className="flex-1 overflow-y-auto">
-                  {trackedUsers.map(user => (
-                    <div 
-                      key={user.vrc_userid}
-                      onClick={() => handleViewUserDetails(user.vrc_userid)}
-                      className={`p-4 border-b border-slate-800 cursor-pointer hover:bg-slate-900 transition-colors ${selectedTrackedUser?.vrc_userid === user.vrc_userid ? 'bg-slate-900 border-l-4 border-emerald-500' : ''}`}
-                    >
-                      <div className="flex justify-between items-start mb-1">
-                         <span className="text-white font-medium">{user.current_username || 'Unknown'}</span>
-                         {user.tos_version && <span className="text-xs px-2 py-0.5 rounded bg-emerald-900/30 text-emerald-400 border border-emerald-900">v{user.tos_version}</span>}
-                      </div>
-                      <div className="text-xs text-slate-500 font-mono text-ellipsis overflow-hidden">{user.vrc_userid}</div>
-                      <div className="text-xs text-slate-600 mt-2 flex justify-between">
-                        <span>Seen: {new Date(user.last_seen).toLocaleTimeString()}</span>
-                      </div>
-                    </div>
-                  ))}
-               </div>
-            </div>
-
-            {/* Right: Detail View */}
-            <div className="flex-1 overflow-y-auto bg-slate-950 p-8">
-               {selectedTrackedUser ? (
-                 <div className="max-w-4xl mx-auto space-y-8">
-                    {/* Header */}
-                    <div className="flex items-center gap-4 border-b border-slate-800 pb-6">
-                       <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-blue-600 rounded-xl flex items-center justify-center text-2xl font-bold text-white shadow-lg shadow-emerald-900/20">
-                          {selectedTrackedUser.current_username?.[0] || '?'}
-                       </div>
-                       <div>
-                          <h1 className="text-3xl font-bold text-white mb-1">{selectedTrackedUser.current_username}</h1>
-                          <div className="flex items-center gap-3 text-slate-400 font-mono text-sm">
-                             <span>{selectedTrackedUser.vrc_userid}</span>
-                             <span className="w-1 h-1 bg-slate-600 rounded-full" />
-                             <span>First Seen: {new Date(selectedTrackedUser.first_seen).toLocaleDateString()}</span>
-                          </div>
-                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-6">
-                       <div className="p-6 rounded-xl bg-slate-900 border border-slate-800">
-                          <h3 className="text-slate-400 text-sm font-bold uppercase mb-4 tracking-wider">Hardware Identity</h3>
-                          <div className="space-y-3">
-                             {selectedTrackedUser.hwids?.map((h, i) => (
-                               <div key={i} className="flex justify-between items-center text-sm font-mono border-b border-slate-800/50 pb-2 last:border-0">
-                                  <span className="text-emerald-400">{h.hwid}</span>
-                                  <span className="text-slate-600">{new Date(h.last_seen).toLocaleDateString()}</span>
-                                </div>
-                             ))}
-                          </div>
-                       </div>
-
-                       <div className="p-6 rounded-xl bg-slate-900 border border-slate-800">
-                          <h3 className="text-slate-400 text-sm font-bold uppercase mb-4 tracking-wider">Known IP Addresses</h3>
-                          <div className="space-y-3">
-                             {selectedTrackedUser.ips?.map((ip, i) => (
-                               <div key={i} className="flex justify-between items-center text-sm font-mono border-b border-slate-800/50 pb-2 last:border-0">
-                                  <span className="text-blue-400">{ip.ip_address}</span>
-                                  <span className="text-slate-600">{new Date(ip.last_seen).toLocaleDateString()}</span>
-                               </div>
-                             ))}
-                          </div>
-                       </div>
-                    </div>
-
-                    <div className="p-6 rounded-xl bg-slate-900 border border-slate-800">
-                       <h3 className="text-slate-400 text-sm font-bold uppercase mb-4 tracking-wider">Username History</h3>
-                       <div className="flex flex-wrap gap-2">
-                          {selectedTrackedUser.aliases?.map((a, i) => (
-                            <span key={i} className="px-3 py-1 bg-slate-800 rounded text-sm text-slate-300 border border-slate-700">
-                              {a.username}
-                            </span>
-                          ))}
-                       </div>
-                    </div>
-                 </div>
-               ) : (
-                 <div className="h-full flex flex-col items-center justify-center text-slate-600">
-                    <Users size={64} className="mb-4 opacity-50" />
-                    <p className="text-lg">Select a user to view detailed dossiers</p>
-                 </div>
-               )}
-            </div>
-         </div>
-      </div>
+       <UserAnalyticsModal
+         isOpen={showUserAnalytics}
+         onClose={() => { setShowUserAnalytics(false); setSelectedTrackedUser(null); }}
+         trackedUsers={trackedUsers}
+         selectedUser={selectedTrackedUser}
+         searchQuery={userSearchQuery}
+         onSearchChange={setUserSearchQuery}
+         onSelectUser={handleViewUserDetails}
+       />
      );
   }
+
 
   return (
     <motion.div
@@ -1081,128 +993,125 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
           </GlassPanel>
         </motion.div>
       {/* Manage Admins Modal */}
-      {showManageAdmins && (
-        <motion.div
-           initial={{ opacity: 0 }}
-           animate={{ opacity: 1 }}
-           exit={{ opacity: 0 }}
-           style={{
-             position: 'fixed',
-             inset: 0,
-             zIndex: 10000, // Above dashboard
-             background: 'rgba(0, 0, 0, 0.8)',
-             display: 'flex',
-             alignItems: 'center',
-             justifyContent: 'center',
-           }}
-           onClick={() => setShowManageAdmins(false)}
-        >
-          <GlassPanel 
-            style={{ width: '500px', padding: '2rem', border: '1px solid var(--color-primary)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-             <h2 style={{ marginTop: 0, color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-               <Users size={24} /> Manage Admins
-             </h2>
-             
+      <Modal
+        isOpen={showManageAdmins}
+        onClose={() => setShowManageAdmins(false)}
+        title="MANAGE ADMINISTRATORS"
+        variant="admin"
+        width="550px"
+        contentOverflow="hidden"
+      >
              {adminUser?.role === 'owner' ? (
-                <div style={{ marginTop: '1.5rem' }}>
-                  <p style={{ color: 'var(--color-text)' }}>Admin Invitation</p>
-                  
-                  {generatedInvite ? (
-                    <div style={{ background: 'rgba(74, 222, 128, 0.1)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--color-primary)' }}>
-                       <div style={{ fontSize: '0.85rem', color: 'var(--color-text-dim)', marginBottom: '0.5rem' }}>New Invite Token Generated:</div>
-                       <code style={{ display: 'block', wordBreak: 'break-all', fontSize: '1.1rem', color: 'var(--color-primary)', marginBottom: '1rem' }}>
-                         {generatedInvite}
-                       </code>
-                       <div style={{ display: 'flex', gap: '0.5rem' }}>
-                         <NeonButton 
-                           onClick={() => navigator.clipboard.writeText(generatedInvite)}
-                           style={{ flex: 1, fontSize: '0.9rem' }}
-                         >
-                           Copy Token
-                         </NeonButton>
-                         <button 
-                           onClick={() => setGeneratedInvite(null)}
-                           style={{ padding: '0.5rem', background: 'none', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', color: 'white', cursor: 'pointer' }}
-                         >
-                           Close
-                         </button>
-                       </div>
-                       <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', marginTop: '0.5rem' }}>
-                         Give this token to a trusted user. It expires in 24 hours.
-                       </p>
-                    </div>
-                  ) : (
-                    <div style={{ background: 'rgba(255,255,255,0.05)', padding: '1.5rem', borderRadius: '8px', textAlign: 'center' }}>
-                      <p style={{ fontSize: '0.9rem', color: 'var(--color-text-dim)', marginBottom: '1rem' }}>
-                        Generate a secure invite token to register a new administrator.
-                      </p>
-                      <NeonButton 
-                        onClick={async () => {
-                           try {
-                             setLoading(true);
-                             const res = await fetch(`${BACKEND_URL}/admin/invite`, {
-                               method: 'POST',
-                               headers: getHeaders(adminSessionToken)
-                             });
-                             const data = await res.json();
-                             if (data.success) {
-                               setGeneratedInvite(data.inviteToken);
-                             } else {
-                               alert('Failed: ' + (data.error?.message || data.error || 'Unknown error'));
-                             }
-                           } catch (error) {
-                             console.error("Invite generation failed:", error);
-                             alert('Connection failed');
-                           } finally {
-                             setLoading(false);
-                           }
-                        }}
-                        disabled={loading}
-                      >
-                        {loading ? 'Generating...' : 'Generate New Invite Token'}
-                      </NeonButton>
-                    </div>
-                  )}
+                <div>
+                  <div style={{ marginBottom: '1.5rem' }}>
+                      <p style={{ color: 'var(--color-text)', fontFamily: 'monospace', fontSize: '0.9rem', marginBottom: '0.5rem' }}>ADMIN INVITATION SYSTEM</p>
+                      
+                      {generatedInvite ? (
+                        <div style={{ background: 'rgba(34, 197, 94, 0.1)', padding: '1rem', borderRadius: '4px', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
+                           <div style={{ fontSize: '0.75rem', color: 'rgba(34, 197, 94, 0.7)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: 'monospace' }}>New Invite Token Generated:</div>
+                           <code style={{ display: 'block', wordBreak: 'break-all', fontSize: '1.1rem', color: '#22c55e', marginBottom: '1rem', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                             {generatedInvite}
+                           </code>
+                           <div style={{ display: 'flex', gap: '0.5rem' }}>
+                             <NeonButton 
+                               onClick={() => navigator.clipboard.writeText(generatedInvite)}
+                               style={{ flex: 1, fontSize: '0.8rem', fontFamily: 'monospace', background: 'rgba(34, 197, 94, 0.1)', borderColor: '#22c55e', color: '#22c55e' }}
+                             >
+                               COPY TOKEN
+                             </NeonButton>
+                             <button 
+                               onClick={() => setGeneratedInvite(null)}
+                               style={{ padding: '0.5rem 1rem', background: 'none', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', color: 'white', cursor: 'pointer', fontFamily: 'monospace', fontSize: '0.8rem', textTransform: 'uppercase' }}
+                             >
+                               CLOSE
+                             </button>
+                           </div>
+                           <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginTop: '0.75rem', fontFamily: 'monospace' }}>
+                             // Token expires in 24 hours. Share securely.
+                           </p>
+                        </div>
+                      ) : (
+                        <div style={{ background: 'rgba(0,0,0,0.4)', padding: '1.5rem', borderRadius: '4px', textAlign: 'center', border: '1px solid rgba(34, 197, 94, 0.1)' }}>
+                          <p style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', marginBottom: '1rem', fontFamily: 'monospace' }}>
+                            Generate a secure invite token to register a new administrator.
+                          </p>
+                          <NeonButton 
+                            onClick={async () => {
+                               try {
+                                 setLoading(true);
+                                 const res = await fetch(`${BACKEND_URL}/admin/invite`, {
+                                   method: 'POST',
+                                   headers: getHeaders(adminSessionToken)
+                                 });
+                                 const data = await res.json();
+                                 if (data.success) {
+                                   setGeneratedInvite(data.inviteToken);
+                                   // Refresh invites list
+                                   fetch(`${BACKEND_URL}/admin/invites`, {
+                                      headers: getHeaders(adminSessionToken)
+                                   })
+                                   .then(r => r.json())
+                                   .then(d => {
+                                      if (d.success) setInvites(d.data);
+                                   });
+                                 } else {
+                                   alert('Failed: ' + (data.error?.message || data.error || 'Unknown error'));
+                                 }
+                               } catch (error) {
+                                 console.error("Invite generation failed:", error);
+                                 alert('Connection failed');
+                               } finally {
+                                 setLoading(false);
+                               }
+                            }}
+                            disabled={loading}
+                            style={{ fontFamily: 'monospace', fontSize: '0.8rem', borderColor: '#22c55e', color: '#22c55e', background: 'rgba(34, 197, 94, 0.05)' }}
+                          >
+                            {loading ? 'GENERATING...' : 'GENERATE NEW INVITE TOKEN'}
+                          </NeonButton>
+                        </div>
+                      )}
+                  </div>
 
                   {/* User List */}
-                  <div style={{ marginTop: '2rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
-                    <h3 style={{ color: 'var(--color-text)', fontSize: '1rem', marginBottom: '1rem' }}>Active Administrators</h3>
+                  <div style={{ marginTop: '2rem', borderTop: '1px solid rgba(34, 197, 94, 0.2)', paddingTop: '1.5rem' }}>
+                    <h3 style={{ color: '#22c55e', fontSize: '0.9rem', marginBottom: '1rem', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Active Administrators</h3>
                     
                     {manageStatus && (
                          <div style={{
                            marginBottom: '1rem',
                            padding: '0.5rem',
                            borderRadius: '4px',
-                           background: manageStatus.type === 'success' ? 'rgba(74, 222, 128, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                           background: manageStatus.type === 'success' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
                            color: manageStatus.type === 'success' ? '#4ade80' : '#f87171',
                            fontSize: '0.8rem',
-                           textAlign: 'center'
+                           textAlign: 'center',
+                           fontFamily: 'monospace',
+                           border: manageStatus.type === 'success' ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)'
                          }}>
-                           {manageStatus.msg}
+                           {'>'} {manageStatus.msg}
                          </div>
                     )}
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '300px', overflowY: 'auto' }}>
                     {users.map(user => (
                       <div key={user.id} style={{ 
-                        background: 'rgba(0,0,0,0.3)', 
+                        background: 'rgba(0,0,0,0.6)', 
                         padding: '0.75rem', 
-                        borderRadius: '6px',
+                        borderRadius: '4px',
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        border: '1px solid rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(34, 197, 94, 0.2)',
                         marginBottom: '0.5rem'
                       }}>
                         <div>
-                          <div style={{ color: 'var(--color-text)', fontWeight: 'bold' }}>
+                          <div style={{ color: '#e4e4e7', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '0.9rem' }}>
                             {user.username} 
-                            {user.id === adminUser?.id && <span style={{ fontSize: '0.7rem', color: 'var(--color-text-dim)', marginLeft: '0.5rem' }}>(You)</span>}
+                            {user.id === adminUser?.id && <span style={{ fontSize: '0.75rem', color: 'rgba(34, 197, 94, 0.7)', marginLeft: '0.5rem' }}>(YOU)</span>}
                           </div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-dim)' }}>
-                            Role: {user.role} | HWID: {user.hwid ? 'BOUND' : 'UNBOUND'}
+                          <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace', marginTop: '0.2rem' }}>
+                            ROLE: <span style={{ color: '#22c55e' }}>{user.role.toUpperCase()}</span> | HWID: <span style={{ color: user.hwid ? '#22c55e' : '#f59e0b' }}>{user.hwid ? 'BOUND' : 'UNBOUND'}</span>
                           </div>
                         </div>
                         
@@ -1211,29 +1120,31 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
                           <div style={{ display: 'flex', gap: '0.5rem' }}>
                             <ConfirmButton 
                               onClick={() => handleResetHwid(user.id, user.username)}
-                              label="Reset Device"
+                              label="RESET HWID"
                               style={{
-                                background: 'rgba(59, 130, 246, 0.2)',
+                                background: 'rgba(59, 130, 246, 0.1)',
                                 color: '#60a5fa',
-                                border: '1px solid rgba(59, 130, 246, 0.4)',
+                                border: '1px solid rgba(59, 130, 246, 0.3)',
                                 borderRadius: '4px',
                                 padding: '4px 8px',
                                 cursor: 'pointer',
-                                fontSize: '0.75rem'
+                                fontSize: '0.7rem',
+                                fontFamily: 'monospace'
                               }}
                             />
                             <ConfirmButton
                               onClick={() => handleRevokeUser(user.id, user.username)}
-                              label="Revoke Access"
-                              confirmLabel="Confirm Delete?"
+                              label="REVOKE"
+                              confirmLabel="CONFIRM?"
                               style={{
-                                background: 'rgba(239, 68, 68, 0.2)',
+                                background: 'rgba(239, 68, 68, 0.1)',
                                 color: '#f87171',
-                                border: '1px solid rgba(239, 68, 68, 0.4)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
                                 borderRadius: '4px',
                                 padding: '4px 8px',
                                 cursor: 'pointer',
-                                fontSize: '0.75rem'
+                                fontSize: '0.7rem',
+                                fontFamily: 'monospace'
                               }}
                             />
                           </div>
@@ -1242,23 +1153,22 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
                     ))}
                     
                     {users.length === 0 && (
-                      <div style={{ textAlign: 'center', color: 'var(--color-text-dim)', fontStyle: 'italic', padding: '1rem' }}>
-                        No users found
+                      <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontStyle: 'italic', padding: '1rem', fontFamily: 'monospace' }}>
+                        NO ACTIVE USERS FOUND
                       </div>
                     )}
+                    </div>
 
                     {/* Pending Invites Section */}
                     {invites.length > 0 && (
-                      <>
+                      <div style={{ marginTop: '2rem', borderTop: '1px solid rgba(34, 197, 94, 0.2)', paddingTop: '1rem' }}>
                         <div style={{ 
-                          borderBottom: '1px solid rgba(255,255,255,0.1)', 
-                          marginTop: '2rem', 
                           marginBottom: '1rem',
-                          paddingBottom: '0.5rem',
-                          color: 'var(--color-text-dim)',
+                          color: 'rgba(255,255,255,0.5)',
                           fontSize: '0.8rem',
                           textTransform: 'uppercase',
-                          letterSpacing: '1px'
+                          letterSpacing: '0.05em',
+                          fontFamily: 'monospace'
                         }}>
                           Pending Invites
                         </div>
@@ -1269,59 +1179,47 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
                             justifyContent: 'space-between', 
                             alignItems: 'center',
                             padding: '0.75rem',
-                            background: 'rgba(255, 255, 255, 0.03)',
-                            borderRadius: '8px',
-                            marginBottom: '0.5rem'
+                            background: 'rgba(0,0,0,0.4)',
+                            borderRadius: '4px',
+                            marginBottom: '0.5rem',
+                            border: '1px dashed rgba(255,255,255,0.1)'
                           }}>
                             <div>
-                                <div style={{ fontFamily: 'monospace', color: '#fbbf24', fontSize: '0.9rem' }}>
+                                <div style={{ fontFamily: 'monospace', color: '#f59e0b', fontSize: '0.9rem' }}>
                                   {invite.token.substring(0, 18)}...
                                 </div>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-dim)' }}>
-                                  Created by: <span style={{ color: 'var(--color-text)' }}>{invite.created_by}</span>
+                                <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>
+                                  By: <span style={{ color: '#22c55e' }}>{invite.created_by}</span>
                                 </div>
                             </div>
                             <ConfirmButton
                                 onClick={() => handleRevokeInvite(invite.token)}
-                                label="Cancel"
-                                confirmLabel="Sure?"
+                                label="CANCEL"
+                                confirmLabel="SURE?"
                                 style={{
                                   background: 'rgba(239, 68, 68, 0.1)',
                                   border: '1px solid rgba(239, 68, 68, 0.3)',
-                                  color: '#ef4444',
+                                  color: '#f87171',
                                   padding: '0.4rem 0.8rem',
-                                  borderRadius: '6px',
+                                  borderRadius: '4px',
                                   fontSize: '0.75rem',
                                   cursor: 'pointer',
-                                  transition: 'all 0.2s'
+                                  fontFamily: 'monospace'
                                 }}
                             />
                           </div>
                         ))}
-                      </>
+                      </div>
                     )}
-                    </div>
                   </div>
-
                 </div>
              ) : (
-               <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-dim)' }}>
-                 <AlertTriangle size={32} style={{ color: '#fb7185', marginBottom: '1rem' }} />
-                 <p>Only the OWNER account can manage invites.</p>
-               </div>
+                <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>
+                   <div style={{ fontSize: '2rem', marginBottom: '1rem', color: '#ef4444' }}>ACCESS DENIED</div>
+                   <p>Only the OWNER can manage administrators.</p>
+                </div>
              )}
-             
-             <div style={{ marginTop: '2rem', textAlign: 'right' }}>
-               <button 
-                 onClick={() => setShowManageAdmins(false)}
-                 style={{ background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer' }}
-               >
-                 Close
-               </button>
-             </div>
-          </GlassPanel>
-        </motion.div>
-      )}
+      </Modal>
       </motion.div>
   );
 };
