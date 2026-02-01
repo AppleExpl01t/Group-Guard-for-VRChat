@@ -679,3 +679,13 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Override global theme variables locally for the admin panel */
+.adminThemeOverride {
+  --border-radius: 0px !important;
+  --glass-blur: 0px !important;
+  --glass-opacity: 0.95 !important;
+  --color-primary: #22c55e !important;
+  --color-surface-card: rgba(0, 0, 0, 0.9) !important;
+  font-family: 'Courier New', Courier, monospace !important;
+}

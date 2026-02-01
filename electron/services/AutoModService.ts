@@ -212,6 +212,7 @@ export const processJoinRequest = async (
        }
     } else {
       // User failed a rule
+      // User failed a rule
       windowService.broadcast("automod:violation", {
           displayName: displayName,
           userId: userId,

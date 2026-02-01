@@ -147,7 +147,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
   const [trackedUsers, setTrackedUsers] = useState<TrackedUser[]>([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [selectedTrackedUser, setSelectedTrackedUser] = useState<TrackedUser | null>(null);
-  
+
   // Local status for Manage Admins modal
   const [manageStatus, setManageStatus] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
 
@@ -521,7 +521,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ isOpen, onClose 
           exit={{ scale: 0.9, y: 20 }}
           style={{ width: '100%', maxWidth: adminSessionToken ? '950px' : '480px', transition: 'max-width 0.3s ease' }}
         >
-          <GlassPanel style={{ padding: '2rem', position: 'relative', maxHeight: '90vh', overflowY: 'auto' }}>
+          <GlassPanel className={dashStyles.adminThemeOverride} style={{ padding: '2rem', position: 'relative', maxHeight: '90vh', overflowY: 'auto' }}>
             {/* Close Button */}
             <motion.button
               onClick={onClose}

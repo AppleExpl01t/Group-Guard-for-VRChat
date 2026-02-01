@@ -202,6 +202,14 @@ export const AutoModAlertOverlay: React.FC = () => {
                                         <User size={12} />
                                         {alert.userId}
                                     </div>
+                                    {alert.detectedGroupId && (
+                                        <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>Source Group:</span>
+                                            <span style={{ fontFamily: 'monospace', background: 'rgba(255,255,255,0.1)', padding: '1px 4px', borderRadius: '4px' }}>
+                                                {alert.detectedGroupId}
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div style={{

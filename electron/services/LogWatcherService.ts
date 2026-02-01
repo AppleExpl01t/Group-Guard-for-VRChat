@@ -251,8 +251,7 @@ class LogWatcherService extends EventEmitter {
     }, 1000);
 
     const checkActivity = async () => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { checkOnlineStatus } = require('./AuthService');
+
 
       // SEEK TIMEOUT CHECK (CRITICAL for reliability)
       if (this.seekingInstanceId) {
@@ -498,8 +497,7 @@ class LogWatcherService extends EventEmitter {
     // Lazy load dependencies
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { fetchInstancePlayers } = require('./AuthService');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { groupAuthorizationService } = require('./GroupAuthorizationService');
+
 
     log.debug(`[LogWatcher] Syncing instance state via API: ${location}`);
     const apiPlayers = await fetchInstancePlayers(location);
@@ -564,7 +562,7 @@ class LogWatcherService extends EventEmitter {
           }
         } else {
           // If no ID, check by display name in apiPlayers
-          const nameExists = apiPlayers.some((ap: any) => ap.displayName === displayName);
+          const nameExists = apiPlayers.some((ap: { displayName: string }) => ap.displayName === displayName);
           if (!nameExists) {
             // CONFIRMED GHOST
             this.removeGhostPlayer(displayName, player);
@@ -605,7 +603,7 @@ class LogWatcherService extends EventEmitter {
     if (!line || !line.trim()) return;
 
     // Regex Definitions
-    const reJoining = /(?:Joining|Entering)\s+(wrld_[a-zA-Z0-9-]+):([^\s]+)/;
+    const reJoining = /(?:Joining|Entering|Destination set:?)\s+(wrld_[a-zA-Z0-9-]+):([^\s]+)/;
 
     const reEntering = /Entering Room:\s+(.+)/;
     const reAvatar = /\[Avatar\] Loading Avatar:\s+(avtr_[a-f0-9-]{36})/;

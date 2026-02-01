@@ -116,7 +116,14 @@ export const Modal: React.FC<ModalProps> = ({
                                 maxHeight: '85vh', 
                                 boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
                                 border: variant === 'admin' ? '1px solid #22c55e' : undefined,
-                                background: variant === 'admin' ? 'rgba(0, 0, 0, 0.9)' : undefined
+                                background: variant === 'admin' ? 'rgba(0, 0, 0, 0.9)' : undefined,
+                                ...(variant === 'admin' ? {
+                                    '--border-radius': '0px',
+                                    '--glass-blur': '0px',
+                                    '--color-primary': '#22c55e',
+                                    '--color-surface-card': 'rgba(0, 0, 0, 0.9)',
+                                    fontFamily: 'monospace'
+                                } as React.CSSProperties : {})
                             }}>
                             {/* Header */}
                             <div style={{ 
@@ -167,7 +174,7 @@ export const Modal: React.FC<ModalProps> = ({
                             {/* Body */}
                             <div style={{ 
                                 padding: '1.5rem', 
-                                overflowY: (props.contentOverflow || 'auto') as any
+                                overflowY: (props.contentOverflow || 'auto') as React.CSSProperties['overflowY']
                             }}>
                                 {children}
                             </div>
