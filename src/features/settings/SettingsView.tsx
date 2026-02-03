@@ -9,9 +9,11 @@ import { useTheme } from '../../context/ThemeContext';
 import { AudioSettings } from './AudioSettings';
 import { SettingsTabBar, type SettingsTab } from './SettingsTabBar';
 import { SettingsSearch, matchesSearch } from './SettingsSearch';
-import { SearchX, Folder } from 'lucide-react';
+import { SearchX, Folder, Shield } from 'lucide-react';
+import { useAdminStore } from '../../stores/adminStore';
 import { useUIStore } from '../../stores/uiStore';
 import { BulkFriendImport } from './components/BulkFriendImport';
+import { PrivacySettings } from './PrivacySettings';
 import { APP_VERSION } from '../../constants/app';
 import paw from '../../assets/images/paw.png';
 
@@ -777,6 +779,8 @@ export const SettingsView: React.FC = () => {
                     </NeonButton>
                   </div>
                 </div>
+
+                <PrivacySettings />
               </section>
             )}
 
@@ -806,7 +810,7 @@ export const SettingsView: React.FC = () => {
                 {/* === MAIN ABOUT INFO === */}
                 <div style={{ ...innerCardStyle, marginBottom: '10px' }}>
                   <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1.5rem' }}>
-                    <div>
+                    <div style={{ position: 'relative' }}>
                       <img
                         src={appIcon}
                         alt="Group Guard Icon"
@@ -817,6 +821,28 @@ export const SettingsView: React.FC = () => {
                           filter: 'drop-shadow(0 0 10px var(--color-primary))'
                         }}
                       />
+                      {/* Hidden Shield for Admin Ritual Step 2 */}
+                      <motion.div
+                        onClick={() => useAdminStore.getState().incrementIconClick()}
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        style={{
+                          position: 'absolute',
+                          bottom: '-5px',
+                          right: '-5px',
+                          background: 'var(--color-surface-card)',
+                          borderRadius: '50%',
+                          padding: '4px',
+                          cursor: 'pointer',
+                          border: '1px solid var(--border-color)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                        title="Security Badge"
+                      >
+                        <Shield size={16} style={{ color: 'var(--color-primary)', opacity: 0.7 }} />
+                      </motion.div>
                     </div>
                     <div style={{ flex: 1 }}>
                       <h3 style={{ margin: 0, fontSize: '1.4rem' }}>Group Guard for VRChat</h3>

@@ -422,6 +422,18 @@ contextBridge.exposeInMainWorld('electron', {
         scan: () => ipcRenderer.invoke('log-scanner:scan'),
     },
 
+    // Identity API (GDPR)
+    identity: {
+        exportUserData: () => ipcRenderer.invoke('identity:export-data'),
+        deleteAccount: () => ipcRenderer.invoke('identity:delete-account'),
+    },
+
+    // Installation ID API (UUID-based device binding)
+    installationId: {
+        get: () => ipcRenderer.invoke('app:get-installation-id') as Promise<string>,
+        reset: () => ipcRenderer.invoke('app:reset-installation-id') as Promise<string>,
+    },
+
     // Generic IPC Renderer for event listening
     ipcRenderer: {
         on: (channel: string, callback: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void) => {

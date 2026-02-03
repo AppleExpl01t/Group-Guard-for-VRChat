@@ -3,7 +3,7 @@ import styles from './NeonButton.module.css';
 import { useSimpleRipple } from '../../hooks/useRipple';
 
 interface NeonButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'admin';
   size?: 'sm' | 'md' | 'lg';
   glow?: boolean;
   /** Disable ripple effect */

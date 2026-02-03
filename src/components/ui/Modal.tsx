@@ -13,6 +13,8 @@ interface ModalProps {
     footer?: React.ReactNode;
     width?: string;
     closable?: boolean;
+    variant?: 'default' | 'admin';
+    contentOverflow?: string; // Support for custom overflow behaviors
 }
 
 export const Modal: React.FC<ModalProps> = ({ 
@@ -22,7 +24,9 @@ export const Modal: React.FC<ModalProps> = ({
     children, 
     footer,
     width = '500px',
-    closable = true
+    closable = true,
+    variant = 'default',
+    contentOverflow = 'auto'
 }) => {
 
 
@@ -106,7 +110,7 @@ export const Modal: React.FC<ModalProps> = ({
                             {/* Header */}
                             <div style={{ 
                                 padding: '1.5rem', 
-                                borderBottom: '1px solid var(--border-color)',
+                                borderBottom: variant === 'admin' ? '1px solid #22c55e' : '1px solid var(--border-color)',
                                 display: 'flex',
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
@@ -147,7 +151,8 @@ export const Modal: React.FC<ModalProps> = ({
                             </div>
 
                             {/* Body */}
-                            <div style={{ padding: '1.5rem', overflowY: 'auto' }}>
+                            {/* Body */}
+                            <div style={{ padding: '1.5rem', overflowY: contentOverflow as React.CSSProperties['overflowY'] }}>
                                 {children}
                             </div>
 

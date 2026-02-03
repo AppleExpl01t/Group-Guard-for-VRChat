@@ -475,9 +475,9 @@ export interface ElectronAPI {
   getGroupBans: (groupId: string) => Promise<{ success: boolean; bans?: GroupBan[]; error?: string }>;
   getGroupInstances: (groupId: string) => Promise<{ success: boolean; instances?: VRChatInstance[]; error?: string }>;
   getAllActiveInstances: () => Promise<{ success: boolean; instances?: VRChatInstance[]; error?: string }>;
-  onGroupsUpdated: (callback: (data: { groups: any[] }) => void) => () => void;
+  onGroupsUpdated: (callback: (data: { groups: VRChatGroup[] }) => void) => () => void;
   onGroupsCacheReady: (callback: (data: { groupIds: string[] }) => void) => () => void;
-  onGroupVerified: (callback: (data: { group: any }) => void) => () => void;
+  onGroupVerified: (callback: (data: { group: VRChatGroup }) => void) => () => void;
   banUser: (groupId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
   unbanUser: (groupId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
 
@@ -762,6 +762,18 @@ export interface ElectronAPI {
     getFriendsList: () => Promise<FriendListItem[]>;
     getMutualsBatch: (userIds: string[]) => Promise<Record<string, { friends: number; groups: number }>>;
     onStatsUpdate: (callback: (data: { userIds: string[]; addedMinutes: number }) => void) => () => void;
+  };
+
+  // Identity API (GDPR)
+  identity: {
+    exportUserData: () => Promise<{ success: boolean; data?: unknown; error?: string }>;
+    deleteAccount: () => Promise<{ success: boolean; error?: string }>;
+  };
+
+  // Installation ID API (UUID-based device binding)
+  installationId: {
+    get: () => Promise<string>;
+    reset: () => Promise<string>;
   };
 }
 

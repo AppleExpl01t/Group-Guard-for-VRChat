@@ -12,6 +12,7 @@ import { NeonDock, type DockView } from './components/layout/NeonDock';
 import { usePipelineInit } from './hooks/usePipelineInit';
 import { useInstanceMonitorInit } from './hooks/useInstanceMonitorInit';
 import { useAutoModNotifications } from './hooks/useAutoModNotifications';
+import { useHeartbeat } from './hooks/useHeartbeat';
 import { SetupView } from './features/setup/SetupView';
 import { useUpdateStore } from './stores/updateStore';
 import { useNotificationStore } from './stores/notificationStore';
@@ -19,6 +20,7 @@ import { useAppViewStore } from './stores/appViewStore';
 import { PageTransition } from './components/layout/PageTransition';
 import { ViewLoader } from './components/ui/ViewLoader';
 import { AutoLoginLoadingScreen } from './features/auth/AutoLoginLoadingScreen';
+
 
 // Lazy load heavy views for better performance
 const DashboardView = lazy(() => import('./features/dashboard/DashboardView').then(m => ({ default: m.DashboardView })));
@@ -51,6 +53,9 @@ function App() {
 
   // Initialize AutoMod Notifications
   useAutoModNotifications();
+
+  // Send heartbeat every 30 seconds for usage analytics
+  useHeartbeat();
 
   // Update state management
   const {
