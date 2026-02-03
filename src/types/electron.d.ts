@@ -769,6 +769,12 @@ export interface ElectronAPI {
     exportUserData: () => Promise<{ success: boolean; data?: unknown; error?: string }>;
     deleteAccount: () => Promise<{ success: boolean; error?: string }>;
   };
+
+  // Installation ID API (UUID-based device binding)
+  installationId: {
+    get: () => Promise<string>;
+    reset: () => Promise<string>;
+  };
 }
 
 export interface FriendListItem extends FriendLocation {

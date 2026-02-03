@@ -368,6 +368,10 @@ import { setupIdentityHandlers } from './services/IdentityService';
 progress.update('Identity Handlers');
 setupIdentityHandlers();
 
+import { setupInstallationIdHandlers } from './services/InstallationIdService';
+progress.update('Installation ID');
+setupInstallationIdHandlers();
+
 // ...
 import { processService } from './services/ProcessService';
 
