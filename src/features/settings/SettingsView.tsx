@@ -12,6 +12,7 @@ import { SettingsSearch, matchesSearch } from './SettingsSearch';
 import { SearchX, Folder } from 'lucide-react';
 import { useUIStore } from '../../stores/uiStore';
 import { BulkFriendImport } from './components/BulkFriendImport';
+import { PrivacySettings } from './PrivacySettings';
 import { APP_VERSION } from '../../constants/app';
 import paw from '../../assets/images/paw.png';
 
@@ -777,6 +778,8 @@ export const SettingsView: React.FC = () => {
                     </NeonButton>
                   </div>
                 </div>
+
+                <PrivacySettings />
               </section>
             )}
 

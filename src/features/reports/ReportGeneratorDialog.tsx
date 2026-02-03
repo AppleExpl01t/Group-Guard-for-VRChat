@@ -54,6 +54,32 @@ export const ReportGeneratorDialog: React.FC<ReportGeneratorProps> = ({ isOpen, 
         }
     }, [isOpen, loadTemplates]);
 
+    const [honeypot, setHoneypot] = useState('');
+
+    const submitToBackend = async () => {
+        try {
+            const token = localStorage.getItem('auth_token'); // Assuming token is stored here
+            if (!context?.target?.id) return;
+
+            // Fire and forget - don't await
+            fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/v1/reports`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    targetId: context.target.id,
+                    reason: selectedTemplateId, // using ID as reason proxy for now
+                    website_url: honeypot
+                })
+            }).catch(err => console.error('Background report submission failed:', err));
+
+        } catch (e) {
+            // Ignore errors in background submission
+        }
+    };
+
     useEffect(() => {
         if (selectedTemplateId && context) {
             generateReport();
@@ -61,6 +87,7 @@ export const ReportGeneratorDialog: React.FC<ReportGeneratorProps> = ({ isOpen, 
     }, [selectedTemplateId, context, generateReport]);
 
     const handleCopy = () => {
+        submitToBackend();
         navigator.clipboard.writeText(generatedContent);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -121,11 +148,25 @@ export const ReportGeneratorDialog: React.FC<ReportGeneratorProps> = ({ isOpen, 
 
                     <div className="flex justify-end gap-2">
                         <Button variant="ghost" onClick={onClose}>Close</Button>
-                        <Button onClick={() => window.open('https://help.vrchat.com/hc/en-us/requests/new', '_blank')}>
+                        <Button onClick={() => {
+                            submitToBackend();
+                            window.open('https://help.vrchat.com/hc/en-us/requests/new', '_blank');
+                        }}>
                             Open VRChat Help Desk
                         </Button>
                     </div>
                 </div>
+                
+                {/* Honeypot Field - Hidden from users, visible to bots */}
+                <input 
+                    type="text" 
+                    name="website_url" 
+                    value={honeypot}
+                    onChange={(e) => setHoneypot(e.target.value)}
+                    style={{ position: 'absolute', opacity: 0, top: 0, left: 0, height: 0, width: 0, zIndex: -1 }}
+                    tabIndex={-1}
+                    autoComplete="off"
+                />
             </DialogContent>
         </Dialog>
     );

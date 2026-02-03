@@ -422,6 +422,12 @@ contextBridge.exposeInMainWorld('electron', {
         scan: () => ipcRenderer.invoke('log-scanner:scan'),
     },
 
+    // Identity API (GDPR)
+    identity: {
+        exportUserData: () => ipcRenderer.invoke('identity:export-data'),
+        deleteAccount: () => ipcRenderer.invoke('identity:delete-account'),
+    },
+
     // Generic IPC Renderer for event listening
     ipcRenderer: {
         on: (channel: string, callback: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void) => {

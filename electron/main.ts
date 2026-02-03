@@ -188,7 +188,7 @@ try {
 // Force electron-log to use our specific path and filename
 log.transports.file.resolvePathFn = () => logFile;
 log.transports.file.fileName = 'latest.log'; // Redundant with resolvePathFn but safer
-log.transports.file.archiveLogFn = (oldLogFile) => {
+log.transports.file.archiveLogFn = () => {
   // Disable built-in rotation since we handle it manually on startup
   // This empty function prevents electron-log from renaming 'latest.log'
 };
@@ -360,10 +360,13 @@ progress.update('User Profiles');
 setupUserProfileHandlers();
 progress.update('Bulk Friends');
 setupBulkFriendHandlers();
-progress.update('Friendship IPC');
 setupFriendshipHandlers();
 progress.update('Player Flags');
 playerFlagService.setupHandlers();
+
+import { setupIdentityHandlers } from './services/IdentityService';
+progress.update('Identity Handlers');
+setupIdentityHandlers();
 
 // ...
 import { processService } from './services/ProcessService';
@@ -414,9 +417,8 @@ import { watchlistService } from './services/WatchlistService';
 watchlistService.initialize();
 progress.update('Watchlist');
 
-import { timeTrackingService } from './services/TimeTrackingService';
-// timeTrackingService is now initialized by FriendshipService once a user logs in, 
-// as it requires a userDataDir context for legacy migrations.
+// timeTrackingService is initialized by FriendshipService once a user logs in.
+// We keep this progress update for visual consistency in the loading bar.
 progress.update('Time Tracking');
 
 // Initialize Blocking/Critical Async Services concurrently
