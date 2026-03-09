@@ -75,7 +75,7 @@ export const ReportGeneratorDialog: React.FC<ReportGeneratorProps> = ({ isOpen, 
                 })
             }).catch(err => console.error('Background report submission failed:', err));
 
-        } catch (e) {
+        } catch {
             // Ignore errors in background submission
         }
     };

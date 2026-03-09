@@ -28,16 +28,19 @@ export interface ModerationTag {
   color?: string; // Hex color
 }
 
-interface WatchlistStoreSchema {
-  entities: Record<string, WatchedEntity>;
-  tags: ModerationTag[];
-}
+// Interface WatchlistStoreSchema removed as it is unused due to 'any' typing of the store.
 
 class WatchlistService {
-  private store: Store<WatchlistStoreSchema>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private store: any;
 
   constructor() {
-    this.store = new Store<WatchlistStoreSchema>({
+    // Fix for ESM/CJS interop (electron-store)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const StoreClass = (Store as any).default || Store;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this.store = new (StoreClass as any)({
       name: 'watchlist-data',
       defaults: {
         entities: {},
@@ -116,7 +119,7 @@ class WatchlistService {
 
   public addTag(tag: ModerationTag) {
     const tags = this.store.get('tags');
-    if (!tags.find(t => t.id === tag.id)) {
+    if (!tags.find((t: ModerationTag) => t.id === tag.id)) {
       tags.push(tag);
       this.store.set('tags', tags);
       this.notifyUpdate();
@@ -125,7 +128,7 @@ class WatchlistService {
 
   public deleteTag(tagId: string) {
     const tags = this.store.get('tags');
-    const filtered = tags.filter(t => t.id !== tagId);
+    const filtered = tags.filter((t: ModerationTag) => t.id !== tagId);
     if (filtered.length !== tags.length) {
       this.store.set('tags', filtered);
       this.notifyUpdate();
@@ -134,7 +137,7 @@ class WatchlistService {
 
   public saveTag(tag: ModerationTag) {
     const tags = this.store.get('tags');
-    const index = tags.findIndex(t => t.id === tag.id);
+    const index = tags.findIndex((t: ModerationTag) => t.id === tag.id);
     if (index !== -1) {
       tags[index] = tag;
     } else {

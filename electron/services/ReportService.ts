@@ -35,8 +35,10 @@ export interface ReportContext {
 }
 
 // Store setup
+const StoreClass = Store.default || Store;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const store: any = new Store({
+const store: any = new StoreClass({
     name: 'group-guard-reports',
     defaults: {
         templates: [

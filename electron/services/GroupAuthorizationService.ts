@@ -73,11 +73,12 @@ class GroupAuthorizationService {
     private cachedGroupObjects: Map<string, any> = new Map();
 
     // Persistent store for allowed groups (for instant startup)
-    private store = new Store({ name: 'group-authorization-cache' });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private store: any;
 
     // Role cache to prevent redundant API calls
     // Key: groupId, Value: array of roles
-    private roleCache = new LRUCache<string, any[]>({
+    private roleCache = new LRUCache<string, { id?: string; permissions?: string[] }[]>({
         max: 200,
         ttl: 1000 * 60 * 60 * 24 // 24 hour TTL for roles
     });
@@ -104,6 +105,12 @@ class GroupAuthorizationService {
     private cacheOwnerId: string | null = null;
 
     constructor() {
+        // Fix for ESM/CJS interop (electron-store)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const StoreClass = (Store as any).default || Store;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.store = new (StoreClass as any)({ name: 'group-authorization-cache' });
+
         // Load allowed groups from disk for instant dashboard unlocking
         this.loadPersistedGroups();
 
@@ -138,6 +145,13 @@ class GroupAuthorizationService {
                         }
                     }
                     logger.debug(`[Security] Hydrated ${this.cachedGroupObjects.size} group profiles from storage.`);
+                }
+
+                // SECURITY: Clear lastVerifiedAt on all restored groups so they
+                // must re-verify via API before optimistic auth kicks in.
+                // This prevents stale cached permissions from granting access.
+                for (const g of this.cachedGroupObjects.values()) {
+                    delete g.lastVerifiedAt;
                 }
 
                 // Emit event early to unlock UI
@@ -343,8 +357,9 @@ class GroupAuthorizationService {
      */
     private async checkModPermissions(groupId: string, userId: string, membership: GroupMembershipData): Promise<boolean> {
         // --- OPTIMISTIC AUTH CHECK ---
-        const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-        if (membership.lastVerifiedAt && (Date.now() - membership.lastVerifiedAt < ONE_DAY_MS)) {
+        // 2-hour window: trusts recent checks without re-fetching from API
+        const OPTIMISTIC_WINDOW_MS = 2 * 60 * 60 * 1000;
+        if (membership.lastVerifiedAt && (Date.now() - membership.lastVerifiedAt < OPTIMISTIC_WINDOW_MS)) {
             // logger.debug(`[SECURITY] Optimistic Auth for ${groupId}: Access Granted (Verified ${(Date.now() - membership.lastVerifiedAt) / 1000 / 60}m ago)`);
             return true;
         }

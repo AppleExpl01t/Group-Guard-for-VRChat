@@ -1,3 +1,4 @@
+// @ts-ignore
 import DiscordRPC from 'discord-rpc';
 import log from 'electron-log';
 import { ipcMain } from 'electron';
@@ -6,7 +7,13 @@ import Store from 'electron-store';
 const logger = log.scope('DiscordRPC');
 
 // Config store for Discord RPC settings
-const store = new Store<{ discordRpc: DiscordRpcConfig }>({ 
+// Fix for ESM/CJS interop (electron-store)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const StoreClass = (Store as any).default || Store;
+
+// Config store for Discord RPC settings
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const store: any = new (StoreClass as any)({ 
     name: 'discord-rpc-config',
     defaults: {
         discordRpc: {
@@ -41,7 +48,11 @@ export class DiscordBroadcastService {
     private currentMemberCount: number = 0;
 
     constructor() {
-        this.rpc = new DiscordRPC.Client({ transport: 'ipc' });
+        // Fix for ESM/CJS interop (discord-rpc)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const RPC = (DiscordRPC as any).default || DiscordRPC;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.rpc = new (RPC as any).Client({ transport: 'ipc' });
         this.startTime = new Date();
         this.config = store.get('discordRpc');
 
@@ -119,7 +130,7 @@ export class DiscordBroadcastService {
         }
 
         try {
-            await this.rpc.login({ clientId }).catch(err => {
+            await this.rpc.login({ clientId }).catch((err: unknown) => {
                 logger.warn('Login failed (is Discord running?):', err);
             });
         } catch (error) {
@@ -188,7 +199,7 @@ export class DiscordBroadcastService {
             activity.startTimestamp = this.startTime;
         }
 
-        this.rpc.setActivity(activity).catch(err => 
+        this.rpc.setActivity(activity).catch((err: unknown) => 
             logger.error('Failed to set activity:', err)
         );
     }
@@ -201,7 +212,7 @@ export class DiscordBroadcastService {
             finalActivity.startTimestamp = this.startTime;
         }
 
-        this.rpc.setActivity(finalActivity).catch(err => 
+        this.rpc.setActivity(finalActivity).catch((err: unknown) => 
             logger.error('Failed to set activity:', err)
         );
     }

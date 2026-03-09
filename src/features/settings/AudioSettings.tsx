@@ -60,6 +60,11 @@ export const AudioSettings: React.FC = () => {
             enabled: true,
             types: { join: true, leave: true, automod: true, friend: true },
             behavior: { desktop: true, sound: true, taskbarFlash: true }
+        },
+        system: {
+            tosAcceptedVersion: null,
+            privacyAcceptedDate: null,
+            enableCloudFeatures: true
         }
     });
 

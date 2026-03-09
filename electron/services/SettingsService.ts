@@ -59,10 +59,16 @@ const defaultSettings: AppSettings = {
 };
 
 class SettingsService {
-    private store: Store<AppSettings>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private store: any;
 
     constructor() {
-        this.store = new Store<AppSettings>({
+        // Fix for ESM/CJS interop issues where esbuild/electron-store might return an object with default property
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const StoreClass = (Store as any).default || Store;
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.store = new (StoreClass as any)({
             name: 'app-settings',
             defaults: defaultSettings
         });

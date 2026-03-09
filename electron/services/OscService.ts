@@ -23,11 +23,17 @@ const DEFAULT_CONFIG: OscConfig = {
 
 class OscService {
     private client: Client | null = null;
-    private store: Store<{ osc: OscConfig }>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private store: any;
     private config: OscConfig;
 
     constructor() {
-        this.store = new Store<{ osc: OscConfig }>({
+        // Fix for ESM/CJS interop (electron-store)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const StoreClass = (Store as any).default || Store;
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.store = new (StoreClass as any)({
             name: 'osc-config',
             defaults: { osc: DEFAULT_CONFIG }
         });
@@ -47,7 +53,11 @@ class OscService {
                     this.stop();
                 }
 
-                this.client = new Client(senderIp, senderPort);
+                // Fix for ESM/CJS interop (node-osc)
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const ClientClass = (Client as any).default || Client;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                this.client = new (ClientClass as any)(senderIp, senderPort);
                 logger.info(`OSC Client initialized successfully.`);
             } catch (e) {
                 logger.error('Failed to initialize OSC client', e);

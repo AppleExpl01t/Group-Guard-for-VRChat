@@ -24,16 +24,16 @@ export interface GroupConfig {
   enableAutoBan: boolean;
 }
 
-interface AutoModStoreSchema {
-  groups: Record<string, GroupConfig>;
-  // Legacy global fallback
-  rules?: AutoModRule[];
-  enableAutoReject?: boolean; // Kept for types if needed, but logic moved
-  enableAutoBan?: boolean;
-}
+// Interface AutoModStoreSchema removed as it is unused due to 'any' typing of the store.
 
 // Initialize store
-export const store = new Store<AutoModStoreSchema>({
+// Fix for ESM/CJS interop (electron-store)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const StoreClass = (Store as any).default || Store;
+
+// Initialize store
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const store: any = new (StoreClass as any)({
   name: "automod-rules",
   defaults: {
     groups: {},

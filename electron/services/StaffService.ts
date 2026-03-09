@@ -7,11 +7,18 @@ import { vrchatApiService } from "./VRChatApiService";
 const logger = log.scope("StaffService");
 
 // Store for protection settings per group - lazy initialized
-let staffStore: Store | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let staffStore: any = null;
 
-function getStore(): Store {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getStore(): any {
     if (!staffStore) {
-        staffStore = new Store({
+        // Fix for ESM/CJS interop (electron-store)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const StoreClass = (Store as any).default || Store;
+        
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        staffStore = new (StoreClass as any)({
             name: "staff-settings",
             defaults: {}
         });

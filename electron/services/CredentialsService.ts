@@ -16,18 +16,19 @@ interface StoredCredentials {
   authCookie?: string;
 }
 
-interface CredentialStore {
-  get(key: string, defaultValue?: unknown): unknown;
-  set(key: string, value: unknown): void;
-  has(key: string): boolean;
-  delete(key: string): void;
-}
+// Interface CredentialStore removed as it is unused due to 'any' typing of the store.
 
 // Initialize electron-store with encryption
-let store: CredentialStore;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let store: any;
 
 try {
-  store = new Store({
+  // Fix for ESM/CJS interop (electron-store)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const StoreClass = (Store as any).default || Store;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  store = new (StoreClass as any)({
     name: 'group-guard-credentials',
     encryptionKey: process.env.ELECTRON_STORE_ENCRYPTION_KEY,
     defaults: {
