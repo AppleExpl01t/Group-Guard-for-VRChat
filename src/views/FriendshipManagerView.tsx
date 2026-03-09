@@ -8,12 +8,12 @@ export const FriendshipManagerView: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabType>('friends');
     const [isInitialized, setIsInitialized] = useState(false);
     const [isChecking, setIsChecking] = useState(true);
-    const [retryCount, setRetryCount] = useState(0);
     const MAX_RETRIES = 10;
 
     useEffect(() => {
         let cancelled = false;
         let timeoutId: ReturnType<typeof setTimeout>;
+        let retries = 0;
 
         const checkStatus = async () => {
             if (cancelled) return;
@@ -29,8 +29,8 @@ export const FriendshipManagerView: React.FC = () => {
                 console.error('Failed to check friendship status:', e);
             }
 
-            if (!cancelled && retryCount < MAX_RETRIES) {
-                setRetryCount(prev => prev + 1);
+            if (!cancelled && retries < MAX_RETRIES) {
+                retries++;
                 timeoutId = setTimeout(checkStatus, 500);
             } else if (!cancelled) {
                 setIsChecking(false);
@@ -43,7 +43,7 @@ export const FriendshipManagerView: React.FC = () => {
             cancelled = true;
             if (timeoutId) clearTimeout(timeoutId);
         };
-    }, [retryCount]);
+    }, []);
 
     if (!isInitialized) {
         return (

@@ -435,9 +435,23 @@ contextBridge.exposeInMainWorld('electron', {
         reset: () => ipcRenderer.invoke('app:reset-installation-id') as Promise<string>,
     },
 
-    // Generic IPC Renderer for event listening
+    // Scoped IPC Renderer for event listening (allowlisted channels only)
     ipcRenderer: {
         on: (channel: string, callback: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void) => {
+            const ALLOWED_CHANNELS = [
+                'groups:updated', 'groups:cache-ready', 'groups:verified',
+                'pipeline:event', 'pipeline:connected', 'pipeline:disconnected', 'pipeline:error',
+                'log:player-joined', 'log:player-left', 'log:location', 'log:world-name', 'log:game-closed', 'log:vote-kick', 'log:video-play',
+                'rally:progress', 'instance:group-changed', 'instance:entity-update', 'mass-invite:progress',
+                'updater:update-available', 'updater:download-progress', 'updater:update-downloaded',
+                'automod:violation', 'instance-guard:event',
+                'watchlist:update', 'friendship:update', 'friendship:stats-update',
+                'bulk-friend:progress',
+            ];
+            if (!ALLOWED_CHANNELS.includes(channel)) {
+                console.warn(`[Preload] Blocked IPC listener for unknown channel: ${channel}`);
+                return () => {}; // no-op unsubscribe
+            }
             ipcRenderer.on(channel, callback);
             return () => ipcRenderer.removeListener(channel, callback);
         }
