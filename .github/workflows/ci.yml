@@ -1,17 +1,16 @@
 name: CI
 
-# Run on every push and on every pull request targeting main branches.
-# This workflow enforces: type-checking, linting, and tests.
-# It must pass before a branch can be merged.
+# Runs on pull requests (the enforcement gate) and on direct pushes to the
+# main branches. Does NOT run on every feature-branch push to avoid burning
+# Actions minutes — the PR check is what matters for merge protection.
 
 on:
-  push:
-    branches:
-      - "**"
-    # Skip the CI run on release tags — the release workflow handles those
-    tags-ignore:
-      - "v*"
   pull_request:
+    branches:
+      - main
+      - master
+      - develop
+  push:
     branches:
       - main
       - master
@@ -55,12 +54,3 @@ jobs:
       - name: Test
         run: npm test -- --run
 
-      # -----------------------------------------------------------------------
-      # Upload coverage report as an artifact for review on failed PRs
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage/
-          retention-days: 7
