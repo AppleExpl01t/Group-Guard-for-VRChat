@@ -235,14 +235,63 @@ npx prisma generate
 
 **Framework:** Vitest v4 with jsdom
 **Test files:** `**/*.{test,spec}.{ts,tsx}`
-**Existing tests:** `electron/services/__tests__/AuthService.test.ts`, `electron/services/GroupAuthorizationService.test.ts`
+
+### Running tests
 
 ```bash
 npm test                 # Run all tests once
-npm run test:watch       # Watch mode
+npm test -- --run        # Explicit single-run (used in CI)
+npm run test:watch       # Watch mode during development
+npm test -- --coverage   # With coverage report (output → coverage/)
 ```
 
-When adding new service logic, add corresponding unit tests under `electron/services/__tests__/`. Tests should mock IPC and external API calls.
+### Test file locations
+
+| Service | Test file |
+|---|---|
+| `AuthService` | `electron/services/__tests__/AuthService.test.ts` |
+| `GroupAuthorizationService` | `electron/services/GroupAuthorizationService.test.ts` |
+| `LogParserService` | `electron/services/__tests__/LogParserService.test.ts` |
+| `AutoModRuleService` | `electron/services/__tests__/AutoModRuleService.test.ts` |
+| `WatchlistService` | `electron/services/__tests__/WatchlistService.test.ts` |
+| `InstanceGuardService` | `electron/services/__tests__/InstanceGuardService.test.ts` |
+
+### Mocking conventions
+
+All tests that target Electron services must mock these modules before importing the service:
+
+```typescript
+// Always mock these in service tests
+vi.mock('electron-log', ...)        // Prevents log output noise
+vi.mock('electron', ...)            // Mocks ipcMain.handle
+vi.mock('electron-store', ...)      // In-memory store (use a Map or object)
+vi.mock('../WindowService', ...)    // Prevents broadcast calls
+vi.mock('../DatabaseService', ...)  // Prevents Prisma calls
+```
+
+**Mock order matters.** Declare all `vi.mock()` calls before any `import` of the service under test. Vitest hoists mocks, but explicit ordering avoids subtle issues.
+
+### What to test in each service category
+
+**Pure/stateless services** (e.g., `LogParserService`): Test every event type, edge cases (empty input, malformed lines), and every exported helper function. No mocks needed.
+
+**Rule engine services** (e.g., `AutoModRuleService`): Test each rule type (KEYWORD_BLOCK, TRUST_CHECK, BLACKLISTED_GROUPS) with at least: a match case, a non-match case, a whitelist exemption case, and all supported action types.
+
+**Storage services** (e.g., `WatchlistService`): Test create, read, update, delete for each entity type. Test merge behaviour (update preserves `createdAt`). Test import/export round-trip.
+
+**Orchestration services** (e.g., `InstanceGuardService`, `AutoModService`): Test guard conditions (empty groups, API failure), happy-path enforcement, whitelist/blacklist logic, and duplicate-prevention cache.
+
+### Standards enforced by CI
+
+The CI workflow (`.github/workflows/ci.yml`) runs on every push and pull request:
+
+1. **Type-check** (`npx tsc -b --noEmit`) — no TypeScript errors allowed
+2. **Lint** (`npm run lint`) — no ESLint errors allowed
+3. **Tests** (`npm test -- --run`) — all tests must pass
+
+**A pull request cannot be merged if any of these checks fail.**
+
+When adding new service logic, add corresponding unit tests. The CI check is the enforcement mechanism — there is no manual review bypass.
 
 ---
 
@@ -265,15 +314,18 @@ Both release workflows:
 
 ## Contributing Checklist
 
-Before submitting changes:
+Before submitting a pull request, verify locally:
 
-- [ ] `npm run lint` passes with no errors
-- [ ] `npm test` passes
+- [ ] `npx tsc -b --noEmit` — zero TypeScript errors
+- [ ] `npm run lint` — zero ESLint errors
+- [ ] `npm test -- --run` — all tests pass
 - [ ] No `any` types added in `electron/services/`
 - [ ] New IPC methods are added to both `electron/preload.ts` and the relevant controller
 - [ ] Database schema changes have a corresponding Prisma migration
 - [ ] New service logic has unit tests in `electron/services/__tests__/`
 - [ ] Feature branch created (`git checkout -b feature/your-feature`)
+
+The CI workflow (`.github/workflows/ci.yml`) enforces type-check, lint, and tests automatically on every PR. All three must be green before merging.
 
 ---
 
