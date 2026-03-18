@@ -5,6 +5,13 @@ import rateLimit from 'express-rate-limit';
 import { config } from './config';
 import { errorHandler } from './middleware/errorHandler';
 
+// ---------------------------------------------------------------------------
+// Fail-fast: importing the auth service triggers key loading at module scope.
+// If the keys are missing or empty the import itself will throw, preventing
+// the server from starting in a state where JWT signing/verification is broken.
+// ---------------------------------------------------------------------------
+import './modules/auth/service';
+
 // Import module routes
 import authRoutes from './modules/auth/routes';
 import backupRoutes from './modules/backup/routes';
@@ -13,8 +20,16 @@ const app = express();
 
 // Security middleware
 app.use(helmet());
+
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) ?? [];
+if (allowedOrigins.length === 0 && config.nodeEnv === 'production') {
+  console.warn(
+    '⚠️  ALLOWED_ORIGINS is not set. All cross-origin requests will be rejected. ' +
+    'Set ALLOWED_ORIGINS to a comma-separated list of allowed origins.',
+  );
+}
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || [],
+  origin: allowedOrigins.length > 0 ? allowedOrigins : false,
   credentials: true,
 }));
 
