@@ -24,11 +24,10 @@ export function setupGroupHandlers() {
     });
 
     serviceEventBus.on('group-verified', ({ group }) => {
-        // Broadacst granular update to UI
+        // Broadcast granular update to UI
         windowService.broadcast('groups:verified', { group });
     });
 
-    // Get user's groups (groups where user is a member)
     // Get user's groups (groups where user is a member)
     ipcMain.handle('groups:get-my-groups', async () => {
         const client = getVRChatClient();
@@ -268,19 +267,18 @@ export function setupGroupHandlers() {
             logger.info(`Fetching requests for group ${groupId}`);
             if (!client) throw new Error("Not authenticated");
 
-            // Revert to Object Syntax
             const response = await client.getGroupRequests({
                 path: { groupId },
                 query: { n: 100, offset: 0 }
             });
 
-            const requests = extractArray(response.data);
-            logger.info(`Requests fetch detected ${requests.length} items for ${groupId}`);
-
             if (response.error) {
                 logger.error('API Error in getGroupRequests:', response.error);
                 throw response.error;
             }
+
+            const requests = extractArray(response.data);
+            logger.info(`Requests fetch detected ${requests.length} items for ${groupId}`);
             return { success: true, requests };
 
         } catch (error: unknown) {
@@ -300,19 +298,18 @@ export function setupGroupHandlers() {
             logger.info(`Fetching bans for group ${groupId}`);
             if (!client) throw new Error("Not authenticated");
 
-            // Revert to Object Syntax
             const response = await client.getGroupBans({
                 path: { groupId },
                 query: { n: 100, offset: 0 }
             });
 
-            const bans = extractArray(response.data);
-            logger.info(`Bans fetch detected ${bans.length} items for ${groupId}`);
-
             if (response.error) {
                 logger.error('API Error in getGroupBans:', response.error);
                 throw response.error;
             }
+
+            const bans = extractArray(response.data);
+            logger.info(`Bans fetch detected ${bans.length} items for ${groupId}`);
             return { success: true, bans };
 
         } catch (error: unknown) {
@@ -416,7 +413,6 @@ export function setupGroupHandlers() {
         }
     });
 
-    // Get active group instances - using direct HTTP to bypass SDK quirks
     // Get active group instances - using direct HTTP to bypass SDK quirks
     ipcMain.handle('groups:get-instances', async (_event, { groupId }: { groupId: string }) => {
         // SECURITY: Validate group access first
@@ -588,8 +584,6 @@ export function setupGroupHandlers() {
             return { success: false, error: res.error };
         });
     });
-    // Get group messages
-    // ... (omitted, assuming no collision)
 
     // Get group roles
     ipcMain.handle('groups:get-roles', async (_event, { groupId }: { groupId: string }) => {

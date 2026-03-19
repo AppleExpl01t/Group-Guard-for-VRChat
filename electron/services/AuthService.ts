@@ -141,21 +141,8 @@ export async function performLogin(username: string, password: string, twoFactor
     logger.info('Creating VRChat client...');
     const client = new VRChat(clientOptions);
 
-    // Set credentials on the client for the SDK's internal authentication flow
-    // Only include twoFactorCode if we have an actual code (prevents SDK from auto-verifying with empty code)
-    const credentialsToSet: { username: string; password: string; twoFactorCode?: () => string } = {
-      username,
-      password,
-    };
-    if (twoFactorCode) {
-      credentialsToSet.twoFactorCode = () => twoFactorCode;
-    }
-    client.setCredentials(credentialsToSet);
-
-    logger.info('Calling client.login() with credentials...');
-
-    // Use the SDK's login method which properly handles authentication
-    // Only pass twoFactorCode if we actually have one
+    // Set credentials and login — only include twoFactorCode when provided to prevent
+    // the SDK from auto-verifying with an empty code.
     const loginOptions: { username: string; password: string; twoFactorCode?: () => string; throwOnError: boolean } = {
       username,
       password,
@@ -164,6 +151,9 @@ export async function performLogin(username: string, password: string, twoFactor
     if (twoFactorCode) {
       loginOptions.twoFactorCode = () => twoFactorCode;
     }
+    client.setCredentials(loginOptions);
+
+    logger.info('Calling client.login() with credentials...');
 
     try {
       const loginResult = await client.login(loginOptions);
@@ -217,8 +207,7 @@ export async function performLogin(username: string, password: string, twoFactor
         data?: { requiresTwoFactorAuth?: string[] };
       };
 
-      const errorMsg = err?.message || 'Unknown authentication error';
-      const errorMsgSafe = typeof errorMsg === 'string' ? errorMsg : String(errorMsg);
+      const errorMsgSafe = err?.message || 'Unknown authentication error';
       const errorMsgLower = errorMsgSafe.toLowerCase();
 
       logger.info('Authentication error details:', {
@@ -288,10 +277,6 @@ export async function performLogin(username: string, password: string, twoFactor
       errorMessage = err.response.data.error.message;
     } else if (err?.message) {
       errorMessage = err.message;
-    }
-
-    if (typeof errorMessage !== 'string') {
-      errorMessage = String(errorMessage);
     }
 
     // Check for common authentication/credential errors and provide user-friendly messages
@@ -461,9 +446,6 @@ export async function fetchInstancePlayers(location: string): Promise<{ id: stri
 }
 
 export function setupAuthHandlers() {
-  // ...
-  // ...
-
   // LOGIN Handler - accepts rememberMe flag
   ipcMain.handle('auth:login', async (_event, { username, password, rememberMe = false }: {
     username: string;
@@ -503,7 +485,6 @@ export function setupAuthHandlers() {
       // Save authCookie if we got one
       saveCredentials(username, password, result.authCookie);
       logger.info('Credentials saved for auto-login');
-      logger.debug('Credentials saved manually');
     } else if (result.requires2FA) {
       // Store credentials for 2FA completion (will save after 2FA if rememberMe is set)
       // NOTE: We don't have authCookie yet usually for 2FA flow, but if we did we could store it
@@ -569,13 +550,6 @@ export function setupAuthHandlers() {
       }
 
       const validatedUser = user as CurrentUser;
-
-      // Sanitize user ID
-      if (validatedUser.id && typeof validatedUser.id === 'string') {
-        // We can't assign to readonly id, so we just use it as is or cast if trimming is critical
-        // For now, assuming API returns clean ID or we ignore trim for type safety
-      }
-
       currentUser = user as unknown as Record<string, unknown>;
 
       logger.info(`2FA complete, logged in as: ${validatedUser.displayName}`);
@@ -699,7 +673,6 @@ export function setupAuthHandlers() {
       // The SDK may have a logout method, but we mainly need to clear local state
       // VRChat doesn't have a traditional logout endpoint - sessions are cookie-based
       logger.info('Logging out user...');
-      logger.debug('Logging out');
 
       // SECURITY FIX: Always clear session store on logout to prevent session reuse
       await clearSessionStore();

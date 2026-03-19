@@ -29,6 +29,18 @@ function assertBackupId(id: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Path helpers — keeps path construction DRY across all operations
+// ---------------------------------------------------------------------------
+
+function backupPaths(userId: string, backupId: string) {
+  const base = `users/${userId}/backups/${backupId}`;
+  return {
+    meta: `${base}/metadata.json`,
+    data: `${base}/data.json`,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Backup service
 // ---------------------------------------------------------------------------
 
@@ -73,11 +85,12 @@ export async function createBackup(
     description: metadata?.description,
   };
 
-  const dataPath = `users/${userId}/backups/${id}/data.json`;
-  const metaPath = `users/${userId}/backups/${id}/metadata.json`;
+  const paths = backupPaths(userId, id);
 
-  await objectStorage.put(dataPath, data);
-  await objectStorage.put(metaPath, JSON.stringify(backupMetadata));
+  await Promise.all([
+    objectStorage.put(paths.data, data),
+    objectStorage.put(paths.meta, JSON.stringify(backupMetadata)),
+  ]);
 
   return backupMetadata;
 }
@@ -90,21 +103,21 @@ export async function listBackups(userId: string): Promise<BackupMetadata[]> {
   const files = await objectStorage.list(prefix);
   const metadataFiles = files.filter(f => f.endsWith('/metadata.json'));
 
-  const backups: BackupMetadata[] = [];
-  for (const file of metadataFiles) {
-    try {
-      const content = await objectStorage.get(file);
-      if (content) {
-        backups.push(JSON.parse(content) as BackupMetadata);
+  const results = await Promise.all(
+    metadataFiles.map(async file => {
+      try {
+        const content = await objectStorage.get(file);
+        return content ? (JSON.parse(content) as BackupMetadata) : null;
+      } catch (e) {
+        console.error(`Error reading backup metadata: ${file}`, e);
+        return null;
       }
-    } catch (e) {
-      console.error(`Error reading backup metadata: ${file}`, e);
-    }
-  }
-
-  return backups.sort((a, b) =>
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    }),
   );
+
+  return results
+    .filter((b): b is BackupMetadata => b !== null)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 /**
@@ -114,13 +127,12 @@ export async function listBackups(userId: string): Promise<BackupMetadata[]> {
 export async function getBackup(userId: string, backupId: string): Promise<Backup | null> {
   assertBackupId(backupId);
 
-  const metaPath = `users/${userId}/backups/${backupId}/metadata.json`;
-  const dataPath = `users/${userId}/backups/${backupId}/data.json`;
+  const paths = backupPaths(userId, backupId);
 
   try {
     const [metadataContent, dataContent] = await Promise.all([
-      objectStorage.get(metaPath),
-      objectStorage.get(dataPath),
+      objectStorage.get(paths.meta),
+      objectStorage.get(paths.data),
     ]);
 
     if (!metadataContent || !dataContent) return null;
@@ -146,17 +158,27 @@ export async function getBackup(userId: string, backupId: string): Promise<Backu
 export async function deleteBackup(userId: string, backupId: string): Promise<boolean> {
   assertBackupId(backupId);
 
-  // Verify ownership before deleting
-  const meta = await getBackup(userId, backupId);
-  if (!meta) return false;
+  const paths = backupPaths(userId, backupId);
 
-  const metaPath = `users/${userId}/backups/${backupId}/metadata.json`;
-  const dataPath = `users/${userId}/backups/${backupId}/data.json`;
+  // Verify ownership before deleting — only metadata is needed
+  const metaContent = await objectStorage.get(paths.meta);
+  if (!metaContent) return false;
+
+  try {
+    const meta = JSON.parse(metaContent) as BackupMetadata;
+    if (meta.userId !== userId) {
+      console.error(`Ownership mismatch for backup ${backupId}: stored=${meta.userId}, requested=${userId}`);
+      return false;
+    }
+  } catch (e) {
+    console.error(`Error parsing metadata for backup ${backupId}`, e);
+    return false;
+  }
 
   try {
     await Promise.all([
-      objectStorage.del(metaPath),
-      objectStorage.del(dataPath),
+      objectStorage.del(paths.meta),
+      objectStorage.del(paths.data),
     ]);
     return true;
   } catch (e) {
