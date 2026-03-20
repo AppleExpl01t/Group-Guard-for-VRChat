@@ -194,6 +194,34 @@ class GroupAuthorizationService {
     private currentProcessId: number = 0;
 
     /**
+     * Normalizes a raw GroupMembershipData object into a flat group record,
+     * hoisting fields from the nested `.group` sub-object up to the top level.
+     * Used by both processAndAuthorizeGroups and emitGroupVerified.
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private normalizeGroupMembership(g: GroupMembershipData, overrides: Record<string, unknown> = {}): any {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const groupObj = g as any;
+        const innerGroup = groupObj.group || {};
+        const groupId = g.groupId || g.id;
+        return {
+            ...g,
+            id: groupId,
+            _memberId: g.id,
+            name: innerGroup.name || g.group?.name || groupObj.name || 'Unknown Group',
+            iconUrl: innerGroup.iconUrl || groupObj.iconUrl,
+            iconId: innerGroup.iconId || groupObj.iconId,
+            bannerUrl: innerGroup.bannerUrl || groupObj.bannerUrl,
+            bannerId: innerGroup.bannerId || groupObj.bannerId,
+            shortCode: innerGroup.shortCode || groupObj.shortCode || '',
+            discriminator: innerGroup.discriminator || groupObj.discriminator,
+            onlineMemberCount: innerGroup.onlineMemberCount ?? groupObj.onlineMemberCount,
+            activeInstanceCount: innerGroup.activeInstanceCount ?? groupObj.activeInstanceCount,
+            ...overrides,
+        };
+    }
+
+    /**
      * Process raw group memberships and determine which ones the user can moderate.
      * This is the core authorization logic - checking ownership or mod permissions.
      * 

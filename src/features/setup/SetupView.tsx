@@ -25,8 +25,7 @@ export const SetupView: React.FC<SetupViewProps> = ({ onComplete }) => {
                 } else {
                     setPath(status.lastPath || status.defaultPath);
                 }
-            } catch (error) {
-                console.error('Failed to check status:', error);
+            } catch {
                 addNotification({
                     type: 'error',
                     title: 'Initialization Error',
