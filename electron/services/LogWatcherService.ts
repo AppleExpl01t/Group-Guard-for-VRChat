@@ -259,10 +259,8 @@ class LogWatcherService extends EventEmitter {
     }, 1000);
 
     const checkActivity = async () => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { checkOnlineStatus } = require('./AuthService');
-
-      // SEEK TIMEOUT CHECK (CRITICAL for reliability)
+      // SEEK TIMEOUT CHECK: If we haven't found the target instance in the log within
+      // 12 seconds, force the API-reported state rather than waiting indefinitely.
       if (this.seekingInstanceId) {
         if (Date.now() - this.seekingStartTime > 12000) {
           log.warn(`[LogWatcher] Smart Sync: Seek timeout for ${this.seekingInstanceId}. Forcing API state.`);
@@ -1050,11 +1048,7 @@ class LogWatcherService extends EventEmitter {
   }
 
   private emitToRenderer(channel: string, data: unknown) {
-    // Prevent partial syncs during hydration which cause UI duplicates
-    // CRITICAL: We MUST allow location updates through so the Roaming Mode card appears immediately.
-    const ALWAYS_ALLOWED_CHANNELS = ['log:location', 'log:world-name', 'log:game-closed', 'log:cam-adjust', 'log:avatar', 'log:avatar-switch'];
-
-    if (this.isHydrating && !ALWAYS_ALLOWED_CHANNELS.includes(channel)) {
+    if (this.isHydrating && !HYDRATION_ALLOWED_CHANNELS.has(channel)) {
       return;
     }
     windowService.broadcast(channel, data);

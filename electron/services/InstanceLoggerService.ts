@@ -104,11 +104,6 @@ class InstanceLoggerService {
                 return;
             }
 
-            // Start new session
-            // Use a consistent session ID format or just let CUID do it?
-            // Legacy code used 'sess_timestamp'.
-            // Prisma has 'id' (UUID) and 'sessionId' (unique string).
-            // We'll generate sessionId manually to keep control.
             const sessionId = `sess_${Date.now()}`;
 
             // CRITICAL FIX: Await DB creation BEFORE setting this.currentSessionId
@@ -197,13 +192,8 @@ class InstanceLoggerService {
     }
 
     public async getSessionEvents(filenameOrId: string) {
-        // Logic: filename in legacy was the ID basically (or filename contained ID).
-        // Here we expect sessionId.
-        // If the frontend passes a filename (from legacy data?), we might need to handle it.
-        // But we are resetting data. So assume sessionId.
-        // If the arg ends with .jsonl, it's legacy.
         if (!filenameOrId || filenameOrId.endsWith('.jsonl')) {
-            return []; // Setup doesn't support legacy files yet
+            return [];
         }
 
         try {

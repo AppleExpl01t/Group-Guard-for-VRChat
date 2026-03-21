@@ -624,40 +624,30 @@ export function setupAuthHandlers() {
 
 }
 
-// Helper to share client with other services (Groups, Audit, etc.)
 export function getVRChatClient() {
   logger.debug(`getVRChatClient called. Result exists: ${!!vrchatClient}`);
   return vrchatClient;
 }
 
-// Helper to check if authenticated
 export function isAuthenticated(): boolean {
   return vrchatClient !== null && currentUser !== null;
 }
 
-// Helper to get current user's ID
 export function getCurrentUserId(): string | null {
   logger.debug(`getCurrentUserId called. ID: ${currentUser?.id}`);
-  logger.debug('Full currentUser keys:', Object.keys(currentUser || {}));
   return currentUser?.id as string | null;
 }
 
-// Helper to serialize cookies in the format the VRChat SDK uses
-function serializeCookieForHeader(cookie: { name: string; value: string }): string {
-  return `${cookie.name}=${cookie.value}`;
-}
-
-// Async helper to get auth cookie using SDK's getCookies method
 export async function getAuthCookieStringAsync(): Promise<string | undefined> {
-  // Strategy 1: Use SDK's getCookies method (preferred - this is how the SDK does it internally)
+  // Strategy 1: SDK's getCookies method (preferred)
   if (vrchatClient) {
     try {
       const clientAny = vrchatClient as unknown as VRChatClientInternal;
-      if (clientAny.getCookies && typeof clientAny.getCookies === 'function') {
+      if (typeof clientAny.getCookies === 'function') {
         const cookies = await clientAny.getCookies();
         if (Array.isArray(cookies) && cookies.length > 0) {
           logger.debug(`[Cookie] Got ${cookies.length} cookies from SDK getCookies()`);
-          return cookies.map(serializeCookieForHeader).join('; ');
+          return cookies.map(c => `${c.name}=${c.value}`).join('; ');
         }
       }
     } catch (e) {
@@ -665,7 +655,7 @@ export async function getAuthCookieStringAsync(): Promise<string | undefined> {
     }
   }
 
-  // Strategy 2: Sync extraction (fallback)
+  // Strategy 2: Sync extraction
   const syncCookie = extractAuthCookie(vrchatClient);
   if (syncCookie) return syncCookie;
 
@@ -676,25 +666,21 @@ export async function getAuthCookieStringAsync(): Promise<string | undefined> {
     return saved.authCookie;
   }
 
-  // Strategy 4: Try Keyv session store file
+  // Strategy 4: Keyv session store file
   try {
-    const userDataPath = storageService.getDataDir();
-    const sessionFilePath = path.join(userDataPath, 'vrchat-session.json');
-
-    if (fs.existsSync(sessionFilePath)) {
-      const data = JSON.parse(fs.readFileSync(sessionFilePath, 'utf-8'));
-      // Keyv stores with namespace prefix, e.g., "vrchat:cookies"
-      const cookieKey = Object.keys(data).find(k => k.includes('cookie'));
-      if (cookieKey && data[cookieKey]) {
-        let cookieValue = data[cookieKey];
-        // Keyv wraps values in { value: ..., expires: ... }
-        if (cookieValue.value) cookieValue = cookieValue.value;
-        if (typeof cookieValue === 'string') {
-          logger.debug('Using cookie from Keyv session store file');
-          return cookieValue;
-        } else if (Array.isArray(cookieValue)) {
-          return cookieValue.map(serializeCookieForHeader).join('; ');
-        }
+    const sessionFilePath = path.join(storageService.getDataDir(), 'vrchat-session.json');
+    const data = JSON.parse(fs.readFileSync(sessionFilePath, 'utf-8'));
+    // Keyv stores with namespace prefix, e.g., "vrchat:cookies"
+    const cookieKey = Object.keys(data).find(k => k.includes('cookie'));
+    if (cookieKey && data[cookieKey]) {
+      let cookieValue = data[cookieKey];
+      // Keyv wraps values in { value: ..., expires: ... }
+      if (cookieValue.value) cookieValue = cookieValue.value;
+      if (typeof cookieValue === 'string') {
+        logger.debug('Using cookie from Keyv session store file');
+        return cookieValue;
+      } else if (Array.isArray(cookieValue)) {
+        return cookieValue.map((c: { name: string; value: string }) => `${c.name}=${c.value}`).join('; ');
       }
     }
   } catch (e) {
@@ -704,38 +690,27 @@ export async function getAuthCookieStringAsync(): Promise<string | undefined> {
   return undefined;
 }
 
-// Sync helper (kept for backward compatibility, but prefers async version)
+// Sync fallback — cannot access the async getCookies() method; prefer getAuthCookieStringAsync
 export function getAuthCookieString(): string | undefined {
-  let cookie = vrchatClient ? extractAuthCookie(vrchatClient) : undefined;
+  const cookie = vrchatClient ? extractAuthCookie(vrchatClient) : undefined;
+  if (cookie) return cookie;
 
-  if (!cookie) {
-    // Fallback 1: Check saved credentials
-    const saved = loadCredentials();
-    if (saved && saved.authCookie) {
-      logger.debug('Using saved authCookie from credentials store (fallback)');
-      cookie = saved.authCookie;
-    }
+  const saved = loadCredentials();
+  if (saved?.authCookie) {
+    logger.debug('Using saved authCookie from credentials store (fallback)');
+    return saved.authCookie;
   }
 
-  // Note: This sync version cannot access the async getCookies() method
-  // Use getAuthCookieStringAsync for full functionality
-
-  return cookie;
+  return undefined;
 }
 
-// Helper to check online status
 export async function checkOnlineStatus(): Promise<boolean> {
   if (!vrchatClient || !currentUser) return false;
 
   try {
-    // We can fetch our own user entry. 
-    // Optimized: Just check /auth/user which is cached/fast usually, or check presence?
-    // fetching user with client.getCurrentUser() is reliable.
     const userResponse = await vrchatClient.getCurrentUser();
     const user = userResponse?.data || userResponse;
 
-    // If user is present, check 'state' or 'status'
-    // state: 'offline', 'active', 'online'
     const u = user as unknown as VRChatUser;
     if (u && (u.state === 'offline' || u.status === 'offline')) {
       return false;
@@ -743,9 +718,6 @@ export async function checkOnlineStatus(): Promise<boolean> {
     return true;
   } catch (error) {
     logger.warn('Failed to check online status:', error);
-    // Assume offline on error? Or keep alive? 
-    // If API fails, we probably shouldn't kill the session immediately unless it's a 401.
-    // But for "Game Closed" detection, if API fails, maybe we are just disconnected.
     return false;
   }
 }
