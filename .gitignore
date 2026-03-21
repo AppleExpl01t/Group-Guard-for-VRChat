@@ -52,3 +52,4 @@ reference repos/
 
 # Development Debug Files
 .dev/
+.claude/
