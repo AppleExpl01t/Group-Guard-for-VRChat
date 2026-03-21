@@ -246,9 +246,8 @@ export const instanceGuardService = {
                     if (useAgeGateLogic && !isBlacklisted) {
                         try {
                             logger.debug(`[InstanceGuard] Fetching complete instance data for age gate check: ${worldName}`);
-                            const instId = instance.instanceId || instance.name;
-                            if (instId) {
-                                const instanceResult = await vrchatApiService.getInstance(instance.worldId || worldId, instId);
+                            if (instanceId) {
+                                const instanceResult = await vrchatApiService.getInstance(instance.worldId || worldId, instanceId);
 
                                 if (instanceResult.success && instanceResult.data) {
                                     // Update instance with complete data including ageGate

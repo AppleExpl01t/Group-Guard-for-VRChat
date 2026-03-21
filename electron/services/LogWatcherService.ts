@@ -10,10 +10,9 @@ import { oscService } from './OscService';
 import { discordBroadcastService } from './DiscordBroadcastService';
 import { windowService } from './WindowService';
 import { processService } from './ProcessService';
-// Pure parsing utilities available in LogParserService for testing
-
 import { serviceEventBus } from './ServiceEventBus';
 import { locationService } from './LocationService';
+import { PATTERNS, extractNameAndId, parseLogTimestamp } from './LogParserService';
 
 const store = new Store();
 
@@ -27,8 +26,6 @@ export interface LogEvent {
   timestamp: string;
   data: Record<string, string>;
 }
-
-// ... existing types ...
 
 export interface PlayerJoinedEvent {
   displayName: string;
@@ -58,6 +55,17 @@ export interface LocationEvent {
   location?: string;
   timestamp: string;
 }
+
+// Channels that bypass the hydration suppression filter so the UI gets
+// location/avatar state immediately even during the initial log scan.
+const HYDRATION_ALLOWED_CHANNELS = new Set([
+  'log:location',
+  'log:world-name',
+  'log:game-closed',
+  'log:cam-adjust',
+  'log:avatar',
+  'log:avatar-switch',
+]);
 
 // ============================================
 // STATE CACHE

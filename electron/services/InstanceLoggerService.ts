@@ -73,23 +73,19 @@ class InstanceLoggerService {
             // Close previous session if active
             if (this.currentSessionId) {
                 await databaseService.updateSession(this.currentSessionId, { endTime: new Date(event.timestamp) });
-                // Note: we don't nullify immediately if we are just switching, but here we are switching.
-                // Wait, if we switch instance, we should nullify.
             }
 
             this.currentWorldId = event.worldId;
             this.currentInstanceId = event.instanceId;
 
-            // Note: Recruitment cache clearing is handled by the 'close-instance' handler
-            // when an instance is explicitly closed. We don't clear on location change
-            // because users may rejoin the same instance.
+            // Recruitment cache clearing is handled by the 'close-instance' handler when an
+            // instance is explicitly closed — not on location change, since users may rejoin.
 
             // Extract group ID from location string (e.g., "~group(grp_xxx)")
-            // The regex captures group IDs with letters, numbers, hyphens, and underscores
             const groupMatch = event.location.match(/~group\((grp_[a-zA-Z0-9_-]+)\)/i);
             const groupId = groupMatch ? groupMatch[1].toLowerCase() : null;
 
-            if (groupMatch) {
+            if (groupId) {
                 logger.debug(`[InstanceLogger] Detected group: ${groupId}`);
             }
 
