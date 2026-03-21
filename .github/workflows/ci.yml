@@ -1,0 +1,56 @@
+name: CI
+
+# Runs on pull requests (the enforcement gate) and on direct pushes to the
+# main branches. Does NOT run on every feature-branch push to avoid burning
+# Actions minutes — the PR check is what matters for merge protection.
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+  push:
+    branches:
+      - main
+      - master
+      - develop
+
+jobs:
+  ci:
+    name: Type-check · Lint · Test
+    # Use ubuntu for speed; Electron packaging is Windows-only but tests are
+    # platform-agnostic because all Electron/OS APIs are mocked.
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      # -----------------------------------------------------------------------
+      - name: Install dependencies
+        run: npm ci
+
+      # -----------------------------------------------------------------------
+      # TypeScript — catch type errors before running tests
+      - name: Type-check
+        run: npx tsc -b --noEmit
+
+      # -----------------------------------------------------------------------
+      # ESLint — enforce code-quality standards
+      - name: Lint
+        run: npm run lint
+
+      # -----------------------------------------------------------------------
+      # Vitest — run the full test suite (single run, not watch mode)
+      - name: Test
+        run: npm test -- --run
+

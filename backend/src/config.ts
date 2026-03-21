@@ -27,4 +27,7 @@ export const config = {
   
   // Verification
   verificationCodeExpiryMs: 5 * 60 * 1000, // 5 minutes
+
+  // Backup limits
+  maxBackupsPerUser: parseInt(process.env.MAX_BACKUPS_PER_USER || '10', 10),
 };

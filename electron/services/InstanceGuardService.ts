@@ -51,7 +51,6 @@ const persistAction = async (entry: {
     reason: string;
     module: string;
     details?: Record<string, unknown>;
-    skipBroadcast?: boolean;
 }) => {
     try {
         await databaseService.createAutoModLog({
@@ -181,24 +180,22 @@ export const instanceGuardService = {
                     // Check if this is a NEW instance we haven't seen before
                     const isNewInstance = !knownInstancesCache.has(instanceKey) && !closedInstancesCache.has(instanceKey);
 
+                    // Fetch owner name once per instance (reused for both OPENED and AUTO_CLOSED events)
+                    let ownerName: string | undefined;
+                    if (ownerId && ownerId.startsWith('usr_')) {
+                        try {
+                            const ownerResult = await vrchatApiService.getUser(ownerId);
+                            if (ownerResult.success && ownerResult.data) {
+                                ownerName = ownerResult.data.displayName;
+                            }
+                        } catch (e) {
+                            logger.warn(`[InstanceGuard] Failed to fetch owner name for ${ownerId}:`, e);
+                        }
+                    }
+
                     if (isNewInstance) {
-                        // Mark as known
                         knownInstancesCache.add(instanceKey);
 
-                        // Fetch owner name if we have an ownerId
-                        let ownerName: string | undefined;
-                        if (ownerId && ownerId.startsWith('usr_')) {
-                            try {
-                                const ownerResult = await vrchatApiService.getUser(ownerId);
-                                if (ownerResult.success && ownerResult.data) {
-                                    ownerName = ownerResult.data.displayName;
-                                }
-                            } catch (e) {
-                                logger.warn(`[InstanceGuard] Failed to fetch owner name for ${ownerId}:`, e);
-                            }
-                        }
-
-                        // Log the OPENED event
                         const hasAgeGate = instance.world?.ageGate === true;
                         const openEvent: InstanceGuardEvent = {
                             id: `ig_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -249,9 +246,8 @@ export const instanceGuardService = {
                     if (useAgeGateLogic && !isBlacklisted) {
                         try {
                             logger.debug(`[InstanceGuard] Fetching complete instance data for age gate check: ${worldName}`);
-                            const instId = instance.instanceId || instance.name;
-                            if (instId) {
-                                const instanceResult = await vrchatApiService.getInstance(instance.worldId || worldId, instId);
+                            if (instanceId) {
+                                const instanceResult = await vrchatApiService.getInstance(instance.worldId || worldId, instanceId);
 
                                 if (instanceResult.success && instanceResult.data) {
                                     // Update instance with complete data including ageGate
@@ -342,22 +338,8 @@ export const instanceGuardService = {
                                         wasAgeGated: instance.ageGate === true || instance.world?.ageGate === true,
                                         wasBlacklisted: isBlacklisted,
                                         ruleName: '18+ Instance Guard'
-                                    },
-                                    skipBroadcast: true
-                                });
-
-                                // Fetch owner name if we have an ownerId
-                                let ownerName: string | undefined;
-                                if (ownerId && ownerId.startsWith('usr_')) {
-                                    try {
-                                        const ownerResult = await vrchatApiService.getUser(ownerId);
-                                        if (ownerResult.success && ownerResult.data) {
-                                            ownerName = ownerResult.data.displayName;
-                                        }
-                                    } catch {
-                                        // Ignore
                                     }
-                                }
+                                });
 
                                 // Create event entry
                                 const eventEntry: InstanceGuardEvent = {

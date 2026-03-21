@@ -3,22 +3,16 @@ import path from 'path';
 import log from 'electron-log';
 import { app } from 'electron';
 import { databaseService } from './DatabaseService';
+import { parseLogTimestamp, extractNameAndId } from './LogParserService';
 
 const logger = log.scope('LogScannerService');
-
-interface SessionEvent {
-    timestamp: number;
-    type: 'join' | 'leave';
-    displayName: string;
-    userId?: string;
-}
 
 export class LogScannerService {
     private isScanning = false;
 
     /**
-     * Scans all standard VRChat log files for historical session data.
-     * Imports durations into FriendStats table.
+     * Scans historical VRChat log files and imports session durations into FriendStats.
+     * Skips files already consumed by the live LogWatcherService.
      */
     public async scanAndImportHistory(): Promise<{ processedFiles: number; totalMinutesAdded: number }> {
         if (this.isScanning) throw new Error('Scan already in progress');
@@ -28,7 +22,6 @@ export class LogScannerService {
         let processedFiles = 0;
 
         try {
-            // PHASE 1: Recalibrate Encounter Counts (Fix Inflation)
             await this.recalibrateFromPlayerLog();
 
             const logDir = this.getLogDirectory();
@@ -39,18 +32,17 @@ export class LogScannerService {
 
             const files = fs.readdirSync(logDir)
                 .filter(f => f.startsWith('output_log_') && f.endsWith('.txt'))
-                .sort(); // Oldest first? Unimportant, but consistent is good.
+                .sort();
 
             logger.info(`Found ${files.length} log files to scan.`);
 
-            // DEDUPLICATION: Get the list of already processed files (Live Sessions)
             // eslint-disable-next-line @typescript-eslint/no-require-imports
             const { logWatcherService } = require('./LogWatcherService');
-            const processedSet = logWatcherService.getProcessedFiles(); // We need to expose this
+            const processedSet = logWatcherService.getProcessedFiles();
 
             for (const file of files) {
                 if (processedSet.has(file)) {
-                    logger.debug(`Skipping ${file} (Already processed by Live Tracking)`);
+                    logger.debug(`Skipping ${file} (already processed by live tracking)`);
                     continue;
                 }
 
@@ -60,7 +52,6 @@ export class LogScannerService {
                     totalMinutes += minutesAdded;
                 }
 
-                // Mark as processed so we don't scan again
                 logWatcherService.markFileAsProcessed(file);
 
                 processedFiles++;
@@ -88,51 +79,41 @@ export class LogScannerService {
             const content = await fs.promises.readFile(filePath, 'utf-8');
             const lines = content.split('\n');
 
-            const sessions = new Map<string, number>(); // displayName -> joinTime
-            const durations = new Map<string, number>(); // displayName -> totalDuration
+            const sessions = new Map<string, number>(); // displayName -> joinTime ms
+            const durations = new Map<string, number>(); // displayName -> total ms
+            const idMap = new Map<string, string>();     // displayName -> userId
 
-            // User ID mapping if available
-            const idMap = new Map<string, string>(); // displayName -> userId
+            let fileTimestamp = Date.now();
+            let fileTimestampSet = false;
 
             for (const line of lines) {
-                const timestamp = this.extractTimestamp(line);
-                if (!timestamp) continue;
+                const ts = parseLogTimestamp(line.substring(0, 19));
+                if (!ts) continue;
+
+                if (!fileTimestampSet) {
+                    fileTimestamp = ts;
+                    fileTimestampSet = true;
+                }
 
                 if (line.includes('[Behaviour] OnPlayerJoined')) {
-                    const { displayName, userId } = this.parseJoin(line);
+                    const suffix = line.match(/OnPlayerJoined\s+(.+)/)?.[1] ?? '';
+                    const { displayName, userId } = extractNameAndId(suffix);
                     if (displayName) {
-                        sessions.set(displayName, timestamp);
+                        sessions.set(displayName, ts);
                         if (userId) idMap.set(displayName, userId);
                     }
                 } else if (line.includes('[Behaviour] OnPlayerLeft')) {
-                    const { displayName, userId } = this.parseLeave(line);
+                    const suffix = line.match(/OnPlayerLeft\s+(.+)/)?.[1] ?? '';
+                    const { displayName, userId } = extractNameAndId(suffix);
                     if (displayName && sessions.has(displayName)) {
-                        const joinTime = sessions.get(displayName)!;
-                        const durationMs = timestamp - joinTime;
-
-                        // Sanity check: valid session < 24h
+                        const durationMs = ts - sessions.get(displayName)!;
+                        // Reject implausible session lengths (negative or over 24 h)
                         if (durationMs > 0 && durationMs < 24 * 60 * 60 * 1000) {
-                            const current = durations.get(displayName) || 0;
-                            durations.set(displayName, current + durationMs);
+                            durations.set(displayName, (durations.get(displayName) ?? 0) + durationMs);
                         }
-
                         sessions.delete(displayName);
                         if (userId) idMap.set(displayName, userId);
                     }
-                }
-            }
-
-            // Write results to DB for this file
-            // Use the first session timestamp as the approximation for the file date
-            // or modify extractTimestamp to get file date? 
-            // Better: use `sessions.values().next().value` or just scan for first valid timestamp.
-            // Let's assume the first line with a timestamp is close enough.
-            let fileTimestamp = Date.now();
-            for (const line of lines) {
-                const ts = this.extractTimestamp(line);
-                if (ts) {
-                    fileTimestamp = ts;
-                    break;
                 }
             }
 
@@ -144,78 +125,22 @@ export class LogScannerService {
         }
     }
 
-    private extractTimestamp(line: string): number | null {
-        // "2023.10.25 18:00:00 Log        -"
-        const parts = line.split(' ');
-        if (parts.length < 2) return null;
-
-        try {
-            const dateStr = parts[0].replace(/\./g, '-');
-            const timeStr = parts[1];
-            return new Date(`${dateStr}T${timeStr}`).getTime();
-        } catch {
-            return null;
-        }
-    }
-
-    private parseJoin(line: string): { displayName: string; userId?: string } {
-        // [Behaviour] OnPlayerJoined Name (usr_xxx)
-        // or just Name
-        const match = line.match(/OnPlayerJoined\s+(.+)/);
-        if (!match) return { displayName: '' };
-
-        let full = match[1].trim();
-        let userId: string | undefined;
-
-        const parenIdx = full.lastIndexOf('(');
-        if (parenIdx !== -1 && full.endsWith(')')) {
-            const possibleId = full.substring(parenIdx + 1, full.length - 1);
-            if (possibleId.startsWith('usr_')) {
-                userId = possibleId;
-                full = full.substring(0, parenIdx).trim();
-            }
-        }
-        return { displayName: full, userId };
-    }
-
-    private parseLeave(line: string): { displayName: string; userId?: string } {
-        const match = line.match(/OnPlayerLeft\s+(.+)/);
-        if (!match) return { displayName: '' };
-
-        // Same logic as join
-        let full = match[1].trim();
-        let userId: string | undefined;
-
-        const parenIdx = full.lastIndexOf('(');
-        if (parenIdx !== -1 && full.endsWith(')')) {
-            const possibleId = full.substring(parenIdx + 1, full.length - 1);
-            if (possibleId.startsWith('usr_')) {
-                userId = possibleId;
-                full = full.substring(0, parenIdx).trim();
-            }
-        }
-        return { displayName: full, userId };
-    }
-
-    // Updated signature to accept timestamp for "First Seen" backfill
     private async commitDurations(durations: Map<string, number>, idMap: Map<string, string>, logTimestamp: number): Promise<number> {
         let addedMinutes = 0;
         const client = databaseService.getClient();
 
-        // Transaction is safer but might lock DB for too long if huge map.
-        // We do sequential upserts for simplicity in this utility script.
-
+        // Sequential upserts rather than a transaction: a transaction would hold the DB lock
+        // for the entire map iteration, which can be very long for large log files.
         for (const [name, ms] of durations.entries()) {
             const minutes = Math.floor(ms / (1000 * 60));
             if (minutes < 1) continue;
 
-            // We NEED a userId. If we didn't find one in the log for this name, skip.
-            // (Old logs might not have userID in text).
+            // Old logs may not include userId in the line text; skip those entries.
             const userId = idMap.get(name);
             if (!userId) continue;
 
             try {
-                // @ts-ignore
+                // @ts-ignore — Prisma client type is not inferred in this context
                 await client.friendStats.upsert({
                     where: { userId },
                     create: {
@@ -225,16 +150,16 @@ export class LogScannerService {
                         encounterCount: 1,
                         lastSeen: new Date(logTimestamp),
                         lastHeartbeat: new Date(0),
-                        createdAt: new Date(logTimestamp) // Capture "First Seen" from log date
+                        createdAt: new Date(logTimestamp),
                     },
                     update: {
                         timeSpentMinutes: { increment: minutes },
-                        encounterCount: { increment: 1 }
-                    }
+                        encounterCount: { increment: 1 },
+                    },
                 });
                 addedMinutes += minutes;
-            } catch (e) {
-                // ignore 
+            } catch {
+                // Ignore individual upsert failures (e.g. constraint races)
             }
         }
         return addedMinutes;
@@ -242,36 +167,30 @@ export class LogScannerService {
     private async recalibrateFromPlayerLog(): Promise<number> {
         logger.info('[Recalibration] Starting strict correction from Instance History...');
 
-        // 1. Get raw entries from PlayerLogService (Source of Truth)
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { playerLogService } = require('./PlayerLogService');
-        const entries: any[] = await playerLogService.getAllEntries();
+        const entries: { type: string; userId?: string }[] = await playerLogService.getAllEntries();
 
-        // 2. Aggregate
-        const stats = new Map<string, number>(); // UserId -> Count
+        const stats = new Map<string, number>(); // userId -> join count
         for (const entry of entries) {
             if (entry.type === 'join' && entry.userId) {
-                stats.set(entry.userId, (stats.get(entry.userId) || 0) + 1);
+                stats.set(entry.userId, (stats.get(entry.userId) ?? 0) + 1);
             }
         }
 
-        // 3. Commit to DB (Force Update)
         const client = databaseService.getClient();
         let updated = 0;
 
         for (const [userId, count] of stats.entries()) {
-            // We use 'update' to overwrite the inflated value
-            // Only update friends we know about to avoid cluttering DB with randoms if preferred,
-            // but for accuracy we should fix everyone we have stats for.
             try {
-                // @ts-ignore
+                // @ts-ignore — Prisma client type is not inferred in this context
                 await client.friendStats.update({
                     where: { userId },
-                    data: { encounterCount: count }
+                    data: { encounterCount: count },
                 });
                 updated++;
             } catch {
-                // User might not exist in FriendStats yet (e.g. random player log entry), ignore
+                // User may not exist in FriendStats yet (e.g. a player seen before becoming a friend)
             }
         }
 

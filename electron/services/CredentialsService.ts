@@ -40,26 +40,25 @@ try {
   log.error('Failed to initialize credentials store, likely corrupted. Resetting...', error);
   
   try {
-    // Manually remove the file. We reconstruct the path standard to electron-store.
     const userDataPath = app.getPath('userData');
     const storePath = path.join(userDataPath, 'group-guard-credentials.json');
-    if (fs.existsSync(storePath)) {
+    try {
       fs.unlinkSync(storePath);
       log.info('Corrupted credentials file deleted.');
+    } catch {
+      // File may not exist; ignore
     }
-    
-    // Retry initialization
+
     store = new Store({
       name: 'group-guard-credentials',
       encryptionKey: process.env.ELECTRON_STORE_ENCRYPTION_KEY,
       defaults: {
-          rememberMe: false,
-          savedAccounts: []
+        rememberMe: false,
+        savedAccounts: []
       }
     });
   } catch (retryError) {
     log.error('Critical Error: Could not reset credentials store.', retryError);
-    // Fallback to in-memory mock or empty store to prevent crash (optional, but safer to let it crash if FS is broken)
     throw retryError;
   }
 }

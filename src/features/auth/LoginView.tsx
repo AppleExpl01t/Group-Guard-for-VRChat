@@ -4,6 +4,31 @@ import { NeonButton } from '../../components/ui/NeonButton';
 import { motion, AnimatePresence } from 'framer-motion';
 import styles from './LoginView.module.css';
 
+// Particle type for the animated background
+interface Particle {
+  id: number;
+  left: number;
+  width: number;
+  height: number;
+  isPrimary: boolean;
+  duration: number;
+  delay: number;
+}
+
+// Defined outside the component so the object reference is stable across renders
+const particleVariants = {
+  animate: (custom: Particle) => ({
+    y: [0, -1000],
+    opacity: [0, 0.5, 0],
+    transition: {
+      duration: custom.duration,
+      repeat: Infinity,
+      delay: custom.delay,
+      ease: "linear" as const,
+    },
+  }),
+};
+
 export const LoginView: React.FC = () => {
   const { login, verify2FA, requires2FA, isLoading, error, rememberMe, setRememberMe } = useAuthStore();
   const [username, setUsername] = useState('');
@@ -11,11 +36,6 @@ export const LoginView: React.FC = () => {
   const [code, setCode] = useState('');
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [showSecurityModal, setShowSecurityModal] = useState(false);
-
-  // Load saved username if available (optional optimization)
-  React.useEffect(() => {
-    // We could pre-fill username here if desired
-  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,43 +46,18 @@ export const LoginView: React.FC = () => {
     }
   };
 
-  // Particle interface for type safety
-  interface Particle {
-    id: number;
-    left: number;
-    width: number;
-    height: number;
-    isPrimary: boolean;
-    duration: number;
-    delay: number;
-  }
-
   // Generate stable random values for particles (useState initializer runs once)
-  const [particles] = useState<Particle[]>(() => {
-    return Array.from({ length: 20 }).map((_, i) => ({
+  const [particles] = useState<Particle[]>(() =>
+    Array.from({ length: 20 }).map((_, i) => ({
       id: i,
       left: Math.random() * 100,
       width: Math.random() * 3 + 1,
       height: Math.random() * 3 + 1,
       isPrimary: Math.random() > 0.5,
       duration: Math.random() * 5 + 5,
-      delay: Math.random() * 5
-    }));
-  });
-
-  // Particle animation variants
-  const particleVariants = {
-    animate: (custom: Particle) => ({
-      y: [0, -1000],
-      opacity: [0, 0.5, 0],
-      transition: {
-        duration: custom.duration,
-        repeat: Infinity,
-        delay: custom.delay,
-        ease: "linear" as const,
-      },
-    }),
-  };
+      delay: Math.random() * 5,
+    }))
+  );
 
   return (
     <div className={styles.container}>

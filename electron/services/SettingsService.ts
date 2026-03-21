@@ -116,16 +116,14 @@ class SettingsService {
     public getAudioData(filePath: string): string | null {
         if (!filePath) return null;
         try {
-            if (fs.existsSync(filePath)) {
-                const fileBuffer = fs.readFileSync(filePath);
-                return `data:audio/${path.extname(filePath).slice(1)};base64,${fileBuffer.toString('base64')}`;
-            }
-            return null;
+            const fileBuffer = fs.readFileSync(filePath);
+            return `data:audio/${path.extname(filePath).slice(1)};base64,${fileBuffer.toString('base64')}`;
         } catch (error) {
             logger.error(`Failed to load audio: ${filePath}`, error);
             return null;
         }
     }
+
     public isTosAccepted(): boolean {
         return !!this.store.get('system.tosAcceptedVersion');
     }

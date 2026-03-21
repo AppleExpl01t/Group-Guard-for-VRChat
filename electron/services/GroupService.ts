@@ -24,11 +24,10 @@ export function setupGroupHandlers() {
     });
 
     serviceEventBus.on('group-verified', ({ group }) => {
-        // Broadacst granular update to UI
+        // Broadcast granular update to UI
         windowService.broadcast('groups:verified', { group });
     });
 
-    // Get user's groups (groups where user is a member)
     // Get user's groups (groups where user is a member)
     ipcMain.handle('groups:get-my-groups', async () => {
         const client = getVRChatClient();
@@ -268,19 +267,18 @@ export function setupGroupHandlers() {
             logger.info(`Fetching requests for group ${groupId}`);
             if (!client) throw new Error("Not authenticated");
 
-            // Revert to Object Syntax
             const response = await client.getGroupRequests({
                 path: { groupId },
                 query: { n: 100, offset: 0 }
             });
 
-            const requests = extractArray(response.data);
-            logger.info(`Requests fetch detected ${requests.length} items for ${groupId}`);
-
             if (response.error) {
                 logger.error('API Error in getGroupRequests:', response.error);
                 throw response.error;
             }
+
+            const requests = extractArray(response.data);
+            logger.info(`Requests fetch detected ${requests.length} items for ${groupId}`);
             return { success: true, requests };
 
         } catch (error: unknown) {
@@ -300,19 +298,18 @@ export function setupGroupHandlers() {
             logger.info(`Fetching bans for group ${groupId}`);
             if (!client) throw new Error("Not authenticated");
 
-            // Revert to Object Syntax
             const response = await client.getGroupBans({
                 path: { groupId },
                 query: { n: 100, offset: 0 }
             });
 
-            const bans = extractArray(response.data);
-            logger.info(`Bans fetch detected ${bans.length} items for ${groupId}`);
-
             if (response.error) {
                 logger.error('API Error in getGroupBans:', response.error);
                 throw response.error;
             }
+
+            const bans = extractArray(response.data);
+            logger.info(`Bans fetch detected ${bans.length} items for ${groupId}`);
             return { success: true, bans };
 
         } catch (error: unknown) {
@@ -416,7 +413,6 @@ export function setupGroupHandlers() {
         }
     });
 
-    // Get active group instances - using direct HTTP to bypass SDK quirks
     // Get active group instances - using direct HTTP to bypass SDK quirks
     ipcMain.handle('groups:get-instances', async (_event, { groupId }: { groupId: string }) => {
         // SECURITY: Validate group access first
@@ -588,8 +584,6 @@ export function setupGroupHandlers() {
             return { success: false, error: res.error };
         });
     });
-    // Get group messages
-    // ... (omitted, assuming no collision)
 
     // Get group roles
     ipcMain.handle('groups:get-roles', async (_event, { groupId }: { groupId: string }) => {
@@ -708,45 +702,35 @@ export function setupGroupHandlers() {
 
     // Remove role from member
     ipcMain.handle('groups:remove-member-role', async (_event, { groupId, userId, roleId }: { groupId: string, userId: string, roleId: string }) => {
-        try {
-            // SECURITY: Validate group access
-            groupAuthorizationService.validateAccess(groupId, 'groups:remove-member-role');
+        // SECURITY: Validate group access
+        groupAuthorizationService.validateAccess(groupId, 'groups:remove-member-role');
 
-            const client = getVRChatClient();
-            if (!client) throw new Error("Not authenticated");
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const clientAny = client as any;
-            const axiosInstance = clientAny.axios || clientAny.api;
+        const client = getVRChatClient();
+        if (!client) return { success: false, error: "Not authenticated" };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const clientAny = client as any;
 
-            logger.info(`Removing role ${roleId} from user ${userId} in group ${groupId}`);
+        logger.info(`Removing role ${roleId} from user ${userId} in group ${groupId}`);
 
+        const strategies = [
             // Strategy 1: SDK
-            if (typeof clientAny.removeRoleFromGroupMember === 'function') {
-                try {
-                    await clientAny.removeRoleFromGroupMember({ path: { groupId, userId, roleId } });
-                    return { success: true };
-                } catch (e) {
-                    logger.warn('SDK removeRoleFromGroupMember failed', e);
-                }
-            }
-
+            async () => {
+                if (typeof clientAny.removeRoleFromGroupMember !== 'function') throw new Error('SDK method missing');
+                await clientAny.removeRoleFromGroupMember({ path: { groupId, userId, roleId } });
+                return true;
+            },
             // Strategy 2: Axios Re-use
-            if (axiosInstance) {
-                try {
-                    const url = `groups/${groupId}/members/${userId}/roles/${roleId}`;
-                    logger.info('Attempting remove role via client.axios:', url);
-                    await axiosInstance.delete(url);
-                    return { success: true };
-                } catch (e) {
-                    logger.warn('Axios strategy for remove role failed', e);
-                }
-            }
-
+            async () => {
+                const axiosInstance = clientAny.axios || clientAny.api;
+                if (!axiosInstance) throw new Error('Axios missing');
+                const url = `groups/${groupId}/members/${userId}/roles/${roleId}`;
+                await axiosInstance.delete(url);
+                return true;
+            },
             // Strategy 3: Raw Request (Fetch)
-            try {
+            async () => {
                 const cookies = await getAuthCookieStringAsync();
                 const url = `https://api.vrchat.cloud/api/1/groups/${groupId}/members/${userId}/roles/${roleId}`;
-
                 const response = await fetch(url, {
                     method: 'DELETE',
                     headers: {
@@ -755,21 +739,15 @@ export function setupGroupHandlers() {
                         'Content-Type': 'application/json'
                     }
                 });
-
-                if (response.ok) {
-                    return { success: true };
-                }
-                const errText = await response.text();
-                logger.error('Fallback Remove Role failed:', response.status, errText);
-                return { success: false, error: `API Error: ${response.status}` };
-            } catch (e) {
-                return { success: false, error: (e as Error).message };
+                if (response.ok) return true;
+                throw new Error(`API Error: ${response.status} ${await response.text()}`);
             }
-        } catch (error: unknown) {
-            const err = error as { message?: string };
-            logger.error('Failed to remove member role:', error);
-            return { success: false, error: err.message || 'Failed to remove role' };
-        }
+        ];
+
+        return networkService.executeWithFallback(strategies, `groups:remove-member-role:${groupId}:${userId}`).then(res => {
+            if (res.success) return { success: true };
+            return { success: false, error: res.error || 'Failed to remove role' };
+        });
     });
     // Respond to group join request
     ipcMain.handle('groups:respond-request', async (_event, { groupId, userId, action }: { groupId: string, userId: string, action: 'accept' | 'deny' }) => {

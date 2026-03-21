@@ -1,17 +1,6 @@
 import { create } from 'zustand';
-
-interface User {
-  id: string;
-  username: string;
-  displayName: string;
-  userIcon: string;
-  bio?: string;
-  status?: string;
-  statusDescription?: string;
-  tags?: string[];
-  currentAvatarThumbnailImageUrl?: string;
-  // Add other fields as needed
-}
+import { getErrorMessage } from '../utils/errorUtils';
+import type { VRChatUser } from '../types/electron';
 
 type AuthStatus = 'idle' | 'checking' | 'logging-in' | 'verifying-2fa';
 
@@ -19,7 +8,7 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   status: AuthStatus;
-  user: User | null;
+  user: VRChatUser | null;
   requires2FA: boolean;
   error: string | null;
   rememberMe: boolean;
@@ -63,8 +52,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ error: result.error || 'Login failed', isLoading: false, status: 'idle' });
       }
     } catch (err: unknown) {
-      const error = err as { message?: string };
-      set({ error: error.message || 'Login failed', isLoading: false, status: 'idle' });
+      set({ error: getErrorMessage(err) || 'Login failed', isLoading: false, status: 'idle' });
     }
   },
 
@@ -84,8 +72,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ error: result.error || 'Invalid Code', isLoading: false, status: 'idle' });
       }
     } catch (err: unknown) {
-      const error = err as { message?: string };
-      set({ error: error.message || 'Verification failed', isLoading: false, status: 'idle' });
+      set({ error: getErrorMessage(err) || 'Verification failed', isLoading: false, status: 'idle' });
     }
   },
 
@@ -120,12 +107,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       } else if (result.requires2FA) {
         set({ requires2FA: true, isLoading: false, status: 'idle', error: null });
         return { success: false, requires2FA: true };
-      } else if (result.noCredentials) {
-        // No saved credentials - not an error, just show login screen
-        set({ isLoading: false, status: 'idle', error: null });
-        return { success: false };
       } else {
-        // Session expired or restoration failed - just show login screen
+        // No saved credentials or session expired — just show login screen
         set({ isLoading: false, status: 'idle', error: null });
         return { success: false };
       }

@@ -8,9 +8,33 @@ import { socialFeedService } from './SocialFeedService';
 import { playerLogService } from './PlayerLogService';
 import { relationshipService } from './RelationshipService';
 import { serviceEventBus } from './ServiceEventBus';
-import { vrchatApiService } from './VRChatApiService';
+import { vrchatApiService, VRCFriend } from './VRChatApiService';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { timeTrackingService } = require('./TimeTrackingService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { logWatcherService } = require('./LogWatcherService');
 
 const logger = log.scope('FriendshipService');
+
+/**
+ * Maps a VRCFriend API object to the FriendLocation shape used throughout the service.
+ * Centralises the repeated field-extraction logic so changes only need to happen here.
+ */
+function mapApiFriendToLocation(f: VRCFriend): FriendLocation {
+    return {
+        userId: f.id,
+        displayName: f.displayName,
+        status: (f.status as string) || 'offline',
+        location: (f.location as string) || 'offline',
+        lastUpdated: new Date().toISOString(),
+        userIcon: f['userIcon'] as string | undefined,
+        profilePicOverride: f['profilePicOverride'] as string | undefined,
+        currentAvatarThumbnailImageUrl: f.currentAvatarThumbnailImageUrl as string | undefined,
+        statusDescription: f.statusDescription as string | undefined,
+        representedGroup: f['representedGroup'] as string | undefined,
+        currentAvatarId: (f['currentAvatarRequestId'] || f['currentAvatarId']) as string | undefined
+    };
+}
 
 /**
  * Service responsible for managing the "Friendship Manager" module.
@@ -23,10 +47,6 @@ class FriendshipService {
     private userDataDir: string | null = null;
     private pollInterval: NodeJS.Timeout | null = null;
     private POLL_INTERVAL_MS = 15 * 1000; // 15 seconds
-
-    // Sub-services (Placeholders for Phase 1)
-    // private gameLogService: GameLogService;
-    // private locationService: LocationService;
 
     constructor() {
         this.setupEventListeners();
@@ -134,15 +154,13 @@ class FriendshipService {
                 const appUserData = app.getPath('userData');
                 this.userDataDir = path.join(appUserData, 'data', userId);
 
-                // Ensure directory exists
-                if (!fs.existsSync(this.userDataDir)) {
-                    try {
-                        fs.mkdirSync(this.userDataDir, { recursive: true });
-                        logger.info(`Created secure data directory: ${this.userDataDir}`);
-                    } catch (error) {
-                        logger.error(`Failed to create data directory for user ${userId}:`, error);
-                        throw error; // Cannot proceed without storage
-                    }
+                // Ensure directory exists (recursive: true is a no-op if it already exists)
+                try {
+                    fs.mkdirSync(this.userDataDir, { recursive: true });
+                    logger.info(`Ensured secure data directory: ${this.userDataDir}`);
+                } catch (error) {
+                    logger.error(`Failed to create data directory for user ${userId}:`, error);
+                    throw error; // Cannot proceed without storage
                 }
 
                 // 2. Initialize Sub-Services
@@ -152,8 +170,6 @@ class FriendshipService {
                 socialFeedService.initialize(this.userDataDir);
                 playerLogService.initialize(this.userDataDir);
                 relationshipService.initialize(this.userDataDir);
-                // eslint-disable-next-line @typescript-eslint/no-require-imports
-                const { timeTrackingService } = require('./TimeTrackingService');
                 timeTrackingService.initialize(this.userDataDir);
 
                 this.isInitialized = true;
