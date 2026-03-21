@@ -6,7 +6,6 @@ import { databaseService } from './DatabaseService';
 import { groupAuthorizationService } from './GroupAuthorizationService';
 import { serviceEventBus } from './ServiceEventBus';
 
-
 const logger = log.scope('InstanceLogger');
 
 class InstanceLoggerService {
@@ -17,14 +16,6 @@ class InstanceLoggerService {
     private currentWorldName: string | null = null;
     private currentGroupId: string | null = null;
 
-
-
-    /**
-     * Check if a group ID is allowed for this session
-     */
-    public isGroupAllowed(groupId: string): boolean {
-        return groupAuthorizationService.isGroupAllowed(groupId);
-    }
     constructor() {
         this.setupListeners();
     }
@@ -138,10 +129,8 @@ class InstanceLoggerService {
 
         if (!this.currentSessionId) return;
 
-        // Update Session record
         await databaseService.updateSession(this.currentSessionId, { worldName: event.name });
 
-        // Clean log for audit trail (optional but good)
         await this.logEvent('WORLD_NAME_UPDATE', {
             timestamp: event.timestamp,
             worldName: event.name,

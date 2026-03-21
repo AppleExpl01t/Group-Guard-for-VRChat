@@ -501,11 +501,10 @@ class LogWatcherService extends EventEmitter {
 
   // Helper to sync missing players from API
   private async reconcileWithApi(location: string) {
-    // Lazy load dependencies
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { fetchInstancePlayers } = require('./AuthService');
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { groupAuthorizationService } = require('./GroupAuthorizationService');
+    const { timeTrackingService } = require('./TimeTrackingService');
 
     log.debug(`[LogWatcher] Syncing instance state via API: ${location}`);
     const apiPlayers = await fetchInstancePlayers(location);
@@ -523,11 +522,14 @@ class LogWatcherService extends EventEmitter {
     for (const p of apiPlayers) {
       apiPlayerIds.add(p.id);
 
-      // Check by userId (preferred) or Display Name
-      const exists = Array.from(this.state.players.values()).some(existing =>
-        (existing.userId && existing.userId === p.id) ||
-        existing.displayName === p.displayName
-      );
+      // Check by userId (preferred) or display name
+      let exists = false;
+      for (const existing of this.state.players.values()) {
+        if ((existing.userId && existing.userId === p.id) || existing.displayName === p.displayName) {
+          exists = true;
+          break;
+        }
+      }
 
       if (!exists) {
         const timestamp = new Date().toISOString();
@@ -538,13 +540,9 @@ class LogWatcherService extends EventEmitter {
           isBackfill: true // Mark as backfill so we don't spam notifications
         };
         this.state.players.set(p.displayName, event);
-        this.state.pendingJoins.delete(p.displayName); // Clear any pending raw join
+        this.state.pendingJoins.delete(p.displayName);
         this.emitToRenderer('log:player-joined', event);
         serviceEventBus.emit('player-joined', event);
-
-        // SCORE CALIBRATION: Record Encounter (Reconciled from API)
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { timeTrackingService } = require('./TimeTrackingService');
         timeTrackingService.recordEncounter(p.id);
 
         added++;
@@ -555,24 +553,17 @@ class LogWatcherService extends EventEmitter {
     // Only perform this if API returned a valid non-empty list (to avoid wiping state on API error)
     let removed = 0;
     if (apiPlayers.length > 0) {
-      const currentPlayers = Array.from(this.state.players.entries());
-      for (const [displayName, player] of currentPlayers) {
-        // Skip players without IDs (raw joins) as they might be resolving
-        // Also skip IF the API list works purely on IDs and we have a name match? 
-        // No, API list has both.
-
-        // If player has ID, check existence in API set
+      // Snapshot keys to avoid mutating during iteration
+      for (const [displayName, player] of [...this.state.players.entries()]) {
         if (player.userId) {
           if (!apiPlayerIds.has(player.userId)) {
-            // CONFIRMED GHOST
             this.removeGhostPlayer(displayName, player);
             removed++;
           }
         } else {
-          // If no ID, check by display name in apiPlayers
-          const nameExists = apiPlayers.some((ap: any) => ap.displayName === displayName);
+          // No userId: fall back to display name match
+          const nameExists = apiPlayers.some((ap: { displayName: string }) => ap.displayName === displayName);
           if (!nameExists) {
-            // CONFIRMED GHOST
             this.removeGhostPlayer(displayName, player);
             removed++;
           }
