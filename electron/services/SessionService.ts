@@ -5,6 +5,7 @@
  * Handles Keyv-based session persistence and cookie extraction from the VRChat SDK client.
  */
 
+import fs from 'fs';
 import log from 'electron-log';
 import path from 'path';
 import { storageService } from './StorageService';
@@ -49,15 +50,7 @@ export function getSessionStore(): InstanceType<typeof Keyv> {
     // MIGRATION: Move session file to session/ subfolder
     const sessionDir = path.join(userDataPath, 'session');
 
-    // Ensure session directory exists
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = require('fs'); // Lazy import fs if not at top level, or assume it is available. 
-    // Actually, SessionService didn't import fs before. We need to check imports.
-    // Looking at the file content, fs is NOT imported. I should use require('fs') safely or rely on fs-extra if available, but standard fs is fine.
-
-    if (!fs.existsSync(sessionDir)) {
-      fs.mkdirSync(sessionDir, { recursive: true });
-    }
+    fs.mkdirSync(sessionDir, { recursive: true });
 
     const oldFilePath = path.join(userDataPath, 'vrchat-session.json');
     const newFilePath = path.join(sessionDir, 'vrchat-session.json');
@@ -71,10 +64,9 @@ export function getSessionStore(): InstanceType<typeof Keyv> {
       }
     }
 
-    const filePath = newFilePath;
-    logger.info(`Session store path: ${filePath}`);
+    logger.info(`Session store path: ${newFilePath}`);
 
-    const store = new KeyvFile({ filename: filePath });
+    const store = new KeyvFile({ filename: newFilePath });
 
     // WORKAROUND: Keyv v5+ crashes if store.opts.url is undefined during _checkIterableAdapter
     // We patch the store to satisfy Keyv's internal check
@@ -128,18 +120,6 @@ export async function clearSessionStore(): Promise<void> {
 export function extractAuthCookie(client: any): string | undefined {
   try {
     const clientAny = client;
-
-    // DEBUG: Log client structure to find cookie storage
-    logger.debug('[Cookie Debug] Client keys:', Object.keys(clientAny || {}));
-    if (clientAny.api) {
-      logger.debug('[Cookie Debug] api keys:', Object.keys(clientAny.api || {}));
-      if (clientAny.api.defaults) {
-        logger.debug('[Cookie Debug] api.defaults keys:', Object.keys(clientAny.api.defaults || {}));
-        if (clientAny.api.defaults.headers) {
-          logger.debug('[Cookie Debug] api.defaults.headers:', JSON.stringify(clientAny.api.defaults.headers, null, 2));
-        }
-      }
-    }
 
     // Strategy 1: Axios Defaults (Most reliable for this SDK version)
     if (clientAny.api && clientAny.api.defaults && clientAny.api.defaults.headers) {

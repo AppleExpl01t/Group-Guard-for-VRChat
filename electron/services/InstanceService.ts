@@ -18,6 +18,7 @@ import { logWatcherService } from './LogWatcherService';
 import { groupAuthorizationService } from './GroupAuthorizationService';
 import { networkService } from './NetworkService';
 import { discordWebhookService } from './DiscordWebhookService';
+import { vrchatApiService } from './VRChatApiService';
 
 import {
     clearRecruitmentCache,
@@ -40,6 +41,14 @@ export { clearRecruitmentCache };
 
 // Re-export LiveEntity type
 export type { LiveEntity };
+
+// ============================================
+// HELPERS
+// ============================================
+
+// bigint-safe JSON serializer used when logging raw API responses
+const safeStringify = (obj: unknown) =>
+    JSON.stringify(obj, (_k, v) => (typeof v === 'bigint' ? v.toString() : v), 2);
 
 // ============================================
 // IPC HANDLERS
@@ -161,8 +170,6 @@ export function setupInstanceHandlers() {
             });
             if (result.error) throw result.error;
 
-            // WEBHOOK
-            // WEBHOOK
             discordWebhookService.sendEvent(
                 groupId,
                 {
@@ -214,8 +221,6 @@ export function setupInstanceHandlers() {
                     if (result.error) throw result.error;
                     logger.info(`[InstanceService] Successfully kicked ${userId} using native API`);
 
-                    // Webhook for native kick
-                    // Webhook for native kick
                     discordWebhookService.sendEvent(
                         groupId,
                         {
@@ -261,8 +266,6 @@ export function setupInstanceHandlers() {
                     logger.warn(`[InstanceService] Failed to cleanup ban for ${userId} during kick. User remains banned.`, e);
                 }
 
-                // Webhook for legacy kick
-                // Webhook for legacy kick
                 discordWebhookService.sendEvent(
                     groupId,
                     {
@@ -310,7 +313,6 @@ export function setupInstanceHandlers() {
                 query: { hardClose: true }
             });
 
-            const safeStringify = (obj: unknown) => JSON.stringify(obj, (_k, v) => typeof v === 'bigint' ? v.toString() : v, 2);
             logger.info(`[InstanceService] closeInstance raw response:`, safeStringify(response));
 
             if (response?.error) throw new Error((response.error as { message?: string }).message || safeStringify(response.error));
@@ -352,25 +354,11 @@ export function setupInstanceHandlers() {
 
         if (!worldId) return { success: false };
 
-        // Try to get image from API
         let imageUrl = null;
         let apiName = null;
 
-
-
-        // If we have the name locally, we *could* skip fetching, but we usually want the image too.
-        // However, we use vrchatApiService.getWorld() which is cached, so it's cheap to call.
-
-        // Include vrchatApiService import if not present (it's likely needed)
-        // Wait, InstanceService.ts doesn't import vrchatApiService yet?
-        // Checking existing imports... need to add it if missing.
-        // Assuming it's imported or I will add it. I'll check imports separately or just add the import at the top if needed.
-        // But for this block:
-
-        // Using centralized VRChatApiService (Cached)
         try {
-            // This leverages the shared 10-minute cache for worlds
-            const res = await import('./VRChatApiService').then(m => m.vrchatApiService.getWorld(worldId));
+            const res = await vrchatApiService.getWorld(worldId);
 
             if (res.success && res.data) {
                 imageUrl = res.data.thumbnailImageUrl || res.data.imageUrl;
@@ -414,7 +402,7 @@ export function setupInstanceHandlers() {
     ipcMain.handle('instance:get-details', async (_event, location: string) => {
         try {
             const [worldId, instanceId] = location.split(':');
-            const res = await import('./VRChatApiService').then(m => m.vrchatApiService.getInstance(worldId, instanceId));
+            const res = await vrchatApiService.getInstance(worldId, instanceId);
             return {
                 success: res.success,
                 instance: res.data,

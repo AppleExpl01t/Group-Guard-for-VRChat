@@ -1,10 +1,10 @@
 /**
  * VRChat Pipeline WebSocket Service
- * 
+ *
  * Connects to VRChat's real-time WebSocket API for live event streaming.
  * Based on: https://vrchat.community/websocket
  * Reference: VRCX implementation (reference repos/VRCX/src/service/websocket.js)
- * 
+ *
  * Events supported:
  * - Notifications (invites, friend requests)
  * - Friend status changes (online, offline, location)
@@ -19,6 +19,8 @@ import { vrchatApiService } from './VRChatApiService';
 import { processGroupJoinNotification } from './AutoModService';
 import { windowService } from './WindowService';
 import { serviceEventBus } from './ServiceEventBus';
+import { friendshipService } from './FriendshipService';
+import { getCurrentUserId } from './AuthService';
 
 // ============================================
 // CONSTANTS
@@ -28,6 +30,14 @@ const PIPELINE_URL = 'wss://pipeline.vrchat.cloud';
 const RECONNECT_DELAY_MS = 5000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const AUTO_RECONNECT_INTERVAL = 10 * 60 * 1000; // 10 minutes
+
+// Events that should be forwarded to the ServiceEventBus as 'friend-update'
+const FRIEND_EVENT_TYPES = new Set<PipelineEventType>([
+  'friend-online',
+  'friend-offline',
+  'friend-location',
+  'friend-update',
+]);
 
 // ============================================
 // STATE
@@ -104,16 +114,12 @@ async function fetchAuthToken(): Promise<string | null> {
       return null;
     }
 
-    // The VRChat SDK should have a method to get auth info
-    // Looking at VRCX, they call: request('auth', { method: 'GET' })
-    // which returns { ok: true, token: "authcookie_..." }
-
-    // Try using the SDK's internal methods
+    // The VRChat SDK doesn't expose a typed auth method, so we probe the client
+    // object at runtime. VRCX uses: request('auth', { method: 'GET' }) → { ok: true, token: "authcookie_..." }
     const clientAny = client as unknown as Record<string, unknown>;
 
     // Strategy 1: Try getAuth if available
     if (typeof clientAny.getAuth === 'function') {
-      log.debug('[Pipeline] Using getAuth method');
       const response = await (clientAny.getAuth as () => Promise<{ data?: { ok?: boolean; token?: string } }>)();
       const data = response?.data;
       if (data?.ok && data?.token) {
@@ -124,7 +130,6 @@ async function fetchAuthToken(): Promise<string | null> {
 
     // Strategy 2: Try direct API call if client supports it
     if (typeof clientAny.get === 'function') {
-      log.debug('[Pipeline] Using client.get for auth endpoint');
       const response = await (clientAny.get as (path: string) => Promise<{ data?: { ok?: boolean; token?: string } }>)('auth');
       const data = response?.data;
       if (data?.ok && data?.token) {
@@ -133,10 +138,9 @@ async function fetchAuthToken(): Promise<string | null> {
       }
     }
 
-    // Strategy 3: Try to extract from the client's cookie jar
-    // The auth token for WebSocket is the same as the auth cookie value
+    // Strategy 3: Extract from the client's cookie jar
+    // The WebSocket auth token is the value of the 'auth' cookie
     if (clientAny.jar || clientAny.cookieJar) {
-      log.debug('[Pipeline] Attempting to extract token from cookie jar');
       const jar = (clientAny.jar || clientAny.cookieJar) as {
         getCookiesSync?: (url: string) => Array<{ key?: string; name?: string; value?: string }>;
         _jar?: { getCookiesSync?: (url: string) => Array<{ key?: string; name?: string; value?: string }> };
@@ -152,18 +156,10 @@ async function fetchAuthToken(): Promise<string | null> {
 
       const authCookie = cookies.find(c => (c.key || c.name) === 'auth');
       if (authCookie?.value) {
-        // The token format is "authcookie_..." which is the cookie value
         log.info('[Pipeline] Got auth token from cookie jar');
         return `authcookie_${authCookie.value}`;
       }
     }
-
-    // Strategy 4: Manual fetch using node-fetch or similar
-    // This is a fallback - we make a direct HTTP request to the auth endpoint
-    log.debug('[Pipeline] Fallback: Making direct HTTP request to /auth');
-
-    // Get cookies from the client to include in the request
-    // This requires the client to expose its cookie handling
 
     log.warn('[Pipeline] Could not obtain auth token - all strategies exhausted');
     return null;
@@ -219,18 +215,12 @@ async function connectWebSocket(): Promise<boolean> {
       isConnecting = false;
       reconnectAttempts = 0;
       webSocket = socket;
-
-      // Notify renderer that pipeline is connected
-      emitToRenderer('pipeline:connected', { connected: true });
-
-      // Start periodic auto-reconnect timer
+      windowService.broadcast('pipeline:connected', { connected: true });
       startPeriodicReconnect();
     };
 
     socket.onclose = (event: WebSocket.CloseEvent) => {
       log.info(`[Pipeline] WebSocket closed: code=${event.code}, reason=${event.reason}`);
-
-      // Stop periodic timer on close
       stopPeriodicReconnect();
 
       if (webSocket === socket) {
@@ -239,14 +229,12 @@ async function connectWebSocket(): Promise<boolean> {
 
       isConnecting = false;
 
-      // Notify renderer
-      emitToRenderer('pipeline:disconnected', {
+      windowService.broadcast('pipeline:disconnected', {
         code: event.code,
         reason: event.reason,
         willReconnect: !isManualDisconnect && reconnectAttempts < MAX_RECONNECT_ATTEMPTS
       });
 
-      // Auto-reconnect if not manually disconnected
       if (!isManualDisconnect && vrchatApiService.isAuthenticated()) {
         scheduleReconnect();
       }
@@ -254,7 +242,7 @@ async function connectWebSocket(): Promise<boolean> {
 
     socket.onerror = (error: WebSocket.ErrorEvent) => {
       log.error('[Pipeline] WebSocket error:', error.message || 'Unknown error');
-      emitToRenderer('pipeline:error', { message: error.message || 'WebSocket error' });
+      windowService.broadcast('pipeline:error', { message: error.message || 'WebSocket error' });
     };
 
     socket.onmessage = (event: WebSocket.MessageEvent) => {
@@ -287,9 +275,7 @@ function scheduleReconnect(): void {
 
   if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
     log.warn('[Pipeline] Max reconnect attempts reached, giving up');
-    emitToRenderer('pipeline:reconnect-failed', {
-      attempts: reconnectAttempts
-    });
+    windowService.broadcast('pipeline:reconnect-failed', { attempts: reconnectAttempts });
     return;
   }
 
@@ -335,7 +321,7 @@ function disconnectWebSocket(): void {
  * Starts the periodic auto-reconnect timer.
  */
 function startPeriodicReconnect(): void {
-  stopPeriodicReconnect(); // Ensure no duplicates
+  stopPeriodicReconnect();
 
   log.info(`[Pipeline] Starting periodic auto-reconnect timer (${AUTO_RECONNECT_INTERVAL / 1000 / 60}m)`);
 
@@ -363,20 +349,13 @@ function stopPeriodicReconnect(): void {
 export async function forceReconnect(): Promise<boolean> {
   log.info('[Pipeline] Force reconnect initiated');
 
-  // We don't want the standard "onclose" reconnection logic to fire,
-  // so we treat it as a manual disconnect initially, then reset.
+  // Treat as manual disconnect so the onclose handler doesn't schedule a competing reconnect,
+  // then immediately reset the flag before connecting.
   disconnectWebSocket();
-
-  // Reset state for a fresh connection
   isManualDisconnect = false;
   reconnectAttempts = 0;
 
-  // Small optional delay to ensure socket creates cleanly?
-  // Usually immediate is fine, but a tiny tick helps.
-  await new Promise(resolve => setTimeout(resolve, 100));
-
-  const success = await connectWebSocket();
-  return success;
+  return connectWebSocket();
 }
 
 // ============================================
@@ -387,7 +366,7 @@ export async function forceReconnect(): Promise<boolean> {
  * Handles incoming WebSocket messages.
  */
 function handleMessage(data: string): void {
-  // Dedupe identical messages (VRChat sometimes sends duplicates)
+  // VRChat sometimes sends duplicate messages
   if (lastMessageData === data) {
     return;
   }
@@ -403,7 +382,7 @@ function handleMessage(data: string): void {
       try {
         message.content = JSON.parse(message.content);
       } catch {
-        // Content is not JSON, keep as string
+        // Content is plain text, keep as-is
       }
     }
   } catch {
@@ -411,59 +390,36 @@ function handleMessage(data: string): void {
     return;
   }
 
-  // Handle errors from the pipeline
   if (message.err) {
     log.error('[Pipeline] Server error:', message.err);
-    emitToRenderer('pipeline:server-error', { error: message.err });
+    windowService.broadcast('pipeline:server-error', { error: message.err });
     return;
   }
 
-  // Log the event
   log.debug(`[Pipeline] Event: ${message.type}`, JSON.stringify(message.content).substring(0, 200));
 
-  // Create a standardized event
   const event: PipelineEvent = {
     type: message.type,
     content: message.content as Record<string, unknown>,
     timestamp: new Date().toISOString()
   };
 
-  // Emit to renderer
-  emitToRenderer('pipeline:event', event);
+  windowService.broadcast('pipeline:event', event);
 
-  // Emit to internal Service Bus for Backend Services (FriendshipManager)
-  // We map pipeline events to service bus events if needed, or generic 'pipeline-event'
-  // But for now let's just emit specific ones we care about
-  if (['friend-online', 'friend-offline', 'friend-location', 'friend-update'].includes(event.type)) {
+  if (FRIEND_EVENT_TYPES.has(event.type)) {
     serviceEventBus.emit('friend-update', event);
   }
 
-  // Handle specific event types that may need additional processing
   handleSpecificEvent(event);
 }
 
 /**
- * Handles specific event types that may need server-side processing.
+ * Handles event types that require server-side processing beyond renderer forwarding.
  */
 function handleSpecificEvent(event: PipelineEvent): void {
   switch (event.type) {
-    case 'group-member-updated':
-      log.info('[Pipeline] Group member updated:', event.content);
-      break;
-
-    case 'group-role-updated':
-      log.info('[Pipeline] Group role updated:', event.content);
-      break;
-
-    case 'group-joined':
-    case 'group-left':
-      log.info(`[Pipeline] Group ${event.type}:`, event.content);
-      break;
-
     case 'notification':
     case 'notification-v2':
-      log.info('[Pipeline] Notification received:', event.content);
-      // Process group join request notifications via AutoMod
       processGroupJoinNotification(event.content as {
         type?: string;
         senderUserId?: string;
@@ -472,18 +428,7 @@ function handleSpecificEvent(event: PipelineEvent): void {
       }).catch(err => log.error('[Pipeline] AutoMod notification processing error:', err));
       break;
 
-    case 'friend-online':
-    case 'friend-offline':
-    case 'friend-location':
-      log.debug(`[Pipeline] Friend ${event.type}:`, event.content);
-      break;
-
-    case 'user-update':
-      log.info('[Pipeline] Current user updated:', event.content);
-      break;
-
     default:
-      // Other events are just forwarded to renderer
       break;
   }
 }
@@ -493,31 +438,21 @@ function handleSpecificEvent(event: PipelineEvent): void {
 // ============================================
 
 /**
- * Emits an event to all renderer windows.
- */
-function emitToRenderer(channel: string, data: unknown): void {
-  windowService.broadcast(channel, data);
-}
-
-/**
  * Sets up IPC handlers for the Pipeline service.
  */
 export function setupPipelineHandlers(): void {
-  // Connect to pipeline
   ipcMain.handle('pipeline:connect', async () => {
     log.info('[Pipeline] Connect requested');
     const success = await connectWebSocket();
     return { success, connected: webSocket !== null };
   });
 
-  // Disconnect from pipeline
   ipcMain.handle('pipeline:disconnect', () => {
     log.info('[Pipeline] Disconnect requested');
     disconnectWebSocket();
     return { success: true };
   });
 
-  // Get connection status
   ipcMain.handle('pipeline:status', () => {
     return {
       connected: webSocket !== null && webSocket.readyState === WebSocket.OPEN,
@@ -526,7 +461,6 @@ export function setupPipelineHandlers(): void {
     };
   });
 
-  // Force reconnect
   ipcMain.handle('pipeline:reconnect', async () => {
     log.info('[Pipeline] Reconnect requested via IPC');
     const success = await forceReconnect();
@@ -543,28 +477,18 @@ export function setupPipelineHandlers(): void {
  */
 export function onUserLoggedIn(): void {
   log.info('[Pipeline] User logged in, connecting to pipeline...');
-  // Small delay to ensure auth is fully set up
+  // Delay to ensure auth state is fully committed before connecting
   setTimeout(async () => {
     await connectWebSocket();
-    // AutoMod gatekeeper processing is now triggered by GroupService
-    // when group authorization is initialized
 
-    // Initialize FriendshipService (VRCX-style tracking)
     const currentUserId = getCurrentUserId();
     if (currentUserId) {
-      // Dynamic import to avoid cycles if necessary, or using the imported instance
-      // Assuming we import it at the top level: import { friendshipService } from './FriendshipService';
       await friendshipService.initialize(currentUserId);
     } else {
       log.warn('[Pipeline] User logged in but ID missing, skipping FriendshipService init');
     }
   }, 1000);
 }
-
-import { friendshipService } from './FriendshipService';
-import { getCurrentUserId } from './AuthService';
-
-// ...
 
 /**
  * Call this when the user logs out to disconnect from the pipeline.
