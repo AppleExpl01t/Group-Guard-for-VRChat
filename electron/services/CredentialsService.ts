@@ -53,13 +53,12 @@ try {
       name: 'group-guard-credentials',
       encryptionKey: process.env.ELECTRON_STORE_ENCRYPTION_KEY,
       defaults: {
-          rememberMe: false,
-          savedAccounts: []
+        rememberMe: false,
+        savedAccounts: []
       }
     });
   } catch (retryError) {
     log.error('Critical Error: Could not reset credentials store.', retryError);
-    // Fallback to in-memory mock or empty store to prevent crash (optional, but safer to let it crash if FS is broken)
     throw retryError;
   }
 }

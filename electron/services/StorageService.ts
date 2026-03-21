@@ -64,9 +64,7 @@ class StorageService {
   }
 
   public setLocation(dirPath: string) {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
+    fs.mkdirSync(dirPath, { recursive: true });
 
     const config = { dataDir: dirPath, setupRequired: false };
     fs.writeFileSync(this.configPath, JSON.stringify(config));
@@ -104,18 +102,14 @@ class StorageService {
         return config.dataDir || null;
       }
     } catch {
-      // Warning suppressed: Config might be currupt or missing, return null is safe fallback
+      // Config might be corrupt or missing; returning null is safe
     }
     return null;
   }
 
   public async openStorageFolder() {
-    const dir = this.getDataDir();
-    if (fs.existsSync(dir)) {
-      await shell.openPath(dir);
-      return true;
-    }
-    return false;
+    await shell.openPath(this.getDataDir());
+    return true;
   }
 
   public setupHandlers() {
